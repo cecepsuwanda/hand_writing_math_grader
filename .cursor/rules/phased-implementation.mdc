@@ -1,0 +1,30 @@
+---
+description: Implementasi bertahap Phase 1–9 — satu phase, test, jangan loncat UI
+alwaysApply: true
+---
+
+# Phased Implementation
+
+Kerjakan **satu phase** per sesi/PR. Urutan wajib:
+
+```text
+1 PDF → 2 Vision → 3 Extract → 4 LaTeX → 5 SymPy
+→ 6 LLM Validator → 7 Grading → 8 Report → 9 CLI polish
+```
+
+Setiap phase:
+
+1. Inspect repo + phase yang belum selesai (`docs/development-phases.md`).
+2. Implement tipis sesuai MVC.
+3. Tulis dan jalankan test.
+4. Pertahankan perilaku phase sebelumnya.
+5. Jangan mengarang API library — verifikasi dokumentasi.
+
+```text
+❌ Loncat ke FastAPI/Streamlit sebelum CLI pipeline hijau
+❌ Ubah kontrak modul stabil tanpa alasan
+✅ Selesaikan acceptance criteria phase saat ini dulu
+```
+
+Skill terkait: `implement-math-grader-phase`, `review-math-grader-compliance`.
+Detail: `docs/development-phases.md`, `docs/plan_ai_math_grader_ollama.md`.

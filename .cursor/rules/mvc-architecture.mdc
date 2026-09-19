@@ -1,0 +1,31 @@
+---
+description: Batasan MVC — View/Controller tipis, logic di services, pure di functions
+globs: app/**/*.py
+alwaysApply: false
+---
+
+# MVC Architecture
+
+Arah ketergantungan: View → Controller → Services/Models → Infrastructure.
+
+| Layer | Lakukan | Jangan |
+|-------|---------|--------|
+| `views/` | Progress, summary, error, path | Ollama, SymPy, persist file |
+| `controllers/` | Orkestrasi + map error | Prompt LLM, rumus grading |
+| `services/` | Use-case + adapter (DI) | Print ke stdout (kecuali logger) |
+| `functions/` | Pure transform | I/O / network / mutasi input |
+| `interfaces/` | ABC/Protocol sempit | Implementasi library konkret |
+
+```python
+# ❌ BAD — controller memanggil Ollama langsung
+def process(pdf):
+    return httpx.post("http://localhost:11434/...", ...)
+
+# ✅ GOOD — controller memanggil abstraksi yang diinjeksi
+def process(self, pdf: Path) -> GradeReport:
+    pages = self.renderer.render(pdf)
+    recognition = self.recognizer.recognize_pages(pages)
+    return self.grader.grade(recognition)
+```
+
+Injection lewat konstruktor terhadap `interfaces/`. Composition over inheritance.

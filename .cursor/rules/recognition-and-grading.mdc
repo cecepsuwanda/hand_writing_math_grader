@@ -1,0 +1,33 @@
+---
+description: Recognition fidelity, SymPy-before-LLM, schema validation, partial credit
+globs: app/services/**/*.py,app/prompts/**
+alwaysApply: false
+---
+
+# Recognition dan Grading
+
+## Pisahkan recognition dari grading
+
+Jangan minta LLM memberi nilai langsung dari gambar.
+
+## Recognition — salin apa adanya
+
+LLM recognition **tidak boleh**: memperbaiki persamaan, mengoreksi typo, mengarang langkah hilang, mengganti jawaban.
+
+Jika ragu → `uncertain` / confidence rendah; pertahankan gambar asli + `raw_text`.
+
+## Validasi
+
+1. Parse / syntax  
+2. **SymPy dulu** jika memungkinkan  
+3. LLM hanya jika checker deterministik tidak cukup  
+4. Bandingkan makna matematis, bukan string LaTeX mentah  
+
+Output LLM **wajib** divalidasi terhadap schema Pydantic. Status `uncertain` / `REVIEW_REQUIRED` diizinkan — jangan paksa valid/invalid.
+
+## Grading
+
+- Berbasis rubric + partial credit.
+- Bedakan conceptual / calculation / carry-forward error.
+- Jangan nolkan seluruh skor hanya karena final answer salah.
+- Simpan audit: langkah, metode validasi, alasan, skor, confidence, page ref.

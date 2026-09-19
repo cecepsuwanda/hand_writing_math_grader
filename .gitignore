@@ -216,3 +216,55 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project runtime data (input/pages/questions/output artifacts)
+data/
+
+# LaTeX / TeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.brf
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.lof
+*.lot
+*.lol
+*.nav
+*.snm
+*.vrb
+*.xdv
+*.dvi
+*.ps
+*.eps
+*.run.xml
+*-blx.bib
+*.idx
+*.ilg
+*.ind
+*.ist
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.maf
+*.mtc
+*.mtc0
+*.pyg
+*.spl
+*.tdo
+*.xdy
+*.bak
+*.tmp
+_minted*/
+TeXAux/
+tex-aux/

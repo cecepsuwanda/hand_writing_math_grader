@@ -1,0 +1,60 @@
+# Ringkasan Phase 1–9
+
+Urutan wajib. Satu phase per sesi. Scope **matematika** (bab silabus) merujuk `docs/math-topics.md` / `docs/topik.md` — terpisah dari phase teknis di bawah.
+
+## Phase 1 — PDF
+
+- Modul: `services/pdf/renderer.py`, interface `PdfRenderer`
+- CLI: `python -m app.cli render answer.pdf`
+- Acceptance: PDF → `page_001.png`, …
+- Test: 1 halaman, multi halaman, PDF kosong, file invalid
+
+## Phase 2 — Ollama Vision
+
+- Modul: `services/vision/ollama_client.py`, `recognizer.py`
+- Interface: `VisionRecognizer`
+- Prompt: `prompts/recognition.txt` (versioned)
+- Acceptance: image → recognition JSON (Pydantic)
+- Fitur: retry, timeout, logging
+
+## Phase 3 — Question Extraction
+
+- Modul: `services/questions/segmenter.py`, `extractor.py`
+- Acceptance: pages → `Question` (multi-page, steps, final answer)
+
+## Phase 4 — LaTeX
+
+- Modul: `services/latex/builder.py`, `functions/latex_transforms.py`
+- Acceptance: Question → `student.tex`; tetap simpan `raw_text`
+
+## Phase 5 — SymPy
+
+- Modul: `services/math/parser.py`, `sympy_validator.py`, `equivalence.py`
+- Acceptance: transformasi dikenal → status validasi benar
+
+## Phase 6 — LLM Validator
+
+- Prompt: `prompts/validation.txt`
+- Acceptance: boleh `uncertain`; jangan paksa valid/invalid tanpa evidence
+
+## Phase 7 — Grading
+
+- Modul: `services/grading/step_grader.py`, `rubric.py`
+- Prompt: `prompts/grading.txt`
+- Acceptance: partial credit; rentang skor sesuai testdata
+
+## Phase 8 — Report
+
+- JSON / CSV / HTML + metadata reproducibility (model, prompt version, timestamp)
+
+## Phase 9 — CLI polish
+
+- Semua subcommand, progress/summary View, exit codes
+- Bukan web UI
+
+## Anti-patterns
+
+- Menggabungkan recognition + grading dalam satu prompt gambar
+- Controller berisi HTTP Ollama
+- Menghapus recognition.json setelah grading
+- Hard-code `llama3.2-vision` di source

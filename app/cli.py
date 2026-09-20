@@ -9,6 +9,7 @@ from pathlib import Path
 from app.config import DEFAULT_CONFIG_PATH, AppConfig, load_config
 from app.controllers.extract_controller import ExtractController
 from app.controllers.grade_controller import GradeController
+from app.controllers.ingest_kunci_controller import IngestKunciController
 from app.controllers.latex_controller import LatexController
 from app.controllers.process_controller import ProcessController
 from app.controllers.recognize_controller import RecognizeController
@@ -26,6 +27,7 @@ from app.functions.paths import list_jawaban_pdfs, parse_pdf_choice, resolve_jaw
 from app.services.grading.feedback_annotator import FeedbackAnnotator
 from app.services.grading.report import JsonCsvHtmlReporter
 from app.services.grading.rubric import RubricLoader
+from app.services.grading.standard_comparer import StandardFinalComparer
 from app.services.grading.step_grader import StepGrader
 from app.services.latex.builder import LatexBuilder
 from app.services.math.hybrid_validator import HybridStepValidator
@@ -35,6 +37,7 @@ from app.services.pdf.renderer import PyMuPdfRenderer
 from app.services.questions.extractor import QuestionExtractor
 from app.services.vision.ollama_client import OllamaClient
 from app.services.vision.recognizer import OllamaVisionRecognizer
+from app.services.workspace.cleaner import prepare_pipeline_workspace
 from app.views.error_view import print_error
 from app.views.progress_view import (
     print_models,
@@ -44,6 +47,7 @@ from app.views.progress_view import (
 from app.views.result_view import (
     print_extract_result,
     print_grade_result,
+    print_ingest_kunci_result,
     print_latex_result,
     print_recognize_result,
     print_render_result,
@@ -280,6 +284,30 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory for question artifacts (default: config questions.output_dir)",
     )
+
+    ingest_parser = subparsers.add_parser(
+        "ingest-kunci",
+        help="Ingest kunci_jawaban TeX into standards/solutions",
+    )
+    ingest_parser.add_argument(
+        "kunci",
+        type=Path,
+        nargs="?",
+        default=None,
+        help="Kunci .tex file (default: all .tex under config input.kunci_jawaban_dir)",
+    )
+    ingest_parser.add_argument(
+        "--standard",
+        type=Path,
+        default=None,
+        help="Standards directory (default: config grading.standard_dir)",
+    )
+    ingest_parser.add_argument(
+        "--kunci-dir",
+        type=Path,
+        default=None,
+        help="Directory of kunci .tex files (default: config input.kunci_jawaban_dir)",
+    )
     return parser
 
 
@@ -303,6 +331,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_report(args)
         if args.command == "process":
             return _run_process(args)
+        if args.command == "ingest-kunci":
+            return _run_ingest_kunci(args)
         parser.error(f"unknown command: {args.command}")
     except MathGraderError as exc:
         print_error(exc)
@@ -422,6 +452,25 @@ def _run_latex(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_ingest_kunci(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    standard_dir = (
+        args.standard if args.standard is not None else config.grading.standard_dir
+    )
+    kunci_dir = (
+        args.kunci_dir
+        if args.kunci_dir is not None
+        else config.input.kunci_jawaban_dir
+    )
+    result = IngestKunciController().ingest(
+        kunci_path=args.kunci,
+        kunci_dir=kunci_dir,
+        standard_dir=standard_dir,
+    )
+    print_ingest_kunci_result(result)
+    return 0
+
+
 def _run_validate(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     questions_dir = (
@@ -494,7 +543,15 @@ def _run_process(args: argparse.Namespace) -> int:
         args.standard if args.standard is not None else config.grading.standard_dir
     )
     dpi = args.dpi if args.dpi is not None else config.pdf.dpi
+    workspace_root = config.report.output_dir
 
+    removed = prepare_pipeline_workspace(
+        workspace_root,
+        pages_dir=pages_dir,
+        recognition_dir=recognition_dir,
+        questions_dir=questions_dir,
+    )
+    print_output_cleared(workspace_root, removed)
     print_models(
         vision_model=config.ollama.vision_model,
         reasoning_model=config.ollama.reasoning_model,
@@ -509,7 +566,6 @@ def _run_process(args: argparse.Namespace) -> int:
         grade_controller=_build_grade_controller(config, standard_dir),
         report_controller=_build_report_controller(config, standard_dir),
         on_progress=print_progress,
-        on_output_cleared=print_output_cleared,
     )
     result = controller.process(
         pdf_path,
@@ -519,7 +575,8 @@ def _run_process(args: argparse.Namespace) -> int:
         output_dir=output_dir,
         dpi=dpi,
         student_id=args.student_id,
-        workspace_root=config.report.output_dir,
+        workspace_root=workspace_root,
+        reset_workspace=False,
     )
     print_process_summary(result)
     return 0
@@ -577,6 +634,7 @@ def _build_grade_controller(config: AppConfig, standard_dir: Path) -> GradeContr
     grader = StepGrader(
         rubric_loader=RubricLoader(standard_dir),
         feedback_annotator=annotator,
+        standard_comparer=StandardFinalComparer(standard_dir),
     )
     return GradeController(grader=grader, standard_dir=standard_dir)
 

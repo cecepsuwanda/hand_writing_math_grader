@@ -13,7 +13,6 @@ from app.controllers.recognize_controller import RecognizeController
 from app.controllers.render_controller import RenderController
 from app.controllers.report_controller import ReportController
 from app.controllers.validate_controller import ValidateController
-from app.functions.output_reset import clear_output_workspace
 from app.models.process import (
     PROCESS_STAGES,
     ProcessProgress,
@@ -21,6 +20,7 @@ from app.models.process import (
     ProcessStage,
     QuestionScoreSummary,
 )
+from app.services.workspace.cleaner import prepare_pipeline_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ class ProcessController:
         dpi: int,
         student_id: str = "student_001",
         workspace_root: Path | None = None,
+        reset_workspace: bool = True,
     ) -> ProcessResult:
         pdf_path = Path(pdf_path)
         pages_dir = Path(pages_dir)
@@ -70,10 +71,16 @@ class ProcessController:
         questions_dir = Path(questions_dir)
         output_dir = Path(output_dir)
 
-        root = Path(workspace_root) if workspace_root is not None else output_dir
-        removed = clear_output_workspace(root)
-        if self._on_output_cleared is not None:
-            self._on_output_cleared(root, removed)
+        if reset_workspace:
+            root = Path(workspace_root) if workspace_root is not None else output_dir
+            removed = prepare_pipeline_workspace(
+                root,
+                pages_dir=pages_dir,
+                recognition_dir=recognition_dir,
+                questions_dir=questions_dir,
+            )
+            if self._on_output_cleared is not None:
+                self._on_output_cleared(root, removed)
 
         render_result = self._render.render(pdf_path, pages_dir, dpi)
         self._emit(ProcessStage.RENDER, 1)

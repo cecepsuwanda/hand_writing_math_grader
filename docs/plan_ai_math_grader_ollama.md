@@ -307,7 +307,6 @@ math-grader/
 │   │   │   └── recognizer.py
 │   │   ├── questions/
 │   │   │   ├── __init__.py
-│   │   │   ├── segmenter.py
 │   │   │   └── extractor.py
 │   │   ├── latex/
 │   │   │   ├── __init__.py
@@ -322,6 +321,9 @@ math-grader/
 │   │       ├── step_grader.py
 │   │       ├── rubric.py
 │   │       └── report.py
+│   │   └── workspace/
+│   │       ├── __init__.py
+│   │       └── cleaner.py
 │   │
 │   ├── functions/                  # Pure / functional helpers
 │   │   ├── __init__.py
@@ -1001,11 +1003,12 @@ python -m app.cli process \
     --output data/output
 ```
 
-PDF jawaban diletakkan di `data/input/jawaban/`; kunci di `data/input/kunci_jawaban/`.
+PDF jawaban diletakkan di `data/input/jawaban/`; kunci di `data/input/kunci_jawaban/` (layout reserved — compare ke kunci belum diimplementasi).
 
-- `python -m app.cli process` menampilkan menu PDF di folder jawaban (pilih nomor atau nama file).
+- `python -m app.cli process` menampilkan menu PDF di folder jawaban (pilih nomor atau nama file; nama numerik seperti `2.pdf` diprioritaskan sebelum index).
 - Nama file singkat (mis. `smoke_inequality.pdf`) di-resolve otomatis ke folder jawaban.
-- Di awal `process`, `data/output/` dikosongkan kecuali `standards/` (rubric/solusi tetap).
+- Di awal `process`, `data/output/` dikosongkan kecuali `standards/` (rubric/solusi tetap); artifact dirs di luar root juga dibersihkan jika di-override.
+- Validasi saat ini memeriksa konsistensi langkah mahasiswa (SymPy, lalu LLM bila uncertain), bukan perbandingan ke kunci.
 Pemetaan MVC untuk CLI:
 
 ```text
@@ -1401,10 +1404,10 @@ MVP dianggap selesai jika:
 - [ ] Langkah penyelesaian dapat dipisahkan.
 - [ ] Formula dapat direpresentasikan sebagai LaTeX.
 - [ ] Student solution disimpan per soal.
-- [ ] Standard solution dapat dimasukkan.
-- [ ] SymPy dapat memvalidasi sebagian transformasi.
+- [ ] Standard solution dapat dimasukkan (file di `standards/.../solutions` / `kunci_jawaban` — layout ada).
+- [ ] SymPy dapat memvalidasi sebagian transformasi (konsistensi langkah mahasiswa).
 - [ ] LLM dapat menangani kasus yang tidak dapat diverifikasi SymPy.
-- [ ] Sistem dapat membandingkan student solution dengan standard solution.
+- [x] Sistem dapat membandingkan student solution dengan standard solution. *(slice: final answer vs `% final answer` in `standards/.../solutions`; step-align / kunci ingest masih terbuka)*
 - [ ] Rubric grading menghasilkan partial credit.
 - [ ] Hasil grading tersimpan dalam JSON.
 - [ ] Report dapat dibuat.

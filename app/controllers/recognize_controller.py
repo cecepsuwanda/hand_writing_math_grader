@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.exceptions import RecognitionPathMismatchError
 from app.functions.page_names import page_recognition_filename
 from app.interfaces.recognizer import VisionRecognizer
 from app.interfaces.renderer import PdfRenderer
@@ -32,6 +33,9 @@ class RecognizeController:
         pages_dir: Path,
         recognition_dir: Path,
     ) -> RecognizeResult:
+        recognition_dir = Path(recognition_dir)
+        self._assert_output_dir(recognition_dir)
+
         recognitions: list[PageRecognition] = []
         artifact_paths: list[Path] = []
         for page in pages:
@@ -46,3 +50,10 @@ class RecognizeController:
             output_dir=recognition_dir,
             artifact_paths=artifact_paths,
         )
+
+    def _assert_output_dir(self, recognition_dir: Path) -> None:
+        recognizer_dir = getattr(self._recognizer, "output_dir", None)
+        if recognizer_dir is None:
+            return
+        if Path(recognizer_dir).resolve() != recognition_dir.resolve():
+            raise RecognitionPathMismatchError(recognition_dir, Path(recognizer_dir))

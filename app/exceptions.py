@@ -92,6 +92,16 @@ class RecognitionNotFoundError(MathGraderError):
         super().__init__(f"No recognition JSON found in: {path}")
 
 
+class RecognitionPathMismatchError(MathGraderError):
+    def __init__(self, recognition_dir: Path, recognizer_output_dir: Path) -> None:
+        self.recognition_dir = recognition_dir
+        self.recognizer_output_dir = recognizer_output_dir
+        super().__init__(
+            "Recognition output directory mismatch: "
+            f"controller={recognition_dir} recognizer={recognizer_output_dir}"
+        )
+
+
 class EmptyExtractionError(MathGraderError):
     def __init__(self, reason: str = "no questions found after extraction") -> None:
         self.reason = reason

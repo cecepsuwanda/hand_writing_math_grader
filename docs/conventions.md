@@ -1,5 +1,16 @@
 # Konvensi Pengembangan
 
+## Prinsip arsitektur (wajib)
+
+Proyek ini menggunakan:
+
+1. **MVC** — View (CLI presentation), Controller (orkestrasi), Model/Services (domain + use-case); arah ketergantungan View → Controller → Services/Models → Infrastructure. Lihat [`architecture.md`](architecture.md).
+2. **SOLID** — abstraksi sempit di `app/interfaces/`, dependency injection, satu alasan berubah per modul.
+3. **Clean code** — nama bermakna; fungsi kecil; konfigurasi terpusat; type hints + Pydantic; error eksplisit; komentar hanya untuk “mengapa”.
+4. **OOP + Functional Programming** berdampingan — OOP untuk service/client ber-state dan polymorphism; FP (pure functions di `app/functions/`) untuk transformasi deterministik tanpa side effect.
+
+Detail di bagian berikut dan di spesifikasi [`plan_ai_math_grader_ollama.md`](plan_ai_math_grader_ollama.md) §2.4.
+
 ## Domain matematika
 
 Katalog resmi: [`topik.md`](topik.md). Status dan urutan implementasi: [math-topics.md](math-topics.md).
@@ -60,9 +71,9 @@ Output LLM wajib divalidasi terhadap schema. Status `uncertain` dan `REVIEW_REQU
 ## CLI dan antarmuka
 
 - Entry point wajib: `python -m app.cli ...`
-- PDF jawaban: `data/input/jawaban/`; kunci: `data/input/kunci_jawaban/`.
+- PDF jawaban: `data/input/jawaban/`; final standard: `standards/.../solutions/` (`% final answer`); kunci: `data/input/kunci_jawaban/` via CLI `ingest-kunci` (slice).
 - `process` tanpa argumen PDF → menu pilihan interaktif.
-- Awal `process` mengosongkan `data/output/` kecuali `standards/`.
+- Awal `process` mengosongkan `data/output/` kecuali `standards/`, plus artifact dirs di luar root jika di-override.
 - Model vision/reasoning dari config — **jangan hard-code** nama model.
 - FastAPI/Streamlit hanya setelah engine CLI stabil; service layer harus reusable.
 

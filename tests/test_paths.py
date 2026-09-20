@@ -52,3 +52,11 @@ def test_parse_pdf_choice_by_index_and_name(tmp_path: Path) -> None:
     assert parse_pdf_choice(pdfs, "TWO") == pdfs[1]
     with pytest.raises(ValueError):
         parse_pdf_choice(pdfs, "9")
+
+
+def test_parse_pdf_choice_prefers_filename_over_index(tmp_path: Path) -> None:
+    pdfs = [tmp_path / "alpha.pdf", tmp_path / "2.pdf"]
+    for pdf in pdfs:
+        pdf.write_bytes(b"%PDF")
+    assert parse_pdf_choice(pdfs, "2") == pdfs[1]
+    assert parse_pdf_choice(pdfs, "1") == pdfs[0]

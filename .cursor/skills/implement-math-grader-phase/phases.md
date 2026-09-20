@@ -1,6 +1,6 @@
 # Ringkasan Phase 1–9
 
-Urutan wajib. Satu phase per sesi. Scope **matematika** (bab silabus) merujuk `docs/math-topics.md` / `docs/topik.md` — terpisah dari phase teknis di bawah.
+Urutan wajib. Satu phase per sesi. Setiap implementasi harus patuh **MVC**, **SOLID**, **clean code**, serta **OOP + FP** (`docs/architecture.md`, `docs/conventions.md`). Scope **matematika** (bab silabus) merujuk `docs/math-topics.md` / `docs/topik.md` — terpisah dari phase teknis di bawah.
 
 ## Phase 1 — PDF
 
@@ -19,7 +19,7 @@ Urutan wajib. Satu phase per sesi. Scope **matematika** (bab silabus) merujuk `d
 
 ## Phase 3 — Question Extraction
 
-- Modul: `services/questions/segmenter.py`, `extractor.py`
+- Modul: `services/questions/extractor.py` (+ `functions/question_merge.py`)
 - Acceptance: pages → `Question` (multi-page, steps, final answer)
 
 ## Phase 4 — LaTeX
@@ -31,6 +31,7 @@ Urutan wajib. Satu phase per sesi. Scope **matematika** (bab silabus) merujuk `d
 
 - Modul: `services/math/parser.py`, `sympy_validator.py`, `equivalence.py`
 - Acceptance: transformasi dikenal → status validasi benar
+- Scope saat ini: konsistensi langkah mahasiswa (bukan compare ke kunci)
 
 ## Phase 6 — LLM Validator
 
@@ -42,6 +43,8 @@ Urutan wajib. Satu phase per sesi. Scope **matematika** (bab silabus) merujuk `d
 - Modul: `services/grading/step_grader.py`, `rubric.py`
 - Prompt: `prompts/grading.txt`
 - Acceptance: partial credit; rentang skor sesuai testdata
+- Follow-up: bandingkan ke standard solution / kunci (`data/input/kunci_jawaban`, `standards/.../solutions`)
+  → **Done (slice):** final answer + sequential step-align via SymPy; `ingest-kunci` CLI for enumerate+align+HP TeX
 
 ## Phase 8 — Report
 

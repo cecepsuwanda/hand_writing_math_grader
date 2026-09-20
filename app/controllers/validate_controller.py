@@ -12,14 +12,13 @@ from app.functions.question_names import question_artifact_filename, validation_
 from app.interfaces.validator import StepValidator
 from app.models.question import Question
 from app.models.validation import QuestionValidation, ValidateResult
-from app.services.math.sympy_validator import SymPyStepValidator
 
 logger = logging.getLogger(__name__)
 
 
 class ValidateController:
-    def __init__(self, validator: StepValidator | None = None) -> None:
-        self._validator = validator or SymPyStepValidator()
+    def __init__(self, validator: StepValidator) -> None:
+        self._validator = validator
 
     def validate(self, questions_dir: Path) -> ValidateResult:
         questions_dir = Path(questions_dir)

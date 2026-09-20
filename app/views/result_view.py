@@ -75,6 +75,15 @@ def print_grade_result(result: GradeResult) -> None:
         )
 
 
+def print_ingest_kunci_result(result: object) -> None:
+    written = getattr(result, "written", [])
+    standard_dir = getattr(result, "standard_dir", "")
+    source = getattr(result, "source", "")
+    print(f"Ingested {len(written)} solution(s) from {source} -> {standard_dir}")
+    for path in written:
+        print(f"  {path}")
+
+
 def print_report_result(result: ReportResult) -> None:
     exam = result.exam_report
     print(

@@ -1,9 +1,9 @@
 ---
 name: review-math-grader-compliance
 description: >-
-  Reviews Math Grader code or diffs for MVC boundaries, SOLID/DI, recognition
-  fidelity, SymPy-before-LLM validation, audit artifacts, CLI-only MVP, and
-  clean coding. Use when reviewing PRs, checking architecture compliance,
+  Reviews Math Grader code or diffs for MVC, SOLID/DI, clean code, OOP+FP,
+  recognition fidelity, SymPy-before-LLM validation, audit artifacts, and
+  CLI-only MVP. Use when reviewing PRs, checking architecture compliance,
   auditing a phase implementation, or when the user asks for a compliance or
   architecture review.
 ---
@@ -20,12 +20,14 @@ description: >-
 
 ## Checklist
 
-### MVC & SOLID
+### MVC, SOLID, clean code, OOP+FP
 
 - [ ] View tidak memanggil Ollama/SymPy/filesystem business persist
 - [ ] Controller tipis (tidak berisi prompt/math grading)
-- [ ] Service bergantung interface, bukan konkret library tersebar
-- [ ] Pure transforms di `functions/`, bukan static util class kosong
+- [ ] Service bergantung interface / DI, bukan konkret library tersebar (SOLID)
+- [ ] Pure transforms di `functions/` (FP); bukan static util class kosong
+- [ ] Service/client ber-state memakai OOP di `services/`
+- [ ] Clean code: nama bermakna, fungsi fokus, type hints, error eksplisit
 - [ ] Tidak ada god-interface / god-class
 
 ### Recognition & grading
@@ -67,5 +69,5 @@ description: >-
 
 - `docs/architecture.md`, `docs/conventions.md`, `docs/math-topics.md`
 - `docs/topik.md`
-- `.cursor/rules/mvc-architecture.mdc`, `recognition-and-grading.mdc`
+- `.cursor/rules/mvc-architecture.mdc`, `math-grader-core.mdc`, `recognition-and-grading.mdc`
 - `docs/plan_ai_math_grader_ollama.md` §2, §23, §31, §32, §33

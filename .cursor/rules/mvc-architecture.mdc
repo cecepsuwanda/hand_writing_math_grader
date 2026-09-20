@@ -1,5 +1,5 @@
 ---
-description: Batasan MVC — View/Controller tipis, logic di services, pure di functions
+description: Batasan MVC + SOLID, clean code, OOP di services, FP di functions
 globs: app/**/*.py
 alwaysApply: false
 ---
@@ -8,6 +8,8 @@ alwaysApply: false
 
 Arah ketergantungan: View → Controller → Services/Models → Infrastructure.
 
+Proyek ini wajib mengikuti **MVC**, **SOLID**, **clean code**, serta **OOP** berdampingan dengan **functional programming**.
+
 | Layer | Lakukan | Jangan |
 |-------|---------|--------|
 | `views/` | Progress, summary, error, path | Ollama, SymPy, persist file |
@@ -15,6 +17,13 @@ Arah ketergantungan: View → Controller → Services/Models → Infrastructure.
 | `services/` | Use-case + adapter (DI) | Print ke stdout (kecuali logger) |
 | `functions/` | Pure transform | I/O / network / mutasi input |
 | `interfaces/` | ABC/Protocol sempit | Implementasi library konkret |
+
+## SOLID, clean code, OOP + FP
+
+- **SOLID**: bergantung pada `interfaces/`; injeksi dependency lewat konstruktor; interface sempit; satu alasan berubah per modul.
+- **Clean code**: fungsi kecil dan fokus; konfigurasi terpusat (`app/config/`); type hints; error handling eksplisit; komentar hanya untuk “mengapa”.
+- **OOP**: encapsulation di `services/` / client ber-state; polymorphism lewat ABC/Protocol; domain model Pydantic.
+- **FP**: transformasi deterministik di `app/functions/` tanpa side effect; jangan buat util class berisi static method saja.
 
 ```python
 # ❌ BAD — controller memanggil Ollama langsung
@@ -28,4 +37,4 @@ def process(self, pdf: Path) -> GradeReport:
     return self.grader.grade(recognition)
 ```
 
-Injection lewat konstruktor terhadap `interfaces/`. Composition over inheritance.
+Injection lewat konstruktor terhadap `interfaces/`. Composition over inheritance. Detail: `docs/conventions.md`.

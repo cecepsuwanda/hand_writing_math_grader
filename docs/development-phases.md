@@ -35,6 +35,7 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 
 - Parser ekspresi/persamaan, equivalence, step validator.
 - Acceptance: transformasi algebra yang dikenal menghasilkan status validasi yang diharapkan.
+- Scope: konsistensi langkah mahasiswa (bukan compare ke kunci).
 
 ## Phase 6 — LLM Validator
 
@@ -45,6 +46,10 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 
 - Rubric, skor per langkah, partial credit, feedback.
 - Acceptance: dataset uji menghasilkan rentang skor yang diharapkan.
+- Compare final answer ke `standards/.../solutions/` (SymPy); skor `final_answer` = min(konsistensi, standard).
+- Step-align sequential (index) ke baris `aligned`/`align` di solutions; skor langkah = min(konsistensi, standard).
+- Ingest kunci: `python -m app.cli ingest-kunci` menulis `standards/.../solutions` dari `data/input/kunci_jawaban/` (pola enumerate+align+HP; overwrite solutions saja).
+- Follow-up: kunci LaTeX arbitrary / auto-rubric.
 
 ## Phase 8 — Report
 
@@ -57,6 +62,7 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 - Awal `process` mengosongkan `data/output/` kecuali `standards/`.
 - Pastikan View/Controller/Service terpisah (MVC).
 - Bukan web UI.
+- Opsional pasca-MVP: `python -m app.api` (FastAPI tipis `/health`, `/api/process`, `/api/results/{id}`) — adapter di atas controller yang sama.
 
 ## Scope MVP matematika
 
@@ -66,12 +72,22 @@ Perluas mengikuti urutan [`topik.md`](topik.md) (2 → 11) hanya setelah pipelin
 
 ## Definition of Done (ringkas)
 
-- [ ] CLI end-to-end untuk alur MVP
-- [ ] Struktur MVC + interfaces SOLID
-- [ ] Recognition tanpa mengoreksi jawaban mahasiswa
-- [ ] SymPy prioritas, LLM fallback
-- [ ] Partial credit + artefak audit
-- [ ] `REVIEW_REQUIRED` / low confidence
-- [ ] Test suite dasar hijau
+- [x] CLI end-to-end untuk alur MVP
+- [x] Struktur MVC + interfaces SOLID
+- [x] Recognition tanpa mengoreksi jawaban mahasiswa
+- [x] SymPy prioritas, LLM fallback
+- [x] Partial credit + artefak audit
+- [x] `REVIEW_REQUIRED` / low confidence
+- [x] Test suite dasar hijau
 
 Detail lengkap: [plan_ai_math_grader_ollama.md](plan_ai_math_grader_ollama.md) §21–§33.
+
+## Smoke live (opsional, butuh Ollama)
+
+Bukan bagian `pytest` default. Pastikan Ollama jalan dan model di `app/config/config.yaml` terisi, lalu:
+
+```bash
+python -m app.cli process smoke_inequality.pdf
+```
+
+atau `scripts/smoke_live.bat`. Sample: `data/input/jawaban/smoke_inequality.pdf`.

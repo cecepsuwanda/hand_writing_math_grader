@@ -60,6 +60,8 @@ class QuestionGrade(BaseModel):
     steps: list[StepGrade] = Field(default_factory=list)
     final_answer: StepGrade | None = None
     review_status: ReviewStatus = ReviewStatus.AUTO_ACCEPT
+    standard_final_status: ValidationStatus | None = None
+    standard_step_statuses: dict[str, str] | None = None
 
 
 class GradeResult(BaseModel):

@@ -41,7 +41,7 @@ def resolve_jawaban_pdf(pdf: Path, jawaban_dir: Path) -> Path:
 
 
 def parse_pdf_choice(pdfs: list[Path], raw: str) -> Path:
-    """Map a menu choice (1-based index or filename) to a PDF path.
+    """Map a menu choice (filename preferred, then 1-based index) to a PDF path.
 
     Raises:
         ValueError: if the selection is empty or does not match.
@@ -52,14 +52,16 @@ def parse_pdf_choice(pdfs: list[Path], raw: str) -> Path:
     if not pdfs:
         raise ValueError("no PDFs available")
 
+    lowered = choice.lower()
+    for pdf in pdfs:
+        name = pdf.name.lower()
+        if name == lowered or name == f"{lowered}.pdf":
+            return pdf
+
     if choice.isdigit():
         index = int(choice)
         if 1 <= index <= len(pdfs):
             return pdfs[index - 1]
         raise ValueError(f"choice out of range: {choice}")
 
-    lowered = choice.lower()
-    for pdf in pdfs:
-        if pdf.name.lower() == lowered or pdf.name.lower() == f"{lowered}.pdf":
-            return pdf
     raise ValueError(f"unknown PDF: {choice}")

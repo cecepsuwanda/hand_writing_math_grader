@@ -224,6 +224,10 @@ data/*
 data/input/*
 !data/input/kunci_jawaban/
 !data/input/kunci_jawaban/**
+!data/input/jawaban/
+data/input/jawaban/*
+!data/input/jawaban/README.md
+!data/input/jawaban/smoke_inequality.pdf
 !data/output/
 data/output/*
 !data/output/standards/

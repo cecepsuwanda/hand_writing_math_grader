@@ -1,0 +1,10 @@
+{
+  "question": 8,
+  "maximum_score": 10,
+  "criteria": [
+    {"id": "setup", "points": 2},
+    {"id": "transformation", "points": 3},
+    {"id": "calculation", "points": 3},
+    {"id": "final_answer", "points": 2}
+  ]
+}

@@ -59,7 +59,6 @@ def infer_error_type(
     validation: StepValidation,
     *,
     previous: StepValidation | None,
-    next_validation: StepValidation | None,
 ) -> ErrorType:
     if validation.status == ValidationStatus.VALID:
         if (
@@ -91,60 +90,118 @@ def aggregate_question_grade(
     question_number: int,
     validation: QuestionValidation,
     rubric: Rubric,
+    standard_final_status: ValidationStatus | None = None,
+    standard_final_reason: str = "",
+    standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None,
 ) -> QuestionGrade:
     steps = sorted(validation.steps, key=lambda s: s.step_number)
     per_step_max, final_max = allocate_step_max_scores(rubric, len(steps))
 
     step_grades: list[StepGrade] = []
     review_required = False
+    audit_steps: dict[str, str] = {}
 
     for index, step_val in enumerate(steps):
         maximum = per_step_max[index] if index < len(per_step_max) else 0.0
-        fraction = score_fraction(step_val.status)
-        earned = round(maximum * fraction, 4)
+        consistency_fraction = score_fraction(step_val.status)
         if step_val.status == ValidationStatus.UNCERTAIN:
             review_required = True
+
+        std_entry = None
+        if standard_step_results is not None:
+            std_entry = standard_step_results.get(step_val.step_number)
+
+        if std_entry is not None:
+            std_status, std_reason = std_entry
+            audit_steps[str(step_val.step_number)] = std_status.value
+            std_fraction = score_fraction(std_status)
+            if std_status == ValidationStatus.UNCERTAIN:
+                review_required = True
+            fraction = min(consistency_fraction, std_fraction)
+            label_status = (
+                std_status
+                if std_fraction <= consistency_fraction
+                else step_val.status
+            )
+        else:
+            fraction = consistency_fraction
+            label_status = step_val.status
+            std_reason = ""
+
+        earned = round(maximum * fraction, 4)
         prev = steps[index - 1] if index > 0 else None
-        nxt = steps[index + 1] if index + 1 < len(steps) else None
-        error_type = infer_error_type(step_val, previous=prev, next_validation=nxt)
-        # Carry-forward label on the *following* valid step after invalid
-        if (
-            step_val.status == ValidationStatus.VALID
-            and prev is not None
-            and prev.status == ValidationStatus.INVALID
-        ):
-            error_type = ErrorType.CARRY_FORWARD
+        error_type = infer_error_type(step_val, previous=prev)
+        feedback = deterministic_feedback(step_val, error_type)
+        if std_entry is not None and std_reason:
+            feedback = f"{feedback}; standard: {std_reason}"
+
         step_grades.append(
             StepGrade(
                 step_number=step_val.step_number,
                 score=earned,
                 max_score=maximum,
-                status=grade_status_for(step_val.status, earned, maximum),
+                status=grade_status_for(label_status, earned, maximum),
                 error_type=error_type,
-                feedback=deterministic_feedback(step_val, error_type),
+                feedback=feedback,
                 validation_status=step_val.status,
             )
         )
 
     final_grade: StepGrade | None = None
-    if validation.final_answer_status is not None:
-        final_val = validation.final_answer_status
-        fraction = score_fraction(final_val.status)
+    consistency = validation.final_answer_status
+    if consistency is not None or standard_final_status is not None:
+        if consistency is not None:
+            consistency_fraction = score_fraction(consistency.status)
+            if consistency.status == ValidationStatus.UNCERTAIN:
+                review_required = True
+        else:
+            consistency_fraction = 1.0
+
+        if standard_final_status is not None:
+            standard_fraction = score_fraction(standard_final_status)
+            if standard_final_status == ValidationStatus.UNCERTAIN:
+                review_required = True
+            fraction = min(consistency_fraction, standard_fraction)
+            label_status = (
+                standard_final_status
+                if standard_fraction <= consistency_fraction
+                else consistency.status  # type: ignore[union-attr]
+            )
+        else:
+            fraction = consistency_fraction
+            assert consistency is not None
+            label_status = consistency.status
+
         earned = round(final_max * fraction, 4)
-        if final_val.status == ValidationStatus.UNCERTAIN:
-            review_required = True
-        error_type = infer_error_type(final_val, previous=steps[-1] if steps else None, next_validation=None)
+
+        if consistency is not None:
+            error_type = infer_error_type(
+                consistency, previous=steps[-1] if steps else None
+            )
+            base_feedback = deterministic_feedback(consistency, error_type)
+            step_number = consistency.step_number
+            reported_status = consistency.status
+        else:
+            error_type = ErrorType.NONE
+            base_feedback = "no consistency final-answer validation"
+            step_number = 0
+            reported_status = standard_final_status or ValidationStatus.INVALID
+
+        if standard_final_status is not None and standard_final_reason:
+            feedback = f"{base_feedback}; standard: {standard_final_reason}"
+        else:
+            feedback = base_feedback
+
         final_grade = StepGrade(
-            step_number=final_val.step_number,
+            step_number=step_number,
             score=earned,
             max_score=final_max,
-            status=grade_status_for(final_val.status, earned, final_max),
+            status=grade_status_for(label_status, earned, final_max),
             error_type=error_type,
-            feedback=deterministic_feedback(final_val, error_type),
-            validation_status=final_val.status,
+            feedback=feedback,
+            validation_status=reported_status,
         )
     elif final_max > 0:
-        # No final validation → no final points (not a zeroing of prior steps)
         final_grade = StepGrade(
             step_number=0,
             score=0.0,
@@ -172,4 +229,6 @@ def aggregate_question_grade(
             if review_required
             else ReviewStatus.AUTO_ACCEPT
         ),
+        standard_final_status=standard_final_status,
+        standard_step_statuses=audit_steps or None,
     )

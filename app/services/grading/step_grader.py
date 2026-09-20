@@ -20,9 +20,10 @@ from app.functions.question_names import (
 from app.functions.score_aggregate import aggregate_question_grade
 from app.models.grading import QuestionGrade
 from app.models.question import Question
-from app.models.validation import QuestionValidation
+from app.models.validation import QuestionValidation, ValidationStatus
 from app.services.grading.feedback_annotator import FeedbackAnnotator
 from app.services.grading.rubric import RubricLoader
+from app.services.grading.standard_comparer import StandardFinalComparer
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,11 @@ class StepGrader:
         self,
         rubric_loader: RubricLoader,
         feedback_annotator: FeedbackAnnotator | None = None,
+        standard_comparer: StandardFinalComparer | None = None,
     ) -> None:
         self._rubrics = rubric_loader
         self._annotator = feedback_annotator
+        self._standard_comparer = standard_comparer
 
     def grade_question_dir(self, question_dir: Path) -> QuestionGrade:
         question_dir = Path(question_dir)
@@ -56,18 +59,30 @@ class StepGrader:
             raise GradingError(question_dir.name, str(exc)) from exc
 
         rubric = self._rubrics.load(question.question_number)
+
+        standard_status: ValidationStatus | None = None
+        standard_reason = ""
+        standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None
+        if self._standard_comparer is not None:
+            compared = self._standard_comparer.compare(question)
+            if compared is not None:
+                standard_status, standard_reason = compared
+            standard_step_results = self._standard_comparer.compare_steps(question)
+
         grade = aggregate_question_grade(
             question_id=question.question_id,
             question_number=question.question_number,
             validation=validation,
             rubric=rubric,
+            standard_final_status=standard_status,
+            standard_final_reason=standard_reason,
+            standard_step_results=standard_step_results,
         )
         if self._annotator is not None:
             grade = self._annotator.annotate(question, grade)
 
         out = question_dir / grading_filename()
         try:
-            # Ensure question.json unchanged
             original = question_path.read_text(encoding="utf-8")
             out.write_text(grade.model_dump_json(indent=2), encoding="utf-8")
             after = question_path.read_text(encoding="utf-8")

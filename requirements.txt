@@ -5,3 +5,5 @@ pytest
 httpx
 sympy
 jinja2
+fastapi>=0.110
+uvicorn>=0.27

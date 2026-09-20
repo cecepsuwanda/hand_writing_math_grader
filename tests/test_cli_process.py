@@ -249,6 +249,7 @@ def test_cli_process_success(tmp_path: Path, monkeypatch, capsys) -> None:
 
     assert exit_code == 0
     out = capsys.readouterr().out
+    assert "Membersihkan" in out
     assert "Vision model:" in out
     assert "vision-test" in out
     assert "Progress:" in out
@@ -256,6 +257,125 @@ def test_cli_process_success(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "Results" in out
     assert "8/10" in out
     assert "Artifacts written to:" in out
+
+
+def test_cli_process_resolves_bare_filename(tmp_path: Path, monkeypatch, capsys) -> None:
+    jawaban = tmp_path / "jawaban"
+    jawaban.mkdir()
+    pdf = jawaban / "smoke_inequality.pdf"
+    pdf.write_bytes(b"%PDF")
+    output_dir = tmp_path / "output"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "ollama:",
+                '  vision_model: "vision-test"',
+                "input:",
+                f"  jawaban_dir: {jawaban.as_posix()}",
+                "report:",
+                f"  output_dir: {output_dir.as_posix()}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    selected: list[Path] = []
+
+    class CapturingProcessController:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def process(self, pdf_path, **kwargs):
+            selected.append(Path(pdf_path))
+            from app.models.process import ProcessResult
+
+            return ProcessResult(
+                student_id="student_001",
+                questions=[],
+                total_score=0.0,
+                maximum_total=0.0,
+                overall_status=ReviewStatus.AUTO_ACCEPT,
+                output_dir=output_dir,
+                report_json_path=None,
+                summary_csv_path=None,
+                report_html_path=None,
+                questions_dir=tmp_path / "questions",
+                pages_dir=tmp_path / "pages",
+                recognition_dir=tmp_path / "recognition",
+            )
+
+    monkeypatch.setattr("app.cli.ProcessController", CapturingProcessController)
+
+    exit_code = main(
+        ["--config", str(config_path), "process", "smoke_inequality.pdf"]
+    )
+
+    assert exit_code == 0
+    assert selected == [pdf]
+
+
+def test_process_controller_skip_reset_leaves_workspace(tmp_path: Path) -> None:
+    pages_dir = tmp_path / "pages"
+    recognition_dir = tmp_path / "recognition"
+    questions_dir = tmp_path / "questions"
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    stale = output_dir / "keep_me.txt"
+    stale.write_text("stale", encoding="utf-8")
+    pdf = tmp_path / "answer.pdf"
+    pdf.write_bytes(b"%PDF")
+
+    render = MagicMock()
+    render.render.return_value = RenderResult(
+        pages=[_page()],
+        output_dir=pages_dir,
+        metadata_path=pages_dir / "pages.json",
+    )
+    recognize = MagicMock()
+    recognize.recognize_pages.return_value = RecognizeResult(
+        pages=[], output_dir=recognition_dir, artifact_paths=[]
+    )
+    extract = MagicMock()
+    extract.extract.return_value = ExtractResult(
+        questions=[], output_dir=questions_dir, artifact_paths=[]
+    )
+    latex = MagicMock()
+    latex.build.return_value = LatexResult(artifacts=[], questions_dir=questions_dir)
+    validate = MagicMock()
+    validate.validate.return_value = ValidateResult(
+        validations=[], questions_dir=questions_dir, artifact_paths=[]
+    )
+    grade = MagicMock()
+    grade.grade.return_value = GradeResult(
+        grades=[_grade()],
+        questions_dir=questions_dir,
+        standard_dir=tmp_path / "standards",
+        artifact_paths=[],
+    )
+    report = MagicMock()
+    report.report.return_value = _report_result(tmp_path)
+
+    ProcessController(
+        render_controller=render,
+        recognize_controller=recognize,
+        extract_controller=extract,
+        latex_controller=latex,
+        validate_controller=validate,
+        grade_controller=grade,
+        report_controller=report,
+    ).process(
+        pdf,
+        pages_dir=pages_dir,
+        recognition_dir=recognition_dir,
+        questions_dir=questions_dir,
+        output_dir=output_dir,
+        dpi=200,
+        workspace_root=output_dir,
+        reset_workspace=False,
+    )
+
+    assert stale.is_file()
 
 
 def test_cli_process_domain_error(tmp_path: Path, monkeypatch, capsys) -> None:

@@ -4,6 +4,7 @@ pdf:
 
 input:
   jawaban_dir: data/input/jawaban
+  # Source TeX for CLI ingest-kunci → standards/.../solutions (enumerate+align+HP slice).
   kunci_jawaban_dir: data/input/kunci_jawaban
 
 ollama:

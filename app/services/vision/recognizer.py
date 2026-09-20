@@ -39,6 +39,10 @@ class OllamaVisionRecognizer(VisionRecognizer):
         self._prompt_version = prompt_version
         self._prompt = self._load_prompt()
 
+    @property
+    def output_dir(self) -> Path:
+        return self._output_dir
+
     def recognize_page(self, image_path: Path, page_number: int) -> PageRecognition:
         if not self._model:
             raise OllamaModelNotConfiguredError()

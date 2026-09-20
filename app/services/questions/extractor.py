@@ -14,10 +14,10 @@ from app.exceptions import (
     InvalidRecognitionJsonError,
     RecognitionNotFoundError,
 )
+from app.functions.question_merge import merge_page_recognitions
 from app.functions.question_names import question_artifact_filename, question_dir_name
 from app.models.question import ExtractResult, Question
 from app.models.recognition import PageRecognition
-from app.services.questions.segmenter import QuestionSegmenter
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,6 @@ _PAGE_RECOGNITION_RE = re.compile(r"page_(\d+)_recognition\.json$", re.IGNORECAS
 
 
 class QuestionExtractor:
-    def __init__(self, segmenter: QuestionSegmenter | None = None) -> None:
-        self._segmenter = segmenter or QuestionSegmenter()
-
     def extract_from_dir(
         self,
         recognition_dir: Path,
@@ -41,7 +38,7 @@ class QuestionExtractor:
         pages: list[PageRecognition],
         output_dir: Path,
     ) -> ExtractResult:
-        questions = self._segmenter.segment(pages)
+        questions = merge_page_recognitions(pages)
         if not questions:
             raise EmptyExtractionError()
 

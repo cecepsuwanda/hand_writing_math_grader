@@ -18,6 +18,7 @@ class PdfConfig(BaseModel):
 
 class InputConfig(BaseModel):
     jawaban_dir: Path = Path("data/input/jawaban")
+    # Source for CLI ingest-kunci → standards/solutions (enumerate+align+HP slice).
     kunci_jawaban_dir: Path = Path("data/input/kunci_jawaban")
 
 

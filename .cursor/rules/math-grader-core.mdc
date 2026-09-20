@@ -1,16 +1,18 @@
 ---
-description: Prinsip inti Math Grader — CLI-first, MVP scope, config, artefak, keamanan
+description: Prinsip inti Math Grader — CLI-first, MVC/SOLID/clean/OOP+FP, MVP scope, config, artefak, keamanan
 alwaysApply: true
 ---
 
 # Math Grader — Core
 
 - Aplikasi utama: **CLI Python** (`python -m app.cli ...`). Jangan alihkan MVP ke web UI/API.
+- Arsitektur wajib: **MVC** + **SOLID** + **clean code**; **OOP** untuk service/client ber-state, **FP** (pure functions di `app/functions/`) untuk transformasi deterministik. Detail: `docs/architecture.md`, `docs/conventions.md`.
 - MVP matematika: **pertidaksamaan (topik 1.5)** — 1–5 halaman. Roadmap domain: `docs/topik.md` / `docs/math-topics.md`. Jangan implement bab lain sebelum pipeline MVP hijau.
 - Model Ollama (vision/reasoning) dari `app/config/config.yaml` / env — **jangan hard-code** nama model.
 - Type hints + Pydantic untuk kontrak data antar layer.
 - Pertahankan artefak intermediate **selama satu run** (gambar, recognition, LaTeX, validation, grading). Jangan hapus mid-pipeline jika tahap berikutnya gagal.
-- Di **awal** perintah `process`, kosongkan `data/output/` kecuali `standards/` agar run baru tidak tercampur artefak lama.
+- Di **awal** perintah `process`, kosongkan `data/output/` kecuali `standards/` (dan bersihkan artifact dirs di luar root jika di-override) agar run baru tidak tercampur artefak lama.
+- Validasi saat ini = konsistensi langkah (SymPy ± LLM). Compare ke kunci/standard solution belum di-wire.
 - Jangan commit secrets/credentials. Prefer Ollama lokal untuk data mahasiswa.
 
 ```text

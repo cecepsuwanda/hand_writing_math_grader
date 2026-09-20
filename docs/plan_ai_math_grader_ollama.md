@@ -271,7 +271,9 @@ math-grader/
 ├── app/
 │   ├── __init__.py
 │   ├── cli.py                      # entry point CLI
-│   ├── config.py
+│   ├── config/                     # AppConfig + config.yaml
+│   │   ├── __init__.py
+│   │   └── config.yaml
 │   │
 │   ├── controllers/                # Controller layer
 │   │   ├── __init__.py
@@ -342,19 +344,21 @@ math-grader/
 │
 ├── data/
 │   ├── input/
-│   ├── pages/
-│   ├── questions/
+│   │   ├── jawaban/              # PDF jawaban mahasiswa
+│   │   └── kunci_jawaban/        # kunci / sumber jawaban standar
 │   └── output/
-│
-├── standards/
-│   └── exam_001/
+│       ├── pages/
+│       ├── recognition/
 │       ├── questions/
-│       └── solutions/
+│       ├── standards/
+│       │   └── exam_001/
+│       │       ├── rubrics/
+│       │       └── solutions/
+│       └── report.*          # report.json / summary.csv / report.html
 │
 ├── tests/
 ├── scripts/
 ├── requirements.txt
-├── config.yaml
 └── README.md
 ```
 
@@ -486,7 +490,7 @@ Requirements:
 Contoh:
 
 ```text
-data/pages/
+data/output/pages/
 ├── page_001.png
 ├── page_002.png
 └── page_003.png
@@ -592,7 +596,7 @@ x &= 5
 Simpan:
 
 ```text
-data/questions/question_001/student.tex
+data/output/questions/question_001/student.tex
 ```
 
 Jangan menghapus `raw_text`.
@@ -608,7 +612,7 @@ Jawaban standar harus dimasukkan oleh dosen atau dibuat sebelumnya.
 Struktur:
 
 ```text
-standards/
+data/output/standards/
 └── exam_001/
     ├── questions/
     │   ├── question_001.tex
@@ -915,9 +919,22 @@ Karena aplikasi utama adalah CLI, “UI” tahap awal adalah presentasi terminal
 Minimal:
 
 ```text
-$ python -m app.cli process answer.pdf --standard standards/exam_001
+$ python -m app.cli process
 
-[ Select models from config.yaml ]
+PDF tersedia di data/input/jawaban:
+  1. smoke_inequality.pdf
+  2. tugas 1 matsi_Fathi Rizky.pdf
+
+Pilih nomor (atau nama file), lalu Enter.
+Pilihan: 1
+Memproses: data/input/jawaban/smoke_inequality.pdf
+
+Membersihkan data/output (kecuali standards/)...
+  - removed pages
+  - removed recognition
+  - removed questions
+
+[ Select models from app/config/config.yaml ]
 Vision model:    MODEL_VISION
 Reasoning model: MODEL_REASONING
 
@@ -967,22 +984,28 @@ Engine grading **tidak boleh** bergantung pada FastAPI. Service layer yang sama 
 CLI adalah **satu-satunya antarmuka wajib** untuk MVP. Implementasikan sejak awal:
 
 ```bash
-python -m app.cli render answer.pdf
-python -m app.cli recognize answer.pdf
-python -m app.cli extract answer.pdf
-python -m app.cli validate data/questions
-python -m app.cli grade data/questions
-python -m app.cli process answer.pdf
+python -m app.cli render data/input/jawaban/smoke_inequality.pdf
+python -m app.cli recognize smoke_inequality.pdf
+python -m app.cli extract smoke_inequality.pdf
+python -m app.cli validate data/output/questions
+python -m app.cli grade data/output/questions
+python -m app.cli process
+python -m app.cli process smoke_inequality.pdf
 ```
 
 Perintah utama:
 
 ```bash
-python -m app.cli process answer.pdf \
-    --standard standards/exam_001 \
+python -m app.cli process \
+    --standard data/output/standards/exam_001 \
     --output data/output
 ```
 
+PDF jawaban diletakkan di `data/input/jawaban/`; kunci di `data/input/kunci_jawaban/`.
+
+- `python -m app.cli process` menampilkan menu PDF di folder jawaban (pilih nomor atau nama file).
+- Nama file singkat (mis. `smoke_inequality.pdf`) di-resolve otomatis ke folder jawaban.
+- Di awal `process`, `data/output/` dikosongkan kecuali `standards/` (rubric/solusi tetap).
 Pemetaan MVC untuk CLI:
 
 ```text
@@ -1012,9 +1035,9 @@ Implement:
 Acceptance criterion:
 
 ```text
-answer.pdf
-→ page_001.png
-→ page_002.png
+data/input/jawaban/*.pdf
+→ data/output/pages/page_001.png
+→ data/output/pages/page_002.png
 → ...
 ```
 

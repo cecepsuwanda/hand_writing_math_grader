@@ -14,9 +14,21 @@ Aplikasi **CLI Python** untuk memeriksa jawaban soal matematika tulisan tangan d
 | [docs/math-topics.md](docs/math-topics.md) | Status domain per bab |
 | [docs/conventions.md](docs/conventions.md) | SOLID, clean coding, OOP+FP |
 
+## Cara pakai singkat
+
+1. Taruh PDF jawaban di `data/input/jawaban/`, kunci di `data/input/kunci_jawaban/`.
+2. Jalankan pipeline (pilih PDF interaktif, atau sebutkan nama file):
+
+```bash
+python -m app.cli process
+python -m app.cli process smoke_inequality.pdf
+```
+
+Di awal `process`, isi `data/output/` dikosongkan (kecuali `standards/`).
+
 ## Status
 
-Spesifikasi dan panduan agent sudah ada. MVP domain: **pertidaksamaan (topik 1.5)**. Implementasi kode mengikuti `docs/development-phases.md`.
+MVP domain: **pertidaksamaan (topik 1.5)**. Implementasi mengikuti `docs/development-phases.md`.
 
 ## Agent guidance
 

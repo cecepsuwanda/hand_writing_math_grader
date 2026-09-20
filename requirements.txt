@@ -1,0 +1,7 @@
+pymupdf>=1.24.0
+pydantic>=2
+pyyaml
+pytest
+httpx
+sympy
+jinja2

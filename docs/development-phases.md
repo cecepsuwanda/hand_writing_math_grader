@@ -14,7 +14,7 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 ## Phase 1 — PDF
 
 - Load PDF, render PNG per halaman, metadata ukuran, nama file deterministik.
-- Acceptance: `answer.pdf` → `page_001.png`, `page_002.png`, …
+- Acceptance: PDF di `data/input/jawaban/` → `data/output/pages/page_001.png`, …
 
 ## Phase 2 — Ollama Vision
 
@@ -53,6 +53,8 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 ## Phase 9 — CLI polish
 
 - Subcommand lengkap, progress/summary terminal, exit code jelas.
+- `process` mendukung pilihan PDF interaktif dari `data/input/jawaban/`.
+- Awal `process` mengosongkan `data/output/` kecuali `standards/`.
 - Pastikan View/Controller/Service terpisah (MVC).
 - Bukan web UI.
 

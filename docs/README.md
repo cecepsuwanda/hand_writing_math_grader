@@ -40,11 +40,24 @@ app/
 
 ## Cara mulai (setelah kode ada)
 
+Letakkan PDF jawaban di `data/input/jawaban/` dan kunci di `data/input/kunci_jawaban/`.
+
+Pilih PDF secara interaktif (menu nomor/nama file):
+
 ```bash
-python -m app.cli process answer.pdf \
-  --standard standards/exam_001 \
+python -m app.cli process
+```
+
+Atau sebutkan file langsung:
+
+```bash
+python -m app.cli process smoke_inequality.pdf
+python -m app.cli process data/input/jawaban/smoke_inequality.pdf \
+  --standard data/output/standards/exam_001 \
   --output data/output
 ```
+
+Setiap `process` mengosongkan `data/output/` dulu (kecuali `standards/`), lalu menulis artefak baru.
 
 ## Panduan agent
 

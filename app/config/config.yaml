@@ -1,0 +1,27 @@
+pdf:
+  dpi: 200
+  output_dir: data/output/pages
+
+input:
+  jawaban_dir: data/input/jawaban
+  kunci_jawaban_dir: data/input/kunci_jawaban
+
+ollama:
+  base_url: "http://localhost:11434"
+  # Cloud via local Ollama proxy (sign in required). Images leave the machine.
+  vision_model: "gemma4:31b-cloud"
+  reasoning_model: "gpt-oss:120b-cloud"
+  timeout_seconds: 180
+  max_retries: 2
+
+recognition:
+  output_dir: data/output/recognition
+
+questions:
+  output_dir: data/output/questions
+
+grading:
+  standard_dir: data/output/standards/exam_001
+
+report:
+  output_dir: data/output

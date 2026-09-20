@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Grading Report — {{ report.metadata.student_id }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #222; }
+    h1 { font-size: 1.4rem; }
+    table { border-collapse: collapse; width: 100%; max-width: 48rem; margin: 1rem 0; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }
+    th { background: #f4f4f4; }
+    .meta { font-size: 0.85rem; color: #555; margin-top: 2rem; }
+    .status-review { color: #a60; font-weight: 600; }
+    .status-auto { color: #060; }
+  </style>
+</head>
+<body>
+  <h1>Grading Report</h1>
+  <p>
+    Student: <strong>{{ report.metadata.student_id }}</strong> —
+    Total: <strong>{{ report.total_score }} / {{ report.maximum_total }}</strong> —
+    Status:
+    <span class="{% if report.overall_status.value == 'REVIEW_REQUIRED' %}status-review{% else %}status-auto{% endif %}">
+      {{ report.overall_status.value }}
+    </span>
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Question</th>
+        <th>Score</th>
+        <th>Max</th>
+        <th>Steps</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for q in report.questions %}
+      <tr>
+        <td>{{ q.question_id }} (q{{ q.question_number }})</td>
+        <td>{{ q.score }}</td>
+        <td>{{ q.maximum_score }}</td>
+        <td>{{ q.step_count }}</td>
+        <td>{{ q.review_status.value }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="meta">
+    <p>Generated: {{ report.metadata.generated_at }}</p>
+    <p>Questions dir: {{ report.metadata.questions_dir }}</p>
+    <p>Standard: {{ report.metadata.standard_dir }}</p>
+    <p>Vision model: {{ report.metadata.vision_model or "(unset)" }}</p>
+    <p>Reasoning model: {{ report.metadata.reasoning_model or "(unset)" }}</p>
+    <p>
+      Prompt versions:
+      recognition={{ report.metadata.prompt_versions.recognition }},
+      validation={{ report.metadata.prompt_versions.validation }},
+      grading={{ report.metadata.prompt_versions.grading }}
+    </p>
+  </div>
+</body>
+</html>

@@ -19,7 +19,7 @@ Katalog resmi: [`topik.md`](topik.md). Status dan urutan implementasi: [math-top
 ## Clean coding
 
 - Nama bermakna; fungsi kecil; tidak ada side effect tersembunyi.
-- Konfigurasi terpusat (`config.yaml` + env); hindari magic string tersebar.
+- Konfigurasi terpusat (`app/config/config.yaml` + env); hindari magic string tersebar.
 - Type hints; kontrak data antar layer dengan Pydantic.
 - Error handling eksplisit; jangan menelan exception.
 - Komentar hanya untuk “mengapa”.
@@ -60,6 +60,9 @@ Output LLM wajib divalidasi terhadap schema. Status `uncertain` dan `REVIEW_REQU
 ## CLI dan antarmuka
 
 - Entry point wajib: `python -m app.cli ...`
+- PDF jawaban: `data/input/jawaban/`; kunci: `data/input/kunci_jawaban/`.
+- `process` tanpa argumen PDF → menu pilihan interaktif.
+- Awal `process` mengosongkan `data/output/` kecuali `standards/`.
 - Model vision/reasoning dari config — **jangan hard-code** nama model.
 - FastAPI/Streamlit hanya setelah engine CLI stabil; service layer harus reusable.
 

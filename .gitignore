@@ -217,8 +217,18 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Project runtime data (input/pages/questions/output artifacts)
-data/
+# Project runtime data (input / output artifacts)
+# Use data/* (not data/) so selected trees can be re-included.
+data/*
+!data/input/
+data/input/*
+!data/input/kunci_jawaban/
+!data/input/kunci_jawaban/**
+!data/output/
+data/output/*
+!data/output/standards/
+!data/output/standards/**
+
 
 # LaTeX / TeX build artifacts
 *.aux

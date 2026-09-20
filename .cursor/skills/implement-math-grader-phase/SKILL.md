@@ -38,7 +38,7 @@ Phase progress:
 
 Buat struktur dari `docs/architecture.md`:
 
-`controllers/`, `views/`, `models/`, `services/`, `functions/`, `interfaces/`, `prompts/`, plus `cli.py` dan `config.py`.
+`controllers/`, `views/`, `models/`, `services/`, `functions/`, `interfaces/`, `prompts/`, plus `cli.py` and `config/` (package + `config.yaml`).
 
 ### Aturan implementasi
 
@@ -49,6 +49,7 @@ Buat struktur dari `docs/architecture.md`:
 - Model vision/reasoning dari config — jangan hard-code.
 - Recognition: jangan koreksi/mengarang jawaban mahasiswa.
 - Validasi: SymPy dulu, LLM fallback; schema-validate JSON LLM.
+- `process`: dukung pilih PDF dari `data/input/jawaban/`; kosongkan `data/output/` di awal (kecuali `standards/`).
 - Jangan tambah FastAPI/Streamlit di phase ini kecuali user eksplisit minta **setelah** MVP CLI.
 
 ### Setelah selesai

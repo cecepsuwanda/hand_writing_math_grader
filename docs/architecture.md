@@ -37,7 +37,7 @@ Infrastructure **tidak** bergantung pada Controller atau View.
 ```text
 app/
 ├── cli.py                 # argparse bootstrap
-├── config.py
+├── config/                # AppConfig + config.yaml
 ├── controllers/           # render, recognize, validate, grade, process
 ├── views/                 # progress, result, error
 ├── models/                # Page, Recognition, Question, Validation, Grade
@@ -57,12 +57,16 @@ app/
 
 Setiap keputusan skor harus menyimpan bukti: gambar, recognition, LaTeX mahasiswa, jawaban standar, hasil SymPy/LLM, alasan, skor, confidence, referensi halaman.
 
-Jangan hapus artefak intermediate jika satu tahap gagal.
+Jangan hapus artefak intermediate **di tengah run** jika satu tahap gagal.
+
+Awal perintah `process` mengosongkan `data/output/` (kecuali `standards/`) agar run baru bersih.
 
 ## Kontrak CLI
 
 ```text
-python -m app.cli render|recognize|extract|validate|grade|process ...
+python -m app.cli process                 # pilih PDF dari data/input/jawaban
+python -m app.cli process file.pdf
+python -m app.cli render|recognize|extract|validate|grade|report ...
 ```
 
 Subcommand tipis: parse → controller → view → exit code (`0` sukses).

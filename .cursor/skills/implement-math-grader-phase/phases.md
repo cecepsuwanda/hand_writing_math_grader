@@ -11,11 +11,11 @@ Urutan wajib. Satu phase per sesi. Setiap implementasi harus patuh **MVC**, **SO
 
 ## Phase 2 — Ollama Vision
 
-- Modul: `services/vision/ollama_client.py`, `recognizer.py`
+- Modul: `services/vision/ollama_client.py`, `recognizer.py`, `ink_region_proposer.py`, `factory.py`
 - Interface: `VisionRecognizer`
-- Prompt: `prompts/recognition.txt` (versioned)
-- Acceptance: image → recognition JSON (Pydantic)
-- Fitur: retry, timeout, logging
+- Prompt: `prompts/crop_math.txt` (ink bbox → crop)
+- Acceptance: image → recognition JSON (Pydantic) + crops (`region_XX_solution.png`, `ink/` audit)
+- Fitur: retry, timeout, logging; `recognition.ink.*` dari config
 
 ## Phase 3 — Question Extraction
 
@@ -31,7 +31,7 @@ Urutan wajib. Satu phase per sesi. Setiap implementasi harus patuh **MVC**, **SO
 
 - Modul: `services/math/parser.py`, `sympy_validator.py`, `equivalence.py`
 - Acceptance: transformasi dikenal → status validasi benar
-- Scope saat ini: konsistensi langkah mahasiswa (bukan compare ke kunci)
+- Scope validator: konsistensi langkah mahasiswa; compare ke kunci di Phase 7 grading
 
 ## Phase 6 — LLM Validator
 

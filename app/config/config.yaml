@@ -17,6 +17,14 @@ ollama:
 
 recognition:
   output_dir: data/output/recognition
+  crops_dir: data/output/crops
+  ink:
+    threshold: 200
+    merge_gap_ratio: 0.018
+    min_block_height_ratio: 0.03
+    header_fraction: 0.08
+    column_valley_ratio: 0.15
+    margin_ratio: 0.02
 
 questions:
   output_dir: data/output/questions

@@ -62,10 +62,19 @@ class HybridStepValidator(StepValidator):
             and final_status.status == ValidationStatus.UNCERTAIN
         ):
             last_step: StudentStep | None = ordered[-1] if ordered else None
+            # Prefer symbolic.repr (same source SymPy used) over raw_text.
+            final_text = ""
+            if (
+                question.student_final_symbolic is not None
+                and (question.student_final_symbolic.repr or "").strip()
+            ):
+                final_text = question.student_final_symbolic.repr.strip()
+            else:
+                final_text = (question.student_final_answer or "").strip()
             final_status = self._llm.judge_final_answer(
                 step_number=final_status.step_number,
                 last_step=last_step,
-                final_answer=question.student_final_answer,
+                final_answer=final_text,
             )
 
         return QuestionValidation(

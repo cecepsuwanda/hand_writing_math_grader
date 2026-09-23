@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.exceptions import OllamaTimeoutError, OllamaUnavailableError
-from app.functions.json_extract import extract_json_object
+from app.functions.json_extract import extract_json_object, salvage_judgement_object
 from app.models.question import StudentStep
 from app.models.validation import (
     LlmJudgement,
@@ -61,7 +61,13 @@ class LlmStepJudge:
         )
         try:
             raw = self._client.generate(prompt, self._model)
-            payload = extract_json_object(raw)
+            try:
+                payload = extract_json_object(raw)
+            except ValueError:
+                salvaged = salvage_judgement_object(raw)
+                if salvaged is None:
+                    raise
+                payload = salvaged
             judgement = LlmJudgement.model_validate(payload)
         except (OllamaUnavailableError, OllamaTimeoutError) as exc:
             logger.warning("LLM judge unavailable: %s", exc)
@@ -125,6 +131,13 @@ class LlmStepJudge:
     def _format_step(self, step: StudentStep | None) -> str:
         if step is None:
             return "(none)"
-        latex = (step.latex or "").strip()
         raw = (step.raw_text or "").strip()
-        return f"raw_text: {raw or '(empty)'}\nlatex: {latex or '(empty)'}"
+        symbolic = ""
+        if step.symbolic is not None:
+            symbolic = f"{step.symbolic.kind}:{step.symbolic.repr}"
+        latex = (step.latex or "").strip()
+        return (
+            f"raw_text: {raw or '(empty)'}\n"
+            f"symbolic: {symbolic or '(empty)'}\n"
+            f"latex: {latex or '(empty)'}"
+        )

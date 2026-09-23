@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
+from app.functions.question_names import latex_source_filename
 from app.models.question import Question, StudentStep
 
 _LATEX_SPECIALS = {
@@ -60,7 +62,9 @@ def escape_latex_text(text: str) -> str:
 
 
 def normalize_step_latex(step: StudentStep) -> str:
-    """Prefer vision latex; fall back to escaped raw_text."""
+    """Prefer symbolic.repr for display; else deprecated latex; else escaped raw_text."""
+    if step.symbolic is not None and (step.symbolic.repr or "").strip():
+        return " ".join(step.symbolic.repr.split())
     latex = (step.latex or "").strip()
     if latex:
         return " ".join(latex.split())
@@ -96,12 +100,25 @@ def strip_final_answer_prefix(text: str) -> str:
     return stripped if stripped else cleaned
 
 
-def build_student_latex(question: Question) -> str:
-    """Build derived student.tex content without mutating the Question."""
-    lines: list[str] = [
+def build_student_latex(
+    question: Question,
+    *,
+    question_dir: Path | None = None,
+) -> str:
+    """Build derived student.tex; prefer recognition latex_source sidecar when present."""
+    header = [
         f"% {question.question_id}",
-        "% Do not edit raw_text in question.json; this file is derived.",
+        "% Derived audit file; question.json holds symbolic/raw_text only (no LaTeX).",
     ]
+
+    if question_dir is not None:
+        sidecar = Path(question_dir) / latex_source_filename()
+        if sidecar.is_file():
+            body = sidecar.read_text(encoding="utf-8").strip()
+            if body:
+                return "\n".join(header) + "\n\n" + body + "\n"
+
+    lines: list[str] = list(header)
 
     step_exprs = [
         normalize_step_latex(step)
@@ -119,17 +136,23 @@ def build_student_latex(question: Question) -> str:
     else:
         lines.append("% (no steps)")
 
-    final = strip_final_answer_prefix(question.student_final_answer or "")
+    for fig in question.figure_refs:
+        caption = escape_latex_text(fig.caption or "")
+        lines.append(f"% figure: {caption}")
+        lines.append(rf"\includegraphics{{{fig.path}}}")
+
+    final = ""
+    if question.student_final_symbolic is not None:
+        final = (question.student_final_symbolic.repr or "").strip()
+    if not final:
+        final = strip_final_answer_prefix(question.student_final_answer or "")
     lines.append("")
     lines.append("% final answer")
     if final:
-        # Prefer as math-ish line; escape only if it looks like prose without ops.
         if _ALIGN_OP_RE.search(final) or re.search(r"[0-9a-zA-Z]", final):
-            # If original latex-like (has backslash commands or ops), keep as-is after strip.
             if "\\" in final or _ALIGN_OP_RE.search(final):
                 lines.append(final)
             else:
-                # May still be simple math like "x < 4" — keep unescaped for math mode use.
                 if re.fullmatch(r"[0-9a-zA-Z\s+\-*/().<>=≤≥≠]+", final):
                     lines.append(final)
                 else:

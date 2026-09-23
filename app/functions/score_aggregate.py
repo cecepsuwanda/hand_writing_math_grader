@@ -13,8 +13,18 @@ from app.models.grading import (
 from app.models.validation import QuestionValidation, StepValidation, ValidationStatus
 
 
-def allocate_step_max_scores(rubric: Rubric, step_count: int) -> tuple[list[float], float]:
-    """Split non-final criteria across steps; return (per_step_max, final_max)."""
+def allocate_step_max_scores(
+    rubric: Rubric,
+    step_count: int,
+    *,
+    expected_step_count: int | None = None,
+) -> tuple[list[float], float]:
+    """Split non-final criteria across steps; return (per_step_max, final_max).
+
+    When ``expected_step_count`` is larger than observed steps, the pool is
+    divided by the expected count so incomplete solutions cannot earn the
+    entire step pool from a single valid fragment.
+    """
     final_points = 0.0
     pool = 0.0
     for criterion in rubric.criteria:
@@ -26,11 +36,13 @@ def allocate_step_max_scores(rubric: Rubric, step_count: int) -> tuple[list[floa
     if step_count <= 0:
         return [], final_points
 
-    per = pool / step_count
+    slots = max(step_count, expected_step_count or 0)
+    per = pool / slots
     scores = [round(per, 4) for _ in range(step_count)]
-    # Fix rounding so sum matches pool
-    diff = round(pool - sum(scores), 4)
-    if scores:
+    # Fix rounding so awarded step maxes stay consistent; leftover stays unearned
+    # when expected_step_count > step_count.
+    if slots == step_count and scores:
+        diff = round(pool - sum(scores), 4)
         scores[-1] = round(scores[-1] + diff, 4)
     return scores, final_points
 
@@ -93,9 +105,14 @@ def aggregate_question_grade(
     standard_final_status: ValidationStatus | None = None,
     standard_final_reason: str = "",
     standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None,
+    expected_step_count: int | None = None,
 ) -> QuestionGrade:
     steps = sorted(validation.steps, key=lambda s: s.step_number)
-    per_step_max, final_max = allocate_step_max_scores(rubric, len(steps))
+    per_step_max, final_max = allocate_step_max_scores(
+        rubric,
+        len(steps),
+        expected_step_count=expected_step_count,
+    )
 
     step_grades: list[StepGrade] = []
     review_required = False
@@ -108,10 +125,15 @@ def aggregate_question_grade(
             review_required = True
 
         std_entry = None
-        if standard_step_results is not None:
+        if standard_step_results:
             std_entry = standard_step_results.get(step_val.step_number)
-
-        if std_entry is not None:
+            if std_entry is None:
+                # A partial align map means this step has no standard row.
+                # Do not award consistency-only credit for the gap.
+                std_entry = (
+                    ValidationStatus.INVALID,
+                    "no matching standard step",
+                )
             std_status, std_reason = std_entry
             audit_steps[str(step_val.step_number)] = std_status.value
             std_fraction = score_fraction(std_status)
@@ -155,21 +177,27 @@ def aggregate_question_grade(
             if consistency.status == ValidationStatus.UNCERTAIN:
                 review_required = True
         else:
-            consistency_fraction = 1.0
+            # No student-side consistency check: do not invent a full score.
+            # Score from standard alone when present.
+            consistency_fraction = None
 
         if standard_final_status is not None:
             standard_fraction = score_fraction(standard_final_status)
             if standard_final_status == ValidationStatus.UNCERTAIN:
                 review_required = True
-            fraction = min(consistency_fraction, standard_fraction)
-            label_status = (
-                standard_final_status
-                if standard_fraction <= consistency_fraction
-                else consistency.status  # type: ignore[union-attr]
-            )
+            if consistency_fraction is None:
+                fraction = standard_fraction
+                label_status = standard_final_status
+            else:
+                fraction = min(consistency_fraction, standard_fraction)
+                label_status = (
+                    standard_final_status
+                    if standard_fraction <= consistency_fraction
+                    else consistency.status  # type: ignore[union-attr]
+                )
         else:
+            assert consistency is not None and consistency_fraction is not None
             fraction = consistency_fraction
-            assert consistency is not None
             label_status = consistency.status
 
         earned = round(final_max * fraction, 4)
@@ -183,7 +211,10 @@ def aggregate_question_grade(
             reported_status = consistency.status
         else:
             error_type = ErrorType.NONE
-            base_feedback = "no consistency final-answer validation"
+            base_feedback = (
+                "no consistency final-answer validation; "
+                "scored from standard compare only"
+            )
             step_number = 0
             reported_status = standard_final_status or ValidationStatus.INVALID
 

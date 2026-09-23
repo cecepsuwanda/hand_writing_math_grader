@@ -30,8 +30,19 @@ class OllamaConfig(BaseModel):
     max_retries: int = 2
 
 
+class InkLayoutConfig(BaseModel):
+    threshold: int = 200
+    merge_gap_ratio: float = 0.018
+    min_block_height_ratio: float = 0.03
+    header_fraction: float = 0.08
+    column_valley_ratio: float = 0.15
+    margin_ratio: float = 0.02
+
+
 class RecognitionConfig(BaseModel):
     output_dir: Path = Path("data/output/recognition")
+    crops_dir: Path = Path("data/output/crops")
+    ink: InkLayoutConfig = Field(default_factory=InkLayoutConfig)
 
 
 class QuestionsConfig(BaseModel):

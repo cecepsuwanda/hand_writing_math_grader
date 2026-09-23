@@ -11,12 +11,17 @@ Rules:
 - Do not invent missing steps or assumptions that are not stated.
 - SymPy already failed or could not decide; focus on algebraic / inequality reasoning that may need judgment.
 
-Return ONLY a JSON object:
+Return ONLY a JSON object with exactly these keys (no trailing commas):
 {
   "status": "valid" | "invalid" | "uncertain",
   "reason": "<short explanation>",
   "confidence": <float between 0 and 1>
 }
+
+JSON rules for "reason":
+- Must be one valid JSON string.
+- Do NOT use double quotes (") inside reason; use single quotes (') for math snippets.
+- Escape LaTeX backslashes (e.g. \\frac, \\infty, \\leq).
 
 Context:
 Previous step:

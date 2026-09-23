@@ -9,11 +9,14 @@ from sympy import Expr, Symbol
 from sympy.logic.boolalg import Boolean
 
 from app.exceptions import MathParseError
+from app.functions.kunci_ingest import load_exam_schema
 from app.functions.standard_extract import (
-    extract_final_answer_from_tex,
-    extract_solution_steps_from_tex,
+    schema_question,
+    standard_final_text,
     standard_solution_path,
+    standard_step_texts,
 )
+from app.models.exam_schema import ExamSchema
 from app.models.question import Question, StudentStep
 from app.models.validation import ValidationStatus
 from app.services.math.equivalence import (
@@ -23,6 +26,8 @@ from app.services.math.equivalence import (
     limits_equivalent,
     matrices_equivalent,
     relations_equivalent,
+    set_relation_equivalent,
+    try_set_form_equivalence,
 )
 from app.services.math.parser import (
     DerivativeClaim,
@@ -38,38 +43,64 @@ logger = logging.getLogger(__name__)
 
 
 class StandardFinalComparer:
-    """Load ``solutions/question_NNN.tex`` and compare finals mathematically."""
+    """Compare student answers to exam_schema symbolic (fallback solutions/*.tex)."""
 
     def __init__(
         self,
         standard_dir: Path,
+        exam_schema: ExamSchema | None = None,
         symbol: Symbol | None = None,
     ) -> None:
         self._standard_dir = Path(standard_dir)
+        self._schema = (
+            exam_schema
+            if exam_schema is not None
+            else load_exam_schema(self._standard_dir)
+        )
         self._symbol = symbol or default_symbol()
+
+    def expected_step_count(self, question_number: int) -> int | None:
+        """Return standard step count for scoring incomplete solutions, or None."""
+        schema_q = schema_question(self._schema, question_number)
+        path = standard_solution_path(self._standard_dir, question_number)
+        tex: str | None = None
+        if path.is_file():
+            try:
+                tex = path.read_text(encoding="utf-8")
+            except OSError:
+                tex = None
+        texts = standard_step_texts(schema_q, tex)
+        return len(texts) if texts else None
 
     def compare(
         self,
         question: Question,
     ) -> tuple[ValidationStatus, str] | None:
-        """Return (status, reason), or None if no standard solution file."""
+        """Return (status, reason), or None if no schema question and no .tex."""
+        schema_q = schema_question(self._schema, question.question_number)
         path = standard_solution_path(
             self._standard_dir, question.question_number
         )
-        if not path.is_file():
+        tex: str | None = None
+        if path.is_file():
+            try:
+                tex = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                logger.warning("Could not read standard solution %s: %s", path, exc)
+                if schema_q is None:
+                    return (
+                        ValidationStatus.UNCERTAIN,
+                        f"could not read standard solution: {path}",
+                    )
+
+        if schema_q is None and tex is None:
             return None
 
-        try:
-            tex = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            logger.warning("Could not read standard solution %s: %s", path, exc)
-            return ValidationStatus.UNCERTAIN, f"could not read standard solution: {path}"
-
-        standard_text = extract_final_answer_from_tex(tex)
+        standard_text = standard_final_text(schema_q, tex)
         if not standard_text:
             return (
                 ValidationStatus.UNCERTAIN,
-                f"no % final answer marker in {path.name}",
+                "no standard final answer in schema or TeX",
             )
 
         student_text = self._student_final_text(question)
@@ -108,29 +139,35 @@ class StandardFinalComparer:
     ) -> dict[int, tuple[ValidationStatus, str]] | None:
         """Sequential index align of student steps to standard solution rows.
 
-        Returns None if the solution file is missing. Student steps beyond the
-        standard step count are omitted (consistency-only scoring).
+        Returns None if neither schema question nor solution file exists.
+        Student steps beyond the standard step count are omitted.
         """
+        schema_q = schema_question(self._schema, question.question_number)
         path = standard_solution_path(
             self._standard_dir, question.question_number
         )
-        if not path.is_file():
+        tex: str | None = None
+        if path.is_file():
+            try:
+                tex = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                logger.warning("Could not read standard solution %s: %s", path, exc)
+                if schema_q is None:
+                    steps = sorted(
+                        question.student_steps, key=lambda s: s.step_number
+                    )
+                    return {
+                        step.step_number: (
+                            ValidationStatus.UNCERTAIN,
+                            f"could not read standard solution: {path}",
+                        )
+                        for step in steps
+                    }
+
+        if schema_q is None and tex is None:
             return None
 
-        try:
-            tex = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            logger.warning("Could not read standard solution %s: %s", path, exc)
-            steps = sorted(question.student_steps, key=lambda s: s.step_number)
-            return {
-                step.step_number: (
-                    ValidationStatus.UNCERTAIN,
-                    f"could not read standard solution: {path}",
-                )
-                for step in steps
-            }
-
-        standard_texts = extract_solution_steps_from_tex(tex)
+        standard_texts = standard_step_texts(schema_q, tex)
         if not standard_texts:
             return {}
 
@@ -138,7 +175,11 @@ class StandardFinalComparer:
         results: dict[int, tuple[ValidationStatus, str]] = {}
         for index, step in enumerate(student_steps):
             if index >= len(standard_texts):
-                break
+                results[step.step_number] = (
+                    ValidationStatus.INVALID,
+                    "no matching standard step",
+                )
+                continue
             results[step.step_number] = self._compare_step_pair(
                 step, standard_texts[index]
             )
@@ -149,7 +190,16 @@ class StandardFinalComparer:
         step: StudentStep,
         standard_text: str,
     ) -> tuple[ValidationStatus, str]:
-        student_text = (step.latex or "").strip() or (step.raw_text or "").strip()
+        if step.symbolic is not None and step.symbolic.kind == "figure":
+            return (
+                ValidationStatus.UNCERTAIN,
+                "figure step skipped for standard align",
+            )
+        student_text = ""
+        if step.symbolic is not None and (step.symbolic.repr or "").strip():
+            student_text = step.symbolic.repr.strip()
+        if not student_text:
+            student_text = (step.latex or "").strip() or (step.raw_text or "").strip()
         if not student_text:
             return ValidationStatus.INVALID, "student step is empty"
 
@@ -180,12 +230,19 @@ class StandardFinalComparer:
         )
 
     def _student_final_text(self, question: Question) -> str:
+        if (
+            question.student_final_symbolic is not None
+            and (question.student_final_symbolic.repr or "").strip()
+        ):
+            return question.student_final_symbolic.repr.strip()
         final = (question.student_final_answer or "").strip()
         if final:
             return final
         if not question.student_steps:
             return ""
         last = max(question.student_steps, key=lambda s: s.step_number)
+        if last.symbolic is not None and (last.symbolic.repr or "").strip():
+            return last.symbolic.repr.strip()
         latex = (last.latex or "").strip()
         if latex:
             return latex
@@ -203,10 +260,32 @@ class StandardFinalComparer:
                 student.value, standard.value, self._symbol
             )
 
+        applicable, set_result = try_set_form_equivalence(
+            student.kind,
+            student.value,
+            standard.kind,
+            standard.value,
+            self._symbol,
+        )
+        if applicable:
+            return set_result
+
         if student.kind == "expression" and standard.kind == "expression":
             assert isinstance(student.value, Expr)
             assert isinstance(standard.value, Expr)
             return expressions_equivalent(student.value, standard.value)
+
+        # Interval / set expression ↔ relation (HP forms).
+        if student.kind == "expression" and standard.kind == "relation":
+            assert isinstance(standard.value, Boolean)
+            return set_relation_equivalent(
+                student.value, standard.value, self._symbol
+            )
+        if student.kind == "relation" and standard.kind == "expression":
+            assert isinstance(student.value, Boolean)
+            return set_relation_equivalent(
+                standard.value, student.value, self._symbol
+            )
 
         if student.kind == "limit" or standard.kind == "limit":
             return self._limit_pair(student, standard)

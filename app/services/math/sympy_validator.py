@@ -25,6 +25,7 @@ from app.services.math.equivalence import (
     limits_equivalent,
     matrices_equivalent,
     relations_equivalent,
+    try_set_form_equivalence,
 )
 from app.services.math.parser import (
     DerivativeClaim,
@@ -64,9 +65,17 @@ class SymPyStepValidator(StepValidator):
                 )
 
         final_status = None
-        if (question.student_final_answer or "").strip() and steps:
+        final_text = ""
+        if (
+            question.student_final_symbolic is not None
+            and (question.student_final_symbolic.repr or "").strip()
+        ):
+            final_text = question.student_final_symbolic.repr.strip()
+        elif (question.student_final_answer or "").strip():
+            final_text = question.student_final_answer.strip()
+        if final_text and steps:
             final_status = self._validate_final_answer(
-                question.student_final_answer,
+                final_text,
                 parsed[-1],
                 last_step_number=steps[-1].step_number,
             )
@@ -85,12 +94,16 @@ class SymPyStepValidator(StepValidator):
         return result
 
     def _step_expression(self, step: StudentStep) -> str:
+        if step.symbolic is not None and (step.symbolic.repr or "").strip():
+            return step.symbolic.repr.strip()
         latex = (step.latex or "").strip()
         if latex:
             return latex
         return (step.raw_text or "").strip()
 
     def _try_parse(self, step: StudentStep) -> ParsedStep | None:
+        if step.symbolic is not None and step.symbolic.kind == "figure":
+            return None
         expression = self._step_expression(step)
         if not expression:
             return None
@@ -104,6 +117,13 @@ class SymPyStepValidator(StepValidator):
         step: StudentStep,
         item: ParsedStep | None,
     ) -> StepValidation:
+        if step.symbolic is not None and step.symbolic.kind == "figure":
+            return StepValidation(
+                step_number=step.step_number,
+                status=ValidationStatus.UNCERTAIN,
+                method=ValidationMethod.PARSE,
+                reason="figure/graph step is not SymPy-checkable",
+            )
         if item is None:
             return StepValidation(
                 step_number=step.step_number,
@@ -143,6 +163,22 @@ class SymPyStepValidator(StepValidator):
 
         if previous.kind == "matrix" or current.kind == "matrix":
             return self._validate_matrix_transition(step, previous, current)
+
+        applicable, set_result = try_set_form_equivalence(
+            previous.kind,
+            previous.value,
+            current.kind,
+            current.value,
+            self._symbol,
+        )
+        if applicable:
+            return self._status_from_bool(
+                step.step_number,
+                set_result,
+                ok="solution sets are equivalent",
+                bad="solution sets differ",
+                unsure="SymPy could not decide set equivalence",
+            )
 
         if previous.kind != current.kind:
             return StepValidation(
@@ -422,6 +458,22 @@ class SymPyStepValidator(StepValidator):
         if last_item.kind == "matrix":
             fake_step = StudentStep(step_number=last_step_number, raw_text="", latex="")
             return self._validate_matrix_transition(fake_step, last_item, final_item)
+
+        applicable, set_result = try_set_form_equivalence(
+            last_item.kind,
+            last_item.value,
+            final_item.kind,
+            final_item.value,
+            self._symbol,
+        )
+        if applicable:
+            return self._status_from_bool(
+                last_step_number,
+                set_result,
+                ok="final answer matches last step solution set",
+                bad="final answer solution set differs from last step",
+                unsure="SymPy could not compare final answer set",
+            )
 
         if last_item.kind != final_item.kind:
             return StepValidation(

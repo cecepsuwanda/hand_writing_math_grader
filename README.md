@@ -35,9 +35,11 @@ run.bat process smoke_inequality.pdf
 Atau langsung Python:
 
 ```bash
-python -m app.cli process
+python -m app.cli menu
 python -m app.cli process smoke_inequality.pdf
 ```
+
+`run.bat` / `menu` membuka menu: ingest kunci, proses PDF, atau keluar.
 
 Di awal `process`, isi `data/output/` dikosongkan (kecuali `standards/`).
 

@@ -28,6 +28,27 @@ class InvalidPdfSelectionError(MathGraderError):
         super().__init__(f"Invalid PDF selection: {reason}")
 
 
+class NoKunciTexError(MathGraderError):
+    def __init__(self, kunci_dir: Path) -> None:
+        self.kunci_dir = kunci_dir
+        super().__init__(
+            f"No .tex files found in {kunci_dir}. "
+            "Place kunci jawaban under data/input/kunci_jawaban/."
+        )
+
+
+class InvalidKunciSelectionError(MathGraderError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Invalid kunci selection: {reason}")
+
+
+class InvalidMenuSelectionError(MathGraderError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Invalid menu selection: {reason}")
+
+
 class InvalidPdfError(MathGraderError):
     def __init__(self, path: Path, reason: str = "invalid or corrupt PDF") -> None:
         self.path = path

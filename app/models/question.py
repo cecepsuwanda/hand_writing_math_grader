@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from app.models.recognition import Region
+from app.models.recognition import Region, SymbolicPayload
 
 
 class SegmentationStatus(str, Enum):
@@ -18,7 +18,9 @@ class SegmentationStatus(str, Enum):
 class StudentStep(BaseModel):
     step_number: int
     raw_text: str
+    # Deprecated in JSON pipeline: leave empty; use symbolic for SymPy.
     latex: str = ""
+    symbolic: SymbolicPayload | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page_number: int | None = None
 
@@ -26,6 +28,14 @@ class StudentStep(BaseModel):
 class ImageRegionRef(BaseModel):
     page_number: int
     region: Region | None = None
+    region_type: str | None = None
+    crop_path: str = ""
+
+
+class FigureRef(BaseModel):
+    path: str
+    caption: str = ""
+    page_number: int | None = None
 
 
 class Question(BaseModel):
@@ -35,6 +45,8 @@ class Question(BaseModel):
     image_regions: list[ImageRegionRef] = Field(default_factory=list)
     student_steps: list[StudentStep] = Field(default_factory=list)
     student_final_answer: str = ""
+    student_final_symbolic: SymbolicPayload | None = None
+    figure_refs: list[FigureRef] = Field(default_factory=list)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     segmentation_status: SegmentationStatus = SegmentationStatus.MERGED
 

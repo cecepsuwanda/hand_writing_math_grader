@@ -22,8 +22,8 @@ Wajib: **MVC**, **SOLID**, **clean code**, **OOP + functional programming**. Lih
 CLI Python (MVC) untuk soal **pertidaksamaan (topik 1.5)**, 1–5 halaman:
 
 ```text
-PDF → PNG → Vision (Ollama) → JSON → LaTeX
-  → SymPy (lalu LLM fallback) → rubric → skor + artefak audit
+PDF → PNG → ink bbox → crop → Vision symbolic JSON
+  → LaTeX artefak → SymPy (± LLM) → grade vs exam_schema → report
 ```
 
 Roadmap domain mengikuti [`topik.md`](topik.md) / [math-topics.md](math-topics.md). Web UI / FastAPI **bukan** bagian MVP.
@@ -48,10 +48,11 @@ Letakkan PDF jawaban di `data/input/jawaban/`. Jawaban standar per soal: `data/o
 
 Opsional API: `python -m app.api` (FastAPI — bukan pengganti CLI).
 
-Pilih PDF secara interaktif (menu nomor/nama file):
+Pilih aksi lewat menu utama (ingest kunci / proses PDF / keluar):
 
 ```bash
-python -m app.cli process
+python -m app.cli menu
+# atau: run.bat
 ```
 
 Atau sebutkan file langsung:
@@ -70,8 +71,8 @@ Setiap `process` mengosongkan `data/output/` dulu (kecuali `standards/`), lalu m
 Tidak dijalankan di CI/`pytest`. Syarat: Ollama listening + `vision_model` / `reasoning_model` di [`app/config/config.yaml`](../app/config/config.yaml).
 
 ```bash
-# Interactive menu over data/input/jawaban/
-python -m app.cli process
+# Interactive main menu (ingest kunci / process PDF / exit)
+python -m app.cli menu
 
 # Bare filename resolves under jawaban/
 python -m app.cli process smoke_inequality.pdf

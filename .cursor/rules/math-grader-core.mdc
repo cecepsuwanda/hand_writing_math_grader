@@ -12,7 +12,7 @@ alwaysApply: true
 - Type hints + Pydantic untuk kontrak data antar layer.
 - Pertahankan artefak intermediate **selama satu run** (gambar, recognition, LaTeX, validation, grading). Jangan hapus mid-pipeline jika tahap berikutnya gagal.
 - Di **awal** perintah `process`, kosongkan `data/output/` kecuali `standards/` (dan bersihkan artifact dirs di luar root jika di-override) agar run baru tidak tercampur artefak lama.
-- Validasi saat ini = konsistensi langkah (SymPy ± LLM). Compare ke kunci/standard solution belum di-wire.
+- Validasi = konsistensi langkah (SymPy ± LLM). **Grading** membandingkan ke `exam_schema` / `standards/.../solutions` (SymPy; skor = min(konsistensi, standard)).
 - Jangan commit secrets/credentials. Prefer Ollama lokal untuk data mahasiswa.
 
 ```text

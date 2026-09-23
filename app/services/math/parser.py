@@ -15,6 +15,7 @@ from sympy import (
     Ge,
     Gt,
     Integer,
+    Interval,
     Le,
     Lt,
     Matrix,
@@ -38,51 +39,15 @@ from sympy.parsing.sympy_parser import (
 )
 
 from app.exceptions import MathParseError
-from app.functions.abs_normalize import rewrite_abs_notation
-from app.functions.derivative_normalize import rewrite_derivative_notation
-from app.functions.det_inverse_normalize import rewrite_det_inverse_notation
-from app.functions.integral_normalize import rewrite_integral_notation
-from app.functions.interval_normalize import rewrite_interval_membership
-from app.functions.limit_normalize import rewrite_limit_notation
-from app.functions.matrix_normalize import rewrite_matrix_notation
-from app.functions.transcendental_normalize import rewrite_transcendental_notation
-from app.functions.vector_normalize import rewrite_vector_notation
+from app.functions.math_normalize import normalize_math_text
 
 _TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
     convert_xor,
 )
 
-_FINAL_ANSWER_PREFIX_RE = re.compile(
-    r"^(?:jawaban\s+akhir|final\s+answer|langkah)\s*[:：-]?\s*",
-    re.IGNORECASE,
-)
-
-_LATEX_REPLACEMENTS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\\leq|\\le\b"), "<="),
-    (re.compile(r"\\geq|\\ge\b"), ">="),
-    (re.compile(r"\\neq|\\ne\b"), "!="),
-    (re.compile(r"\\lt\b"), "<"),
-    (re.compile(r"\\gt\b"), ">"),
-    (re.compile(r"\\times|\\cdot|\\ast"), "*"),
-    (re.compile(r"\\vee|\\lor\b"), " or "),
-    (re.compile(r"\\circ"), " o "),
-    (re.compile(r"\\infty\b"), "oo"),
-    (re.compile(r"\\to\b"), "->"),
-    (re.compile(r"\\sin\b"), "sin"),
-    (re.compile(r"\\cos\b"), "cos"),
-    (re.compile(r"\\tan\b"), "tan"),
-    (re.compile(r"\\ln\b"), "ln"),
-    (re.compile(r"\\log\b"), "log"),
-    (re.compile(r"\\exp\b"), "exp"),
-    (re.compile(r"\\prime\b"), "'"),
-    (re.compile(r"\\left|\\right"), ""),
-    (re.compile(r"\\,"), ""),
-    (re.compile(r"\\;"), ""),
-    (re.compile(r"\\ "), " "),
-]
-
 _OR_SPLIT_RE = re.compile(r"\s+(?:or|∨)\s+", re.IGNORECASE)
+_AND_SPLIT_RE = re.compile(r"\s+(?:and|∧)\s+", re.IGNORECASE)
 
 _REL_OPS = (
     ("<=", Le),
@@ -129,6 +94,11 @@ _INT_TOKEN_RE = re.compile(
     re.DOTALL,
 )
 
+_INTERVAL_TOKEN_RE = re.compile(
+    r"^Interval\s*\(",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class LimitClaim:
@@ -170,38 +140,12 @@ class ParsedStep:
     value: (
         Boolean
         | Expr
+        | Interval
         | LimitClaim
         | DerivativeClaim
         | IntegralClaim
         | MatrixClaim
     )
-
-
-def normalize_math_text(text: str) -> str:
-    cleaned = text.strip()
-    # Matrix rewrite before '&' → space (LaTeX column separators).
-    cleaned = rewrite_matrix_notation(cleaned)
-    cleaned = rewrite_det_inverse_notation(cleaned)
-    cleaned = rewrite_vector_notation(cleaned)
-    cleaned = cleaned.replace("&", " ")
-    cleaned = "\n".join(
-        line for line in cleaned.splitlines() if not line.strip().startswith("%")
-    )
-    cleaned = " ".join(cleaned.split())
-    cleaned = _FINAL_ANSWER_PREFIX_RE.sub("", cleaned).strip()
-    cleaned = rewrite_abs_notation(cleaned)
-    cleaned = rewrite_interval_membership(cleaned)
-    cleaned = rewrite_limit_notation(cleaned)
-    cleaned = rewrite_derivative_notation(cleaned)
-    cleaned = rewrite_integral_notation(cleaned)
-    cleaned = rewrite_transcendental_notation(cleaned)
-    for pattern, repl in _LATEX_REPLACEMENTS:
-        cleaned = pattern.sub(repl, cleaned)
-    cleaned = cleaned.replace(r"\{", "(").replace(r"\}", ")")
-    cleaned = cleaned.replace("{", "(").replace("}", ")")
-    cleaned = re.sub(r"\\[a-zA-Z]+", "", cleaned)
-    cleaned = " ".join(cleaned.split())
-    return cleaned
 
 
 def parse_relation(text: str, symbol: Symbol | None = None) -> Boolean:
@@ -265,6 +209,7 @@ def parse_math_step(text: str, symbol: Symbol | None = None) -> ParsedStep:
         "exp": exp,
         "e": E,
         "E": E,
+        "Interval": Interval,
     }
     if symbol is not None:
         local_dict[str(symbol)] = symbol
@@ -304,6 +249,10 @@ def _parse_candidate(
     int_step = _try_parse_int_token(normalized, local_dict)
     if int_step is not None:
         return int_step
+
+    interval_step = _try_parse_interval_expr(normalized, local_dict)
+    if interval_step is not None:
+        return interval_step
 
     assign = _FUNC_ASSIGN_RE.match(normalized)
     if assign is not None:
@@ -398,8 +347,18 @@ def _try_parse_matrix_expr(
     )
 
 
+_COMMA_TUPLE_RE = re.compile(
+    r"[\(\[][^\)\]]*,[^\)\]]*[\)\]]"
+)
+_JUXTAPOSED_PARENS_RE = re.compile(r"\)\s*\(")
+
+
 def _looks_like_math_expression(normalized: str) -> bool:
     """Reject multi-word prose; accept numbers and compact algebra."""
+    # Interval / tuple shapes must not take the bare-expression fast path
+    # (implicit mul would build Mul(Tuple) and emit SymPy deprecation).
+    if _COMMA_TUPLE_RE.search(normalized) or _JUXTAPOSED_PARENS_RE.search(normalized):
+        return False
     if re.fullmatch(r"[\d\.]+", normalized):
         return True
     if re.search(r"[\+\-\*/\^]", normalized):
@@ -499,6 +458,35 @@ def _try_parse_int_token(
     )
 
 
+def _try_parse_interval_expr(
+    normalized: str,
+    local_dict: dict[str, object],
+) -> ParsedStep | None:
+    """Parse ``Interval(a, b)`` / kwargs form as a set expression."""
+    stripped = normalized.strip()
+    if not _INTERVAL_TOKEN_RE.match(stripped):
+        return None
+    code = re.sub(r"(?i)^interval\s*\(", "Interval(", stripped, count=1)
+    env = dict(local_dict)
+    env["Interval"] = Interval
+    env.setdefault("oo", oo)
+    env.setdefault("True", True)
+    env.setdefault("False", False)
+    try:
+        # Bypass _parse_side comma preflight (Interval args contain commas).
+        result = parse_expr(
+            code,
+            local_dict=env,
+            transformations=_TRANSFORMATIONS,
+            evaluate=True,
+        )
+    except (SyntaxError, TypeError, ValueError, Exception) as exc:
+        raise MathParseError(normalized, str(exc)) from exc
+    if not isinstance(result, Interval):
+        raise MathParseError(normalized, "expected Interval expression")
+    return ParsedStep(kind="expression", value=result)
+
+
 def _split_diff_body(body: str) -> tuple[str, str] | None:
     """Split ``expr, var`` allowing commas inside nested parens in expr."""
     depth = 0
@@ -579,7 +567,17 @@ def _parse_proposition(
 ) -> Boolean:
     or_parts = [p.strip() for p in _OR_SPLIT_RE.split(normalized) if p.strip()]
     if len(or_parts) > 1:
-        return Or(*(_parse_atomic_proposition(part, local_dict) for part in or_parts))
+        return Or(*(_parse_and_proposition(part, local_dict) for part in or_parts))
+    return _parse_and_proposition(normalized, local_dict)
+
+
+def _parse_and_proposition(
+    normalized: str,
+    local_dict: dict[str, object],
+) -> Boolean:
+    and_parts = [p.strip() for p in _AND_SPLIT_RE.split(normalized) if p.strip()]
+    if len(and_parts) > 1:
+        return And(*(_parse_atomic_proposition(part, local_dict) for part in and_parts))
     return _parse_atomic_proposition(normalized, local_dict)
 
 
@@ -645,13 +643,35 @@ def _parse_single_relation(
     raise MathParseError(normalized, "no supported relation operator found")
 
 
+def _expr_contains_tuple(expr: object) -> bool:
+    """True if ``expr`` is or embeds a SymPy Tuple (unsafe with Mul)."""
+    if type(expr).__name__ == "Tuple":
+        return True
+    if isinstance(expr, (tuple, list)):
+        return True
+    args = getattr(expr, "args", None)
+    if not args:
+        return False
+    return any(_expr_contains_tuple(arg) for arg in args)
+
+
 def _parse_side(side: str, local_dict: dict[str, object]) -> Expr:
-    return parse_expr(
-        side,
+    stripped = side.strip()
+    # Preflight: never call parse_expr on comma-tuples / juxta intervals —
+    # implicit_multiplication would emit SymPyDeprecationWarning (Mul+Tuple).
+    if _COMMA_TUPLE_RE.search(stripped) or _JUXTAPOSED_PARENS_RE.search(stripped):
+        raise MathParseError(side, "tuple/interval is not an algebraic expression")
+    result = parse_expr(
+        stripped,
         local_dict=local_dict,
         transformations=_TRANSFORMATIONS,
         evaluate=False,
     )
+    if _expr_contains_tuple(result):
+        raise MathParseError(side, "tuple/interval is not an algebraic expression")
+    if not isinstance(result, Expr):
+        raise MathParseError(side, f"expected expression, got {type(result).__name__}")
+    return result
 
 
 def default_symbol() -> Symbol:

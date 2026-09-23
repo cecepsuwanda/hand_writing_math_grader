@@ -65,6 +65,7 @@ def prepare_pipeline_workspace(
     pages_dir: Path,
     recognition_dir: Path,
     questions_dir: Path,
+    crops_dir: Path | None = None,
     preserve: frozenset[str] | set[str] = DEFAULT_PRESERVE,
 ) -> list[str]:
     """Clear ``workspace_root`` (except preserve) and any artifact dirs outside it."""
@@ -72,11 +73,15 @@ def prepare_pipeline_workspace(
     removed = clear_output_workspace(workspace_root, preserve=preserve)
     root_resolved = workspace_root.resolve()
 
-    for label, path in (
+    extras: list[tuple[str, Path]] = [
         ("pages", Path(pages_dir)),
         ("recognition", Path(recognition_dir)),
         ("questions", Path(questions_dir)),
-    ):
+    ]
+    if crops_dir is not None:
+        extras.append(("crops", Path(crops_dir)))
+
+    for label, path in extras:
         resolved = path.resolve()
         try:
             resolved.relative_to(root_resolved)

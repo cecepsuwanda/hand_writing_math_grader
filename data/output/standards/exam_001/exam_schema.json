@@ -1,0 +1,739 @@
+{
+  "source": "jawaban_tugas_1.tex",
+  "questions": [
+    {
+      "number": 1,
+      "stem": "$2-3x \\le 12$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "2-3x <= 12"
+      },
+      "steps": [
+        "2 - 3x \\leq 12",
+        "2 - 3x - 2 \\leq 12 - 2",
+        "-3x \\leq 10",
+        "-3x \\cdot \\left(-\\frac{1}{3}\\right) \\geq 10 \\cdot \\left(-\\frac{1}{3}\\right)",
+        "x \\geq -\\frac{10}{3}"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "2 - 3x <= 12"
+        },
+        {
+          "kind": "relation",
+          "repr": "2 - 3x - 2 <= 12 - 2"
+        },
+        {
+          "kind": "relation",
+          "repr": "-3x <= 10"
+        },
+        {
+          "kind": "relation",
+          "repr": "-3x * (-((1)/(3))) >= 10 * (-((1)/(3)))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x >= -((10)/(3))"
+        }
+      ],
+      "final": "\\left[-\\frac{10}{3}, \\infty\\right)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "-((10)/(3)) <= x < oo"
+      },
+      "expects_figure": true,
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "figure",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "stem": "$3x-5 < 4x-6$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "3x-5 < 4x-6"
+      },
+      "steps": [
+        "3x - 5 < 4x - 6",
+        "3x - 5 - 4x < 4x - 6 - 4x",
+        "3x - 4x - 5 < 4x - 4x - 6",
+        "-x - 5 < -6",
+        "-x - 5 + 5 < -6 + 5",
+        "-x < -1",
+        "-x \\cdot (-1) > -1 \\cdot (-1)",
+        "x > 1"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "3x - 5 < 4x - 6"
+        },
+        {
+          "kind": "relation",
+          "repr": "3x - 5 - 4x < 4x - 6 - 4x"
+        },
+        {
+          "kind": "relation",
+          "repr": "3x - 4x - 5 < 4x - 4x - 6"
+        },
+        {
+          "kind": "relation",
+          "repr": "-x - 5 < -6"
+        },
+        {
+          "kind": "relation",
+          "repr": "-x - 5 + 5 < -6 + 5"
+        },
+        {
+          "kind": "relation",
+          "repr": "-x < -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "-x * (-1) > -1 * (-1)"
+        },
+        {
+          "kind": "relation",
+          "repr": "x > 1"
+        }
+      ],
+      "final": "(1, \\infty)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "1 < x < oo"
+      },
+      "expects_figure": true,
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "figure",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "stem": "$-3 \\le 1-6x < 4$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "-3 <= 1-6x < 4"
+      },
+      "steps": [
+        "-3 \\leq 1-6x < 4",
+        "-3 - 1 \\leq 1-6x - 1 < 4 - 1",
+        "-4 \\leq -6x < 3",
+        "-4 \\cdot \\left(-\\frac{1}{6}\\right) \\geq -6x \\cdot \\left(-\\frac{1}{6}\\right) > 3 \\cdot \\left(-\\frac{1}{6}\\right)",
+        "\\frac{4}{6} \\geq x > -\\frac{3}{6}",
+        "\\frac{2}{3} \\geq x > -\\frac{1}{2}",
+        "-\\frac{1}{2} < x \\leq \\frac{2}{3}"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "-3 <= 1-6x < 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "-3 - 1 <= 1-6x - 1 < 4 - 1"
+        },
+        {
+          "kind": "relation",
+          "repr": "-4 <= -6x < 3"
+        },
+        {
+          "kind": "relation",
+          "repr": "-4 * (-((1)/(6))) >= -6x * (-((1)/(6))) > 3 * (-((1)/(6)))"
+        },
+        {
+          "kind": "relation",
+          "repr": "((4)/(6)) >= x > -((3)/(6))"
+        },
+        {
+          "kind": "relation",
+          "repr": "((2)/(3)) >= x > -((1)/(2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "-((1)/(2)) < x <= ((2)/(3))"
+        }
+      ],
+      "final": "\\left(-\\frac{1}{2}, \\frac{2}{3}\\right]",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "-((1)/(2)) < x <= ((2)/(3))"
+      },
+      "expects_figure": true,
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "figure",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "stem": "$2x^{2}-5x-3 < 0$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "2x^(2)-5x-3 < 0"
+      },
+      "steps": [
+        "2x^2 - 5x - 3 < 0",
+        "\\text{Cari akar-akar persamaan } 2x^2 - 5x - 3 = 0",
+        "2x^2 - 5x - 3 = 0",
+        "(2x + 1)(x - 3) = 0",
+        "2x + 1 = 0 \\quad x - 3 = 0",
+        "2x = -1 \\quad x = 3",
+        "x = -\\frac{1}{2} \\quad x = 3",
+        "2x^2 - 5x - 3 = 0",
+        "\\text{Dengan } a = 2, b = -5, c = -3:",
+        "x_1,x_2 = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+        "x_1,x_2 = \\frac{-(-5) \\pm \\sqrt{(-5)^2 - 4(2)(-3)}}{2(2)}",
+        "x_1,x_2 = \\frac{5 \\pm \\sqrt{25 + 24}}{4}",
+        "x_1,x_2 = \\frac{5 \\pm \\sqrt{49}}{4}",
+        "x_1,x_2 = \\frac{5 \\pm 7}{4}",
+        "x_1 = \\frac{5 + 7}{4} = 3 \\quad x_2 = \\frac{5 - 7}{4} = -\\frac{1}{2}",
+        "\\text{Selang } x < -\\frac{1}{2}: x = -1",
+        "2x^2 - 5x - 3 = 2(-1)^2 - 5(-1) - 3 = 2 + 5 - 3 = 4 > 0",
+        "\\text{Selang } -\\frac{1}{2} < x < 3: x = 0",
+        "2x^2 - 5x - 3 = 2(0)^2 - 5(0) - 3 = -3 < 0",
+        "\\text{Selang } x > 3: x = 4",
+        "2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "2x^2 - 5x - 3 < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Cari akar-akar persamaan ) 2x^2 - 5x - 3 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "2x^2 - 5x - 3 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(2x + 1)(x - 3) = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "2x + 1 = 0 x - 3 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "2x = -1 x = 3"
+        },
+        {
+          "kind": "relation",
+          "repr": "x = -((1)/(2)) x = 3"
+        },
+        {
+          "kind": "relation",
+          "repr": "2x^2 - 5x - 3 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Dengan ) a = 2, b = -5, c = -3:"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((-b (b^2 - 4ac))/(2a))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((-(-5) ((-5)^2 - 4(2)(-3)))/(2(2)))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((5 (25 + 24))/(4))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((5 (49))/(4))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((5 7)/(4))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1 = ((5 + 7)/(4)) = 3 x_2 = ((5 - 7)/(4)) = -((1)/(2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x < -((1)/(2)): x = -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "2x^2 - 5x - 3 = 2(-1)^2 - 5(-1) - 3 = 2 + 5 - 3 = 4 > 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) -((1)/(2)) < x < 3: x = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "2x^2 - 5x - 3 = 2(0)^2 - 5(0) - 3 = -3 < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x > 3: x = 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0"
+        }
+      ],
+      "final": "\\left(-\\frac{1}{2}, 3\\right)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "-((1)/(2)) < x < 3"
+      },
+      "expects_figure": true,
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "figure",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "stem": "$x^{2}-5x-6 \\le 0$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "x^(2)-5x-6 <= 0"
+      },
+      "steps": [
+        "x^2 - 5x - 6 \\leq 0",
+        "\\text{Cari akar-akar persamaan } x^2 - 5x - 6 = 0",
+        "x^2 - 5x - 6 = 0",
+        "(x - 6)(x + 1) = 0",
+        "x - 6 = 0 \\quad x + 1 = 0",
+        "x = 6 \\quad x = -1",
+        "x^2 - 5x - 6 = 0",
+        "\\text{Dengan } a = 1, b = -5, c = -6:",
+        "x_1,x_2 = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+        "x_1,x_2 = \\frac{-(-5) \\pm \\sqrt{(-5)^2 - 4(1)(-6)}}{2(1)}",
+        "x_1,x_2 = \\frac{5 \\pm \\sqrt{25 + 24}}{2}",
+        "x_1,x_2 = \\frac{5 \\pm \\sqrt{49}}{2}",
+        "x_1,x_2 = \\frac{5 \\pm 7}{2}",
+        "x_1 = \\frac{5 + 7}{2} = 6 \\quad x_2 = \\frac{5 - 7}{2} = -1",
+        "\\text{Selang } x < -1: x = -2",
+        "x^2 - 5x - 6 = (-2)^2 - 5(-2) - 6 = 4 + 10 - 6 = 8 > 0",
+        "\\text{Selang } -1 < x < 6: x = 0",
+        "x^2 - 5x - 6 = (0)^2 - 5(0) - 6 = -6 < 0",
+        "\\text{Selang } x > 6: x = 7",
+        "x^2 - 5x - 6 = (7)^2 - 5(7) - 6 = 49 - 35 - 6 = 8 > 0",
+        "\\text{Titik Potong }: \\quad x = -1",
+        "x^2 - 5x - 6 = (-1)^2 - 5(-1) - 6 = 1 + 5 - 6 = 0",
+        "\\text{Titik Potong }: \\quad x = 6",
+        "x^2 - 5x - 6 = (6)^2 - 5(6) - 6 = 36 - 30 - 6 = 0"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 <= 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Cari akar-akar persamaan ) x^2 - 5x - 6 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(x - 6)(x + 1) = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "x - 6 = 0 x + 1 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "x = 6 x = -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Dengan ) a = 1, b = -5, c = -6:"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((-b (b^2 - 4ac))/(2a))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((-(-5) ((-5)^2 - 4(1)(-6)))/(2(1)))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((5 (25 + 24))/(2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((5 (49))/(2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1,x_2 = ((5 7)/(2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_1 = ((5 + 7)/(2)) = 6 x_2 = ((5 - 7)/(2)) = -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x < -1: x = -2"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 = (-2)^2 - 5(-2) - 6 = 4 + 10 - 6 = 8 > 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) -1 < x < 6: x = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 = (0)^2 - 5(0) - 6 = -6 < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x > 6: x = 7"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 = (7)^2 - 5(7) - 6 = 49 - 35 - 6 = 8 > 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Titik Potong ): x = -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 = (-1)^2 - 5(-1) - 6 = 1 + 5 - 6 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Titik Potong ): x = 6"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 - 5x - 6 = (6)^2 - 5(6) - 6 = 36 - 30 - 6 = 0"
+        }
+      ],
+      "final": "[-1, 6]",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "-1 <= x <= 6"
+      },
+      "expects_figure": true,
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "figure",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "stem": "$\\displaystyle \\frac{1}{x+1} < \\frac{2}{3x-1}$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "((1)/(x+1)) < ((2)/(3x-1))"
+      },
+      "steps": [
+        "\\frac{1}{x+1} < \\frac{2}{3x-1}",
+        "\\frac{1}{x+1} - \\frac{2}{3x-1} < \\frac{2}{3x-1} - \\frac{2}{3x-1}",
+        "\\frac{1}{x+1} - \\frac{2}{3x-1} < 0",
+        "\\frac{1(3x-1) - 2(x+1)}{(x+1)(3x-1)} < 0",
+        "\\frac{3x-1-2x-2}{(x+1)(3x-1)} < 0",
+        "\\frac{x-3}{(x+1)(3x-1)} < 0",
+        "x-3 = 0 \\Rightarrow x = 3",
+        "x+1 = 0 \\Rightarrow x = -1",
+        "3x-1 = 0 \\Rightarrow x = \\frac{1}{3}",
+        "\\text{Selang } x < -1: x = -2",
+        "\\frac{x-3}{(x+1)(3x-1)} = \\frac{-2-3}{(-2+1)(3(-2)-1)} = \\frac{-5}{(-1)(-7)} = \\frac{-5}{7} < 0",
+        "\\text{Selang } -1 < x < \\frac{1}{3}: x = 0",
+        "\\frac{x-3}{(x+1)(3x-1)} = \\frac{0-3}{(0+1)(3(0)-1)} = \\frac{-3}{(1)(-1)} = \\frac{-3}{-1} = 3 > 0",
+        "\\text{Selang } \\frac{1}{3} < x < 3: x = 1",
+        "\\frac{x-3}{(x+1)(3x-1)} = \\frac{1-3}{(1+1)(3(1)-1)} = \\frac{-2}{(2)(2)} = \\frac{-2}{4} = -\\frac{1}{2} < 0",
+        "\\text{Selang } x > 3: x = 4",
+        "\\frac{x-3}{(x+1)(3x-1)} = \\frac{4-3}{(4+1)(3(4)-1)} = \\frac{1}{(5)(11)} = \\frac{1}{55} > 0"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "((1)/(x+1)) < ((2)/(3x-1))"
+        },
+        {
+          "kind": "relation",
+          "repr": "((1)/(x+1)) - ((2)/(3x-1)) < ((2)/(3x-1)) - ((2)/(3x-1))"
+        },
+        {
+          "kind": "relation",
+          "repr": "((1)/(x+1)) - ((2)/(3x-1)) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "((1(3x-1) - 2(x+1))/((x+1)(3x-1))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "((3x-1-2x-2)/((x+1)(3x-1))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x-3)/((x+1)(3x-1))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "x-3 = 0 x = 3"
+        },
+        {
+          "kind": "relation",
+          "repr": "x+1 = 0 x = -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "3x-1 = 0 x = ((1)/(3))"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x < -1: x = -2"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x-3)/((x+1)(3x-1))) = ((-2-3)/((-2+1)(3(-2)-1))) = ((-5)/((-1)(-7))) = ((-5)/(7)) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) -1 < x < ((1)/(3)): x = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x-3)/((x+1)(3x-1))) = ((0-3)/((0+1)(3(0)-1))) = ((-3)/((1)(-1))) = ((-3)/(-1)) = 3 > 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) ((1)/(3)) < x < 3: x = 1"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x-3)/((x+1)(3x-1))) = ((1-3)/((1+1)(3(1)-1))) = ((-2)/((2)(2))) = ((-2)/(4)) = -((1)/(2)) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x > 3: x = 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x-3)/((x+1)(3x-1))) = ((4-3)/((4+1)(3(4)-1))) = ((1)/((5)(11))) = ((1)/(55)) > 0"
+        }
+      ],
+      "final": "(-\\infty, -1) \\cup \\left(\\frac{1}{3}, 3\\right)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "-oo < x < -1 or ((1)/(3)) < x < 3"
+      },
+      "expects_figure": true,
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "figure",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "stem": "$\\displaystyle \\frac{x+2}{x+4} < \\frac{x-1}{x-2}$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "((x+2)/(x+4)) < ((x-1)/(x-2))"
+      },
+      "steps": [
+        "\\frac{x+2}{x+4} < \\frac{x-1}{x-2}",
+        "\\frac{x+2}{x+4} - \\frac{x-1}{x-2} < \\frac{x-1}{x-2} - \\frac{x-1}{x-2}",
+        "\\frac{x+2}{x+4} - \\frac{x-1}{x-2} < 0",
+        "\\frac{(x+2)(x-2) - (x-1)(x+4)}{(x+4)(x-2)} < 0",
+        "\\frac{(x+2)(x-2) - (x-1)(x+4)}{(x+4)(x-2)} < 0",
+        "\\frac{x^2-4-(x^2+3x-4)}{(x+4)(x-2)} < 0",
+        "\\frac{x^2-4-x^2-3x+4}{(x+4)(x-2)} < 0",
+        "\\frac{-3x}{(x+4)(x-2)} < 0",
+        "-3x = 0 \\Rightarrow x = 0",
+        "x+4 = 0 \\Rightarrow x = -4",
+        "x-2 = 0 \\Rightarrow x = 2",
+        "\\text{Selang } x < -4: x = -5",
+        "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-5)}{(-5+4)(-5-2)} = \\frac{15}{(-1)(-7)} = \\frac{15}{7} > 0",
+        "\\text{Selang } -4 < x < 0: x = -1",
+        "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-1)}{(-1+4)(-1-2)} = \\frac{3}{(3)(-3)} = \\frac{3}{-9} = -\\frac{1}{3} < 0",
+        "\\text{Selang } 0 < x < 2: x = 1",
+        "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(1)}{(1+4)(1-2)} = \\frac{-3}{(5)(-1)} = \\frac{-3}{-5} = \\frac{3}{5} > 0",
+        "\\text{Selang } x > 2: x = 3",
+        "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(3)}{(3+4)(3-2)} = \\frac{-9}{(7)(1)} = \\frac{-9}{7} < 0",
+        "\\text{Titik Kritis }: \\quad x = -4, x = 0, x = 2"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "((x+2)/(x+4)) < ((x-1)/(x-2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x+2)/(x+4)) - ((x-1)/(x-2)) < ((x-1)/(x-2)) - ((x-1)/(x-2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x+2)/(x+4)) - ((x-1)/(x-2)) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(((x+2)(x-2) - (x-1)(x+4))/((x+4)(x-2))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(((x+2)(x-2) - (x-1)(x+4))/((x+4)(x-2))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x^2-4-(x^2+3x-4))/((x+4)(x-2))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "((x^2-4-x^2-3x+4)/((x+4)(x-2))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "((-3x)/((x+4)(x-2))) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "-3x = 0 x = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "x+4 = 0 x = -4"
+        },
+        {
+          "kind": "relation",
+          "repr": "x-2 = 0 x = 2"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x < -4: x = -5"
+        },
+        {
+          "kind": "relation",
+          "repr": "((-3x)/((x+4)(x-2))) = ((-3(-5))/((-5+4)(-5-2))) = ((15)/((-1)(-7))) = ((15)/(7)) > 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) -4 < x < 0: x = -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "((-3x)/((x+4)(x-2))) = ((-3(-1))/((-1+4)(-1-2))) = ((3)/((3)(-3))) = ((3)/(-9)) = -((1)/(3)) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) 0 < x < 2: x = 1"
+        },
+        {
+          "kind": "relation",
+          "repr": "((-3x)/((x+4)(x-2))) = ((-3(1))/((1+4)(1-2))) = ((-3)/((5)(-1))) = ((-3)/(-5)) = ((3)/(5)) > 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Selang ) x > 2: x = 3"
+        },
+        {
+          "kind": "relation",
+          "repr": "((-3x)/((x+4)(x-2))) = ((-3(3))/((3+4)(3-2))) = ((-9)/((7)(1))) = ((-9)/(7)) < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "(Titik Kritis ): x = -4, x = 0, x = 2"
+        }
+      ],
+      "final": "(-4, 0) \\cup (2, \\infty)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "-4 < x < 0 or 2 < x < oo"
+      },
+      "expects_figure": true,
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "figure",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    }
+  ]
+}

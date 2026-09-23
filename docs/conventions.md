@@ -49,20 +49,23 @@ Katalog resmi: [`topik.md`](topik.md). Status dan urutan implementasi: [math-top
 
 ## Recognition fidelity
 
+Recognition memakai **ink bbox**: clustering tinta deterministik (`ink_layout`), lalu Pillow crop + `crop_math`. Konteks ujian ke vision: **stem + expects_figure** dari `exam_schema` saja — jangan kirim steps/HP ke OCR.
+
 Saat recognition, LLM **tidak boleh**:
 
 - memperbaiki persamaan / typo;
 - menyimpulkan langkah yang tidak tertulis;
-- mengganti jawaban dengan yang “benar”.
+- mengganti jawaban dengan yang “benar”;
+- menyalin solusi dari kunci.
 
-Jika ragu: flag confidence / `uncertain`, pertahankan gambar asli.
+Jika ragu: flag confidence / `uncertain` / `review_required`, pertahankan gambar asli + crops.
 
 ## Validasi dan grading
 
-1. Syntax / parse LaTeX.
-2. SymPy jika memungkinkan.
-3. LLM hanya jika deterministic checker tidak cukup.
-4. Bandingkan makna matematis, bukan string LaTeX mentah.
+1. Syntax / parse (symbolic ASCII / LaTeX artefak).
+2. SymPy konsistensi langkah mahasiswa.
+3. LLM judge hanya jika deterministic checker tidak cukup.
+4. **Grading:** bandingkan ke `exam_schema` `final_symbolic` / `steps_symbolic` (fallback solutions `.tex`); skor = min(konsistensi, standard).
 5. Partial credit; bedakan conceptual / calculation / carry-forward error.
 6. Jangan nolkan semua skor hanya karena final answer salah.
 

@@ -16,10 +16,13 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 - Load PDF, render PNG per halaman, metadata ukuran, nama file deterministik.
 - Acceptance: PDF di `data/input/jawaban/` → `data/output/pages/page_001.png`, …
 
-## Phase 2 — Ollama Vision
+## Phase 2 — Ollama Vision (ink crop)
 
-- Client Ollama, input gambar, JSON terstruktur, retry, timeout, logging.
-- Acceptance: page image → recognition JSON valid (schema).
+- Client Ollama, ink-cluster bboxes → Pillow crop → `crop_math` symbolic JSON.
+- Prompt: `crop_math.txt`.
+- Recognition context dari `exam_schema`: **stem + expects_figure saja** (bukan steps/HP).
+- Acceptance: page image → recognition JSON valid (schema) + crops artifact (`region_XX_solution.png`, `ink/` audit).
+- Config: `recognition.ink.*` (threshold, merge gaps, margins).
 
 ## Phase 3 — Question Extraction
 
@@ -35,7 +38,7 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 
 - Parser ekspresi/persamaan, equivalence, step validator.
 - Acceptance: transformasi algebra yang dikenal menghasilkan status validasi yang diharapkan.
-- Scope: konsistensi langkah mahasiswa (bukan compare ke kunci).
+- Scope: konsistensi langkah mahasiswa. Compare ke kunci dilakukan di **Phase 7 grading** (bukan di validator).
 
 ## Phase 6 — LLM Validator
 
@@ -48,17 +51,18 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 - Acceptance: dataset uji menghasilkan rentang skor yang diharapkan.
 - Compare final answer ke `standards/.../solutions/` (SymPy); skor `final_answer` = min(konsistensi, standard).
 - Step-align sequential (index) ke baris `aligned`/`align` di solutions; skor langkah = min(konsistensi, standard).
-- Ingest kunci: `python -m app.cli ingest-kunci` menulis `standards/.../solutions` dari `data/input/kunci_jawaban/` (pola enumerate+align+HP; overwrite solutions saja).
+- Ingest kunci: `python -m app.cli ingest-kunci` menulis `standards/.../solutions` **dan** `exam_schema.json` dari `data/input/kunci_jawaban/` (pola enumerate+align+HP+tikzpicture flag; schema menyimpan LaTeX + `SymbolicPayload` untuk stem/steps/HP; overwrite solutions/schema saja). Recognition memuat schema bila ada (stem + `expects_figure` saja).
 - Follow-up: kunci LaTeX arbitrary / auto-rubric.
 
 ## Phase 8 — Report
 
-- JSON, CSV, HTML (opsional PDF) + metadata reproducibility.
+- JSON, CSV, HTML + metadata reproducibility (PDF report bukan bagian MVP).
 
 ## Phase 9 — CLI polish
 
 - Subcommand lengkap, progress/summary terminal, exit code jelas.
 - `process` mendukung pilihan PDF interaktif dari `data/input/jawaban/`.
+- `menu` (default `run.bat`): ingest kunci / proses PDF / keluar.
 - Awal `process` mengosongkan `data/output/` kecuali `standards/`.
 - Pastikan View/Controller/Service terpisah (MVC).
 - Bukan web UI.

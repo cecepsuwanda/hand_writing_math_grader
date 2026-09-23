@@ -63,11 +63,15 @@ class StepGrader:
         standard_status: ValidationStatus | None = None
         standard_reason = ""
         standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None
+        expected_step_count: int | None = None
         if self._standard_comparer is not None:
             compared = self._standard_comparer.compare(question)
             if compared is not None:
                 standard_status, standard_reason = compared
             standard_step_results = self._standard_comparer.compare_steps(question)
+            expected_step_count = self._standard_comparer.expected_step_count(
+                question.question_number
+            )
 
         grade = aggregate_question_grade(
             question_id=question.question_id,
@@ -77,6 +81,7 @@ class StepGrader:
             standard_final_status=standard_status,
             standard_final_reason=standard_reason,
             standard_step_results=standard_step_results,
+            expected_step_count=expected_step_count,
         )
         if self._annotator is not None:
             grade = self._annotator.annotate(question, grade)

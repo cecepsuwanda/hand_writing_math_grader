@@ -64,6 +64,7 @@ class ProcessController:
         student_id: str = "student_001",
         workspace_root: Path | None = None,
         reset_workspace: bool = True,
+        crops_dir: Path | None = None,
     ) -> ProcessResult:
         pdf_path = Path(pdf_path)
         pages_dir = Path(pages_dir)
@@ -78,6 +79,7 @@ class ProcessController:
                 pages_dir=pages_dir,
                 recognition_dir=recognition_dir,
                 questions_dir=questions_dir,
+                crops_dir=crops_dir,
             )
             if self._on_output_cleared is not None:
                 self._on_output_cleared(root, removed)

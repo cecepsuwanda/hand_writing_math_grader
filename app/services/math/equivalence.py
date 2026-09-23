@@ -7,8 +7,10 @@ from sympy import (
     And,
     ConditionSet,
     Expr,
+    FiniteSet,
     Integral as SymIntegral,
     Intersection,
+    Interval,
     Or,
     S,
     Symbol,
@@ -79,6 +81,68 @@ def relations_equivalent(
         return bool(prev_set == curr_set)
     except Exception:
         return None
+
+
+def expression_as_set(expr: object):
+    """Return a SymPy set if ``expr`` is Interval / Union / FiniteSet-like."""
+    if isinstance(expr, (Interval, Union, FiniteSet, Intersection)):
+        return expr
+    return None
+
+
+def set_relation_equivalent(
+    expr: object,
+    proposition: Boolean,
+    symbol: Symbol,
+) -> bool | None:
+    """Compare an Interval/set expression to a relation via solution sets."""
+    expr_set = expression_as_set(expr)
+    if expr_set is None:
+        return None
+    try:
+        rel_set = solution_set(proposition, symbol)
+    except Exception:
+        return None
+    if isinstance(rel_set, ConditionSet):
+        return None
+    try:
+        return bool(expr_set == rel_set)
+    except Exception:
+        return None
+
+
+def try_set_form_equivalence(
+    left_kind: str,
+    left_value: object,
+    right_kind: str,
+    right_value: object,
+    symbol: Symbol,
+) -> tuple[bool, bool | None]:
+    """Compare Interval/set forms, including a set paired with a relation.
+
+    Returns ``(applicable, result)``. ``applicable`` is false when neither side
+    is a SymPy set, so the caller can fall through to expression comparison.
+    """
+    left_set = expression_as_set(left_value) if left_kind == "expression" else None
+    right_set = expression_as_set(right_value) if right_kind == "expression" else None
+
+    if left_set is not None and right_set is not None:
+        try:
+            return True, bool(left_set == right_set)
+        except Exception:
+            return True, None
+
+    if left_set is not None and right_kind == "relation":
+        if not isinstance(right_value, Boolean):
+            return False, None
+        return True, set_relation_equivalent(left_value, right_value, symbol)
+
+    if right_set is not None and left_kind == "relation":
+        if not isinstance(left_value, Boolean):
+            return False, None
+        return True, set_relation_equivalent(right_value, left_value, symbol)
+
+    return False, None
 
 
 def _has_log_or_exp(expr: Expr) -> bool:

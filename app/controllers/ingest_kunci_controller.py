@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.functions.standard_extract import exam_schema_path
 from app.services.standards.kunci_ingester import KunciIngester
 
 
@@ -13,6 +14,7 @@ class IngestKunciResult:
     written: list[Path]
     standard_dir: Path
     source: Path
+    schema_path: Path | None = None
 
 
 class IngestKunciController:
@@ -30,8 +32,10 @@ class IngestKunciController:
         else:
             source = Path(kunci_dir)
             written = ingester.ingest_dir(source)
+        schema = exam_schema_path(Path(standard_dir))
         return IngestKunciResult(
             written=written,
             standard_dir=Path(standard_dir),
             source=source,
+            schema_path=schema if schema.is_file() else None,
         )

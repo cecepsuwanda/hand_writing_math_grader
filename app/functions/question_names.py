@@ -15,6 +15,11 @@ def student_tex_filename() -> str:
     return "student.tex"
 
 
+def latex_source_filename() -> str:
+    """Sidecar from recognition latex_document (not stored in question.json)."""
+    return "latex_source.tex"
+
+
 def validation_filename() -> str:
     return "validation.json"
 

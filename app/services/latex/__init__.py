@@ -1,3 +1,1 @@
-from app.services.latex.builder import LatexBuilder
-
-__all__ = ["LatexBuilder"]
+"""LaTeX services — import from ``app.services.latex.<module>`` directly."""

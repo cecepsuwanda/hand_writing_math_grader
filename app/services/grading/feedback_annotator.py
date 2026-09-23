@@ -41,7 +41,13 @@ class FeedbackAnnotator:
             student_step = steps_by_number.get(step_grade.step_number)
             step_text = ""
             if student_step is not None:
-                step_text = student_step.latex or student_step.raw_text
+                if (
+                    student_step.symbolic is not None
+                    and (student_step.symbolic.repr or "").strip()
+                ):
+                    step_text = student_step.symbolic.repr
+                else:
+                    step_text = student_step.latex or student_step.raw_text
             annotated = self._annotate_one(
                 validation_status=step_grade.validation_status.value,
                 validation_reason=step_grade.feedback,

@@ -8,37 +8,47 @@ from pathlib import Path
 
 from app.config import DEFAULT_CONFIG_PATH, AppConfig, load_config
 from app.controllers.extract_controller import ExtractController
-from app.controllers.grade_controller import GradeController
 from app.controllers.ingest_kunci_controller import IngestKunciController
 from app.controllers.latex_controller import LatexController
-from app.controllers.process_controller import ProcessController
-from app.controllers.recognize_controller import RecognizeController
 from app.controllers.render_controller import RenderController
-from app.controllers.report_controller import ReportController
 from app.controllers.validate_controller import ValidateController
 from app.exceptions import (
+    InvalidKunciSelectionError,
+    InvalidMenuSelectionError,
     InvalidPdfSelectionError,
     MathGraderError,
     NoJawabanPdfError,
+    NoKunciTexError,
     OllamaModelNotConfiguredError,
     PdfNotFoundError,
 )
-from app.functions.paths import list_jawaban_pdfs, parse_pdf_choice, resolve_jawaban_pdf
-from app.services.grading.feedback_annotator import FeedbackAnnotator
-from app.services.grading.report import JsonCsvHtmlReporter
-from app.services.grading.rubric import RubricLoader
-from app.services.grading.standard_comparer import StandardFinalComparer
-from app.services.grading.step_grader import StepGrader
+from app.functions.kunci_ingest import load_exam_schema
+from app.functions.paths import (
+    list_jawaban_pdfs,
+    list_kunci_tex,
+    parse_kunci_choice,
+    parse_main_menu_choice,
+    parse_pdf_choice,
+    resolve_jawaban_pdf,
+)
 from app.services.latex.builder import LatexBuilder
-from app.services.math.hybrid_validator import HybridStepValidator
-from app.services.math.llm_judge import LlmStepJudge
-from app.services.math.sympy_validator import SymPyStepValidator
 from app.services.pdf.renderer import PyMuPdfRenderer
+from app.services.pipeline_factory import (
+    build_grade_controller,
+    build_process_controller,
+    build_recognize_controller,
+    build_report_controller,
+    build_validator,
+)
 from app.services.questions.extractor import QuestionExtractor
-from app.services.vision.ollama_client import OllamaClient
-from app.services.vision.recognizer import OllamaVisionRecognizer
 from app.services.workspace.cleaner import prepare_pipeline_workspace
 from app.views.error_view import print_error
+from app.views.exit_view import (
+    mark_interactive_session_done,
+    prompt_continue_or_exit,
+    reset_interactive_session_flag,
+    wait_for_exit,
+)
 from app.views.progress_view import (
     print_models,
     print_process_summary,
@@ -56,7 +66,10 @@ from app.views.result_view import (
 )
 from app.views.selection_view import (
     print_jawaban_menu,
+    print_kunci_menu,
+    print_main_menu,
     print_output_cleared,
+    print_selected_kunci,
     print_selected_pdf,
 )
 
@@ -308,6 +321,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory of kunci .tex files (default: config input.kunci_jawaban_dir)",
     )
+
+    subparsers.add_parser(
+        "menu",
+        help="Interactive main menu (ingest kunci / process PDF / exit)",
+    )
     return parser
 
 
@@ -333,6 +351,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_process(args)
         if args.command == "ingest-kunci":
             return _run_ingest_kunci(args)
+        if args.command == "menu":
+            return _run_menu(args)
         parser.error(f"unknown command: {args.command}")
     except MathGraderError as exc:
         print_error(exc)
@@ -371,6 +391,140 @@ def _select_pdf_interactive(jawaban_dir: Path) -> Path:
         return selected
 
 
+def _select_kunci_interactive(kunci_dir: Path) -> Path:
+    tex_files = list_kunci_tex(kunci_dir)
+    if not tex_files:
+        raise NoKunciTexError(kunci_dir)
+    print_kunci_menu(tex_files, kunci_dir)
+    while True:
+        try:
+            raw = input("Pilihan: ")
+        except EOFError as exc:
+            raise InvalidKunciSelectionError("no input received") from exc
+        try:
+            selected = parse_kunci_choice(tex_files, raw)
+        except ValueError as exc:
+            print_error(InvalidKunciSelectionError(str(exc)))
+            continue
+        print_selected_kunci(selected)
+        return selected
+
+
+def _run_menu(args: argparse.Namespace) -> int:
+    if not sys.stdin.isatty():
+        print_error(
+            MathGraderError(
+                "Interactive menu requires a terminal. "
+                "Use `process`, `ingest-kunci`, or other subcommands instead."
+            )
+        )
+        return 1
+
+    config = load_config(args.config)
+    last_code = 0
+    while True:
+        print_main_menu()
+        try:
+            raw = input("Pilihan [1/2/3]: ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            mark_interactive_session_done()
+            return last_code
+        try:
+            choice = parse_main_menu_choice(raw)
+        except ValueError as exc:
+            print_error(InvalidMenuSelectionError(str(exc)))
+            continue
+
+        if choice == "exit":
+            mark_interactive_session_done()
+            return last_code
+
+        try:
+            if choice == "ingest":
+                kunci_path = _select_kunci_interactive(config.input.kunci_jawaban_dir)
+                result = IngestKunciController().ingest(
+                    kunci_path=kunci_path,
+                    kunci_dir=config.input.kunci_jawaban_dir,
+                    standard_dir=config.grading.standard_dir,
+                )
+                print_ingest_kunci_result(result)
+                last_code = 0
+            else:
+                if not config.ollama.vision_model.strip():
+                    raise OllamaModelNotConfiguredError()
+                pdf_path = _select_pdf_interactive(config.input.jawaban_dir)
+                last_code = _process_one_pdf(config, args, pdf_path)
+        except MathGraderError as exc:
+            print_error(exc)
+            last_code = 1
+        except Exception as exc:  # noqa: BLE001 — CLI boundary maps unexpected → exit 2
+            print_error(exc)
+            last_code = 2
+
+
+def _process_one_pdf(
+    config: AppConfig,
+    args: argparse.Namespace,
+    pdf_path: Path,
+) -> int:
+    """Run a single end-to-end process for ``pdf_path``; return exit code."""
+    pages_dir = getattr(args, "pages_dir", None)
+    if pages_dir is None:
+        pages_dir = config.pdf.output_dir
+    recognition_dir = getattr(args, "recognition_dir", None)
+    if recognition_dir is None:
+        recognition_dir = config.recognition.output_dir
+    questions_dir = getattr(args, "questions_dir", None)
+    if questions_dir is None:
+        questions_dir = config.questions.output_dir
+    output_dir = getattr(args, "output", None)
+    if output_dir is None:
+        output_dir = config.report.output_dir
+    standard_dir = getattr(args, "standard", None)
+    if standard_dir is None:
+        standard_dir = config.grading.standard_dir
+    dpi = getattr(args, "dpi", None)
+    if dpi is None:
+        dpi = config.pdf.dpi
+    student_id = getattr(args, "student_id", None) or "student_001"
+    workspace_root = config.report.output_dir
+
+    removed = prepare_pipeline_workspace(
+        workspace_root,
+        pages_dir=pages_dir,
+        recognition_dir=recognition_dir,
+        questions_dir=questions_dir,
+        crops_dir=config.recognition.crops_dir,
+    )
+    print_output_cleared(workspace_root, removed)
+    print_models(
+        vision_model=config.ollama.vision_model,
+        reasoning_model=config.ollama.reasoning_model,
+    )
+
+    controller = build_process_controller(
+        config,
+        recognition_dir=recognition_dir,
+        standard_dir=standard_dir,
+        on_progress=print_progress,
+    )
+    result = controller.process(
+        pdf_path,
+        pages_dir=pages_dir,
+        recognition_dir=recognition_dir,
+        questions_dir=questions_dir,
+        output_dir=output_dir,
+        dpi=dpi,
+        student_id=student_id,
+        workspace_root=workspace_root,
+        reset_workspace=False,
+        crops_dir=config.recognition.crops_dir,
+    )
+    print_process_summary(result)
+    return 0
+
+
 def _run_render(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     pdf_path = _resolve_pdf(args, config)
@@ -394,7 +548,7 @@ def _run_recognize(args: argparse.Namespace) -> int:
     )
     dpi = args.dpi if args.dpi is not None else config.pdf.dpi
 
-    result = _build_recognize_controller(config, recognition_dir).recognize(
+    result = build_recognize_controller(config, recognition_dir).recognize(
         pdf_path=pdf_path,
         pages_dir=pages_dir,
         recognition_dir=recognition_dir,
@@ -419,7 +573,7 @@ def _run_extract(args: argparse.Namespace) -> int:
     def recognize_runner():
         if not config.ollama.vision_model.strip():
             raise OllamaModelNotConfiguredError()
-        return _build_recognize_controller(config, recognition_dir).recognize(
+        return build_recognize_controller(config, recognition_dir).recognize(
             pdf_path=pdf_path,
             pages_dir=pages_dir,
             recognition_dir=recognition_dir,
@@ -427,7 +581,9 @@ def _run_extract(args: argparse.Namespace) -> int:
         )
 
     controller = ExtractController(
-        extractor=QuestionExtractor(),
+        extractor=QuestionExtractor(
+            exam_schema=load_exam_schema(config.grading.standard_dir),
+        ),
         recognize_runner=recognize_runner,
     )
     result = controller.extract(
@@ -478,7 +634,7 @@ def _run_validate(args: argparse.Namespace) -> int:
         if args.questions_dir is not None
         else config.questions.output_dir
     )
-    controller = ValidateController(_build_validator(config))
+    controller = ValidateController(build_validator(config))
     result = controller.validate(questions_dir)
     print_validate_result(result)
     return 0
@@ -494,7 +650,7 @@ def _run_grade(args: argparse.Namespace) -> int:
     standard_dir = (
         args.standard if args.standard is not None else config.grading.standard_dir
     )
-    controller = _build_grade_controller(config, standard_dir)
+    controller = build_grade_controller(config, standard_dir)
     result = controller.grade(questions_dir)
     print_grade_result(result)
     return 0
@@ -511,7 +667,7 @@ def _run_report(args: argparse.Namespace) -> int:
     standard_dir = (
         args.standard if args.standard is not None else config.grading.standard_dir
     )
-    controller = _build_report_controller(config, standard_dir)
+    controller = build_report_controller(config, standard_dir)
     result = controller.report(
         questions_dir,
         output_dir,
@@ -526,129 +682,33 @@ def _run_process(args: argparse.Namespace) -> int:
     if not config.ollama.vision_model.strip():
         raise OllamaModelNotConfiguredError()
 
-    pdf_path = _resolve_pdf(args, config)
-    pages_dir = args.pages_dir if args.pages_dir is not None else config.pdf.output_dir
-    recognition_dir = (
-        args.recognition_dir
-        if args.recognition_dir is not None
-        else config.recognition.output_dir
-    )
-    questions_dir = (
-        args.questions_dir
-        if args.questions_dir is not None
-        else config.questions.output_dir
-    )
-    output_dir = args.output if args.output is not None else config.report.output_dir
-    standard_dir = (
-        args.standard if args.standard is not None else config.grading.standard_dir
-    )
-    dpi = args.dpi if args.dpi is not None else config.pdf.dpi
-    workspace_root = config.report.output_dir
+    interactive = sys.stdin.isatty()
+    last_code = 0
 
-    removed = prepare_pipeline_workspace(
-        workspace_root,
-        pages_dir=pages_dir,
-        recognition_dir=recognition_dir,
-        questions_dir=questions_dir,
-    )
-    print_output_cleared(workspace_root, removed)
-    print_models(
-        vision_model=config.ollama.vision_model,
-        reasoning_model=config.ollama.reasoning_model,
-    )
+    while True:
+        try:
+            pdf_path = _resolve_pdf(args, config)
+            last_code = _process_one_pdf(config, args, pdf_path)
+        except MathGraderError as exc:
+            print_error(exc)
+            last_code = 1
+        except Exception as exc:  # noqa: BLE001 — CLI boundary maps unexpected → exit 2
+            print_error(exc)
+            last_code = 2
 
-    controller = ProcessController(
-        render_controller=RenderController(PyMuPdfRenderer()),
-        recognize_controller=_build_recognize_controller(config, recognition_dir),
-        extract_controller=ExtractController(extractor=QuestionExtractor()),
-        latex_controller=LatexController(LatexBuilder()),
-        validate_controller=ValidateController(_build_validator(config)),
-        grade_controller=_build_grade_controller(config, standard_dir),
-        report_controller=_build_report_controller(config, standard_dir),
-        on_progress=print_progress,
-    )
-    result = controller.process(
-        pdf_path,
-        pages_dir=pages_dir,
-        recognition_dir=recognition_dir,
-        questions_dir=questions_dir,
-        output_dir=output_dir,
-        dpi=dpi,
-        student_id=args.student_id,
-        workspace_root=workspace_root,
-        reset_workspace=False,
-    )
-    print_process_summary(result)
-    return 0
+        if not interactive:
+            return last_code
 
-
-def _build_recognize_controller(
-    config: AppConfig, recognition_dir: Path
-) -> RecognizeController:
-    client = OllamaClient(
-        base_url=config.ollama.base_url,
-        timeout_seconds=config.ollama.timeout_seconds,
-        max_retries=config.ollama.max_retries,
-    )
-    recognizer = OllamaVisionRecognizer(
-        client=client,
-        model=config.ollama.vision_model,
-        output_dir=recognition_dir,
-    )
-    return RecognizeController(
-        renderer=PyMuPdfRenderer(),
-        recognizer=recognizer,
-    )
-
-
-def _build_validator(config: AppConfig):
-    validator = SymPyStepValidator()
-    if config.ollama.reasoning_model.strip():
-        client = OllamaClient(
-            base_url=config.ollama.base_url,
-            timeout_seconds=config.ollama.timeout_seconds,
-            max_retries=config.ollama.max_retries,
-        )
-        validator = HybridStepValidator(
-            sympy_validator=validator,
-            llm_judge=LlmStepJudge(
-                client=client,
-                model=config.ollama.reasoning_model,
-            ),
-        )
-    return validator
-
-
-def _build_grade_controller(config: AppConfig, standard_dir: Path) -> GradeController:
-    annotator = None
-    if config.ollama.reasoning_model.strip():
-        client = OllamaClient(
-            base_url=config.ollama.base_url,
-            timeout_seconds=config.ollama.timeout_seconds,
-            max_retries=config.ollama.max_retries,
-        )
-        annotator = FeedbackAnnotator(
-            client=client,
-            model=config.ollama.reasoning_model,
-        )
-    grader = StepGrader(
-        rubric_loader=RubricLoader(standard_dir),
-        feedback_annotator=annotator,
-        standard_comparer=StandardFinalComparer(standard_dir),
-    )
-    return GradeController(grader=grader, standard_dir=standard_dir)
-
-
-def _build_report_controller(
-    config: AppConfig, standard_dir: Path
-) -> ReportController:
-    return ReportController(
-        reporter=JsonCsvHtmlReporter(),
-        standard_dir=standard_dir,
-        vision_model=config.ollama.vision_model,
-        reasoning_model=config.ollama.reasoning_model,
-    )
+        action = prompt_continue_or_exit()
+        if action == "exit":
+            mark_interactive_session_done()
+            return last_code
+        args.pdf = None
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    reset_interactive_session_flag()
+    try:
+        raise SystemExit(main())
+    finally:
+        wait_for_exit()

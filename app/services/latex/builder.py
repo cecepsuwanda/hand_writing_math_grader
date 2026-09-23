@@ -54,7 +54,7 @@ class LatexBuilder:
 
     def _write_student_tex(self, question_dir: Path, question: Question) -> Path:
         try:
-            content = build_student_latex(question)
+            content = build_student_latex(question, question_dir=question_dir)
             path = question_dir / student_tex_filename()
             path.write_text(content, encoding="utf-8")
             return path

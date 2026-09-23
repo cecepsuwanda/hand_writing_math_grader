@@ -7,15 +7,18 @@ Proyek ini wajib memakai **MVC**, **SOLID**, **clean code**, serta **OOP** berda
 ## Pipeline
 
 ```text
-PDF → page images → Vision recognition → structured JSON
-  → question/step extraction → student LaTeX
-  → validation (SymPy step consistency, lalu LLM jika uncertain)
-  → rubric grading → report + CLI summary
+PDF → page images
+  → ink-cluster bboxes (deterministic; Pillow)
+  → Pillow crop (+ padding; crops/page_XXX/region_*.png)
+  → crop_math VLM → symbolic JSON (+ latex_source.tex)
+  → question merge → student.tex → SymPy validation → grading → report
 ```
 
-Recognition dan grading **dipisah**. Jangan minta LLM memberi nilai langsung dari gambar.
+Recognition dan grading **dipisah**. JSON soal menyimpan `raw_text` + `symbolic` (bukan LaTeX). LaTeX hanya di artefak `.tex`. Satu crop boleh menghasilkan beberapa soal bila ink menggabungkan jawaban dan model mengembalikan `{"questions":[...]}`.
 
-**Status validasi saat ini:** konsistensi langkah mahasiswa (parse + ekivalensi SymPy antar langkah / final). **Compare final answer** ke `standards/.../solutions/question_NNN.tex` (marker `% final answer`) dan **step-align sequential** ke baris `aligned`/`align` dijalankan saat grading via SymPy equivalence (skor = min(konsistensi, standard)). Folder `data/input/kunci_jawaban/` dapat di-ingest ke solutions via CLI `ingest-kunci` (slice: enumerate + align + HP; bukan parser LaTeX arbitrary). Opsional HTTP: `app/api.py` (FastAPI) memanggil controller yang sama; CLI tetap entry wajib.
+`exam_schema.json`: recognition memakai **stem + expects_figure (+ parts)** saja; `steps`/`final`/`HP` hanya untuk grading.
+
+**Validasi:** konsistensi langkah mahasiswa (SymPy ± LLM). **Grading:** compare ke `exam_schema` `final_symbolic` / `steps_symbolic` (fallback `standards/.../solutions/`) via SymPy; skor = min(konsistensi, standard). Ingest kunci: `ingest-kunci`. Opsional HTTP: `app/api.py` (wiring sama `pipeline_factory`); CLI tetap entry wajib.
 
 ## Lapisan MVC
 
@@ -27,8 +30,6 @@ Infrastructure      → Ollama, PyMuPDF, SymPy, filesystem, config
 ```
 
 **Arah ketergantungan:** View → Controller → Services/Models → Infrastructure.
-
-Infrastructure **tidak** bergantung pada Controller atau View.
 
 | Layer | Boleh | Tidak boleh |
 |-------|--------|-------------|
@@ -43,36 +44,43 @@ Infrastructure **tidak** bergantung pada Controller atau View.
 ```text
 app/
 ├── cli.py                 # argparse bootstrap
+├── api.py                 # optional FastAPI adapter (pasca-MVP)
 ├── config/                # AppConfig + config.yaml
-├── controllers/           # render, recognize, validate, grade, process
-├── views/                 # progress, result, error
-├── models/                # Page, Recognition, Question, Validation, Grade
+├── controllers/           # render, recognize, extract, latex, validate,
+│                          # grade, report, process, ingest_kunci
+├── views/                 # progress, result, error, selection, exit, style
+├── models/                # Page, Recognition, Question, ExamSchema, …
 ├── services/
-│   ├── pdf/               # renderer
-│   ├── vision/            # ollama_client, recognizer
-│   ├── questions/         # extractor
-│   ├── latex/             # builder
-│   ├── math/              # parser, sympy_validator, equivalence
-│   ├── grading/           # step_grader, rubric, report
-│   └── workspace/         # output cleaner
-├── functions/             # latex_transforms, score_aggregate, paths (pure)
-├── interfaces/            # PdfRenderer, VisionRecognizer, StepValidator, GradeReporter
-└── prompts/               # recognition, latex, validation, grading
+│   ├── pipeline_factory.py  # shared CLI/API ProcessController wiring
+│   ├── pdf/                 # renderer
+│   ├── vision/              # ollama_client, recognizer, ink_region_proposer,
+│   │                        # factory
+│   ├── questions/           # extractor
+│   ├── latex/               # builder
+│   ├── math/                # parser, sympy_validator, equivalence, llm_judge
+│   ├── grading/             # step_grader, rubric, standard_comparer, report
+│   ├── standards/           # kunci_ingester
+│   └── workspace/           # output cleaner (incl. crops_dir)
+├── functions/             # ink_layout, image_crop, score_*, …
+├── interfaces/            # PdfRenderer, VisionRecognizer, StepValidator, …
+└── prompts/               # crop_math, validation, grading
 ```
 
 ## Audit trail
 
-Setiap keputusan skor harus menyimpan bukti: gambar, recognition, LaTeX mahasiswa, hasil SymPy/LLM, alasan, skor, confidence, referensi halaman. Referensi jawaban standar (final) tercatat di `grading.json` sebagai `standard_final_status` bila solution `.tex` tersedia.
+Setiap keputusan skor harus menyimpan bukti: gambar, crops/`*_regions*.json`, recognition, LaTeX mahasiswa, hasil SymPy/LLM, alasan, skor, confidence, referensi halaman.
 
 Jangan hapus artefak intermediate **di tengah run** jika satu tahap gagal.
 
-Awal perintah `process` mengosongkan `data/output/` (kecuali `standards/`) agar run baru bersih.
+Awal perintah `process` mengosongkan `data/output/` (kecuali `standards/`) termasuk `crops/` bila di luar root.
 
 ## Kontrak CLI
 
 ```text
+python -m app.cli menu                    # menu utama: ingest kunci / proses PDF / keluar
 python -m app.cli process                 # pilih PDF dari data/input/jawaban
 python -m app.cli process file.pdf
+python -m app.cli ingest-kunci            # tulis solutions/ + exam_schema.json
 python -m app.cli render|recognize|extract|validate|grade|report ...
 ```
 

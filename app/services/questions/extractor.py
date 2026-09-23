@@ -14,8 +14,14 @@ from app.exceptions import (
     InvalidRecognitionJsonError,
     RecognitionNotFoundError,
 )
-from app.functions.question_merge import merge_page_recognitions
-from app.functions.question_names import question_artifact_filename, question_dir_name
+from app.functions.question_merge import collect_latex_documents, merge_page_recognitions
+from app.functions.question_names import (
+    latex_source_filename,
+    question_artifact_filename,
+    question_dir_name,
+)
+from app.functions.question_split import split_questions_by_exam_schema
+from app.models.exam_schema import ExamSchema
 from app.models.question import ExtractResult, Question
 from app.models.recognition import PageRecognition
 
@@ -25,6 +31,9 @@ _PAGE_RECOGNITION_RE = re.compile(r"page_(\d+)_recognition\.json$", re.IGNORECAS
 
 
 class QuestionExtractor:
+    def __init__(self, exam_schema: ExamSchema | None = None) -> None:
+        self._exam_schema = exam_schema
+
     def extract_from_dir(
         self,
         recognition_dir: Path,
@@ -42,6 +51,15 @@ class QuestionExtractor:
         if not questions:
             raise EmptyExtractionError()
 
+        latex_by_number = collect_latex_documents(pages)
+        questions, latex_by_number = split_questions_by_exam_schema(
+            questions,
+            self._exam_schema,
+            latex_by_number,
+        )
+        if not questions:
+            raise EmptyExtractionError()
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         artifact_paths: list[Path] = []
@@ -49,6 +67,8 @@ class QuestionExtractor:
             path = self._write_question(output_dir, question)
             artifact_paths.append(path)
             self._write_page_refs(output_dir, question)
+            latex_body = latex_by_number.get(question.question_number, "")
+            self._write_latex_source(output_dir, question, latex_body)
 
         logger.info(
             "Extracted %s question(s) to %s",
@@ -64,9 +84,27 @@ class QuestionExtractor:
     def _write_question(self, output_dir: Path, question: Question) -> Path:
         question_dir = output_dir / question_dir_name(question.question_number)
         question_dir.mkdir(parents=True, exist_ok=True)
+        # Never persist LaTeX in question.json (exclude empty latex on steps is default "").
         path = question_dir / question_artifact_filename()
         path.write_text(question.model_dump_json(indent=2), encoding="utf-8")
         return path
+
+    def _write_latex_source(
+        self, output_dir: Path, question: Question, latex_body: str
+    ) -> None:
+        question_dir = output_dir / question_dir_name(question.question_number)
+        path = question_dir / latex_source_filename()
+        parts: list[str] = []
+        if latex_body.strip():
+            parts.append(latex_body.strip())
+        for fig in question.figure_refs:
+            caption = (fig.caption or "").replace("\n", " ")
+            # Path may be absolute; use as-is for local compile audit.
+            parts.append(f"% figure: {caption}")
+            parts.append(rf"\includegraphics{{{fig.path}}}")
+        if not parts:
+            return
+        path.write_text("\n".join(parts) + "\n", encoding="utf-8")
 
     def _write_page_refs(self, output_dir: Path, question: Question) -> None:
         question_dir = output_dir / question_dir_name(question.question_number)

@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from app.functions.question_names import question_dir_name
+from app.models.exam_schema import ExamQuestion, ExamSchema
 
 _FINAL_ANSWER_MARKER = "% final answer"
 
@@ -24,6 +25,79 @@ def standard_solution_path(standard_dir: Path, question_number: int) -> Path:
         / "solutions"
         / f"{question_dir_name(question_number)}.tex"
     )
+
+
+def exam_schema_path(standard_dir: Path) -> Path:
+    """Return ``standards/.../exam_schema.json`` path."""
+    return Path(standard_dir) / "exam_schema.json"
+
+
+def schema_question(
+    schema: ExamSchema | None,
+    question_number: int,
+) -> ExamQuestion | None:
+    """Return the ``ExamQuestion`` with ``number``, or None."""
+    if schema is None:
+        return None
+    for question in schema.questions:
+        if question.number == question_number:
+            return question
+    return None
+
+
+def standard_final_text(
+    schema_q: ExamQuestion | None,
+    tex: str | None,
+) -> str | None:
+    """Prefer ``final_symbolic.repr``; then TeX ``% final answer``; then ``final``."""
+    if schema_q is not None and schema_q.final_symbolic is not None:
+        repr_text = (schema_q.final_symbolic.repr or "").strip()
+        if repr_text:
+            return repr_text
+    if tex:
+        from_tex = extract_final_answer_from_tex(tex)
+        if from_tex:
+            return from_tex
+    if schema_q is not None:
+        final = (schema_q.final or "").strip()
+        if final:
+            return final
+    return None
+
+
+def standard_step_texts(
+    schema_q: ExamQuestion | None,
+    tex: str | None,
+) -> list[str]:
+    """Prefer per-index ``steps_symbolic.repr``; fall back to TeX / ``steps``."""
+    tex_steps = extract_solution_steps_from_tex(tex) if tex else []
+    if schema_q is not None and schema_q.steps_symbolic:
+        symbolic = schema_q.steps_symbolic
+        length = max(len(symbolic), len(tex_steps))
+        result: list[str] = []
+        for index in range(length):
+            repr_text = ""
+            if index < len(symbolic) and symbolic[index] is not None:
+                repr_text = (symbolic[index].repr or "").strip()  # type: ignore[union-attr]
+            if repr_text:
+                result.append(repr_text)
+                continue
+            if index < len(tex_steps) and tex_steps[index].strip():
+                result.append(tex_steps[index].strip())
+                continue
+            if (
+                schema_q.steps
+                and index < len(schema_q.steps)
+                and schema_q.steps[index].strip()
+            ):
+                result.append(schema_q.steps[index].strip())
+        return result
+
+    if tex_steps:
+        return tex_steps
+    if schema_q is not None and schema_q.steps:
+        return [step.strip() for step in schema_q.steps if step.strip()]
+    return []
 
 
 def extract_final_answer_from_tex(text: str) -> str | None:

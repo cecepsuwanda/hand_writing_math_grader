@@ -1,3 +1,1 @@
-from app.services.pdf.renderer import PyMuPdfRenderer
-
-__all__ = ["PyMuPdfRenderer"]
+"""PDF services — import from ``app.services.pdf.<module>`` directly."""

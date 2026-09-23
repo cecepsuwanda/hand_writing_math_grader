@@ -33,6 +33,9 @@ class OllamaClient:
             "model": model,
             "stream": False,
             "format": "json",
+            # Gemma4+/thinking models can exhaust the output budget on
+            # reasoning and leave message.content empty; force final answer.
+            "think": False,
             "messages": [
                 {
                     "role": "user",
@@ -52,6 +55,7 @@ class OllamaClient:
             "model": model,
             "stream": False,
             "format": "json",
+            "think": False,
             "messages": [
                 {
                     "role": "user",
@@ -92,10 +96,13 @@ class OllamaClient:
                         f"request failed {response.status_code}: {response.text[:200]}"
                     )
                 data = response.json()
-                message = data.get("message") or {}
-                content = message.get("content")
-                if not isinstance(content, str) or not content.strip():
-                    raise OllamaUnavailableError("empty message content from Ollama")
+                content = self._message_text(data)
+                if not content.strip():
+                    done_reason = data.get("done_reason")
+                    raise OllamaUnavailableError(
+                        "empty message content from Ollama"
+                        + (f" (done_reason={done_reason})" if done_reason else "")
+                    )
                 return content
             except httpx.TimeoutException as exc:
                 last_error = OllamaTimeoutError(model, self._timeout_seconds)
@@ -134,3 +141,23 @@ class OllamaClient:
         if isinstance(last_error, Exception):
             raise last_error
         raise OllamaUnavailableError("unknown Ollama failure")
+
+    @staticmethod
+    def _message_text(data: dict[str, Any]) -> str:
+        """Prefer assistant content; fall back to thinking if content is empty.
+
+        Some vision+think responses spend the whole token budget on
+        ``message.thinking`` and leave ``content`` blank (Ollama #16184).
+        """
+        message = data.get("message") or {}
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        thinking = message.get("thinking")
+        if isinstance(thinking, str) and thinking.strip():
+            logger.warning(
+                "ollama content empty; using message.thinking (%s chars)",
+                len(thinking),
+            )
+            return thinking
+        return content if isinstance(content, str) else ""

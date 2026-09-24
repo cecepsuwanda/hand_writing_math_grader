@@ -18,6 +18,9 @@ class IngestKunciResult:
 
 
 class IngestKunciController:
+    def __init__(self, ingester: KunciIngester) -> None:
+        self._ingester = ingester
+
     def ingest(
         self,
         *,
@@ -25,17 +28,24 @@ class IngestKunciController:
         kunci_dir: Path,
         standard_dir: Path,
     ) -> IngestKunciResult:
-        ingester = KunciIngester(standard_dir)
+        resolved = Path(standard_dir).resolve()
+        ingester_dir = self._ingester.standard_dir.resolve()
+        if resolved != ingester_dir:
+            raise ValueError(
+                f"standard_dir {resolved} does not match injected "
+                f"KunciIngester dir {ingester_dir}"
+            )
         if kunci_path is not None:
             source = Path(kunci_path)
-            written = ingester.ingest_file(source)
+            written = self._ingester.ingest_file(source)
         else:
             source = Path(kunci_dir)
-            written = ingester.ingest_dir(source)
-        schema = exam_schema_path(Path(standard_dir))
+            written = self._ingester.ingest_dir(source)
+        write_dir = self._ingester.standard_dir
+        schema = exam_schema_path(write_dir)
         return IngestKunciResult(
             written=written,
-            standard_dir=Path(standard_dir),
+            standard_dir=write_dir,
             source=source,
             schema_path=schema if schema.is_file() else None,
         )

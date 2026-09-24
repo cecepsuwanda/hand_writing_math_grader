@@ -7,12 +7,13 @@ from pathlib import Path
 
 from app.functions.page_names import page_image_filename
 from app.functions.regions_artifact import crop_filename, regions_json_path
+from app.interfaces.crop_workspace import CropWorkspace
 from app.interfaces.renderer import PdfRenderer
 from app.models.page import Page
-from app.services.vision.recognizer import OllamaVisionRecognizer
 from app.views.crop_view import (
     ask_crops_ok,
     print_crop_summary,
+    print_no_regions_json,
     should_prompt_interactively,
     wait_for_json_edit,
 )
@@ -23,13 +24,11 @@ class PageCropSummary:
     page_number: int
     json_path: Path
     crop_paths: list[Path]
-    source: str
 
 
 @dataclass(frozen=True)
 class CropProposeResult:
     pages: list[PageCropSummary]
-    crops_dir: Path
 
 
 class CropController:
@@ -37,7 +36,7 @@ class CropController:
         self,
         *,
         renderer: PdfRenderer,
-        recognizer: OllamaVisionRecognizer,
+        recognizer: CropWorkspace,
     ) -> None:
         self._renderer = renderer
         self._recognizer = recognizer
@@ -61,7 +60,7 @@ class CropController:
         summaries: list[PageCropSummary] = []
         for page in pages:
             image_path = Path(pages_dir) / page.image
-            regions, source, json_path = self._recognizer.propose_page_crops(
+            regions, _, json_path = self._recognizer.propose_page_crops(
                 image_path, page.page_number
             )
             page_dir = self._recognizer.page_crop_dir(page.page_number)
@@ -70,7 +69,6 @@ class CropController:
                 page_number=page.page_number,
                 json_path=json_path,
                 crop_paths=crop_paths,
-                source=source,
             )
             print_crop_summary(
                 page_number=summary.page_number,
@@ -78,7 +76,7 @@ class CropController:
                 crop_paths=summary.crop_paths,
             )
             summaries.append(summary)
-        return CropProposeResult(pages=summaries, crops_dir=self.crops_dir)
+        return CropProposeResult(pages=summaries)
 
     def recrop_all(self, pages_dir: Path) -> CropProposeResult:
         """Recrop every page that has ``page_*_regions.json`` under crops_dir."""
@@ -86,7 +84,7 @@ class CropController:
         summaries: list[PageCropSummary] = []
         crops_root = self.crops_dir
         if not crops_root.is_dir():
-            return CropProposeResult(pages=[], crops_dir=crops_root)
+            return CropProposeResult(pages=[])
 
         for page_dir in sorted(crops_root.glob("page_*")):
             if not page_dir.is_dir():
@@ -103,7 +101,7 @@ class CropController:
                 raise FileNotFoundError(
                     f"page image missing for recrop: {image_path}"
                 )
-            regions, source, json_path = self._recognizer.recrop_page_from_json(
+            regions, _, json_path = self._recognizer.recrop_page_from_json(
                 image_path, page_number
             )
             crop_paths = [page_dir / crop_filename(i) for i in range(len(regions))]
@@ -111,7 +109,6 @@ class CropController:
                 page_number=page_number,
                 json_path=json_path,
                 crop_paths=crop_paths,
-                source=source,
             )
             print_crop_summary(
                 page_number=summary.page_number,
@@ -119,7 +116,7 @@ class CropController:
                 crop_paths=summary.crop_paths,
             )
             summaries.append(summary)
-        return CropProposeResult(pages=summaries, crops_dir=crops_root)
+        return CropProposeResult(pages=summaries)
 
     def confirm_loop(
         self,
@@ -142,7 +139,7 @@ class CropController:
             wait_for_json_edit(json_hint=hint, input_fn=input_fn)
             result = self.recrop_all(pages_dir)
             if not result.pages:
-                print("No regions JSON found under crops/; cannot recrop.")
+                print_no_regions_json(self.crops_dir)
 
     def ensure_crops_confirmed(
         self,
@@ -167,7 +164,7 @@ class CropController:
                 json_path = regions_json_path(page_dir, page.page_number)
                 from app.functions.regions_artifact import load_regions_artifact
 
-                _n, source, regions = load_regions_artifact(json_path)
+                _n, _source, regions = load_regions_artifact(json_path)
                 crop_paths = [
                     page_dir / crop_filename(i) for i in range(len(regions))
                 ]
@@ -175,7 +172,6 @@ class CropController:
                     page_number=page.page_number,
                     json_path=json_path,
                     crop_paths=crop_paths,
-                    source=source,
                 )
                 print_crop_summary(
                     page_number=summary.page_number,
@@ -183,7 +179,7 @@ class CropController:
                     crop_paths=summary.crop_paths,
                 )
                 summaries.append(summary)
-            result = CropProposeResult(pages=summaries, crops_dir=self.crops_dir)
+            result = CropProposeResult(pages=summaries)
         else:
             result = self.propose_pages(pages, pages_dir)
         self.confirm_loop(pages_dir, force_yes=force_yes, input_fn=input_fn)

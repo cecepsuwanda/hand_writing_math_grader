@@ -34,7 +34,7 @@ Phase progress:
 - [ ] Interfaces + DI untuk dependency baru (SOLID)
 - [ ] Implement service (OOP) / pure function (FP)
 - [ ] Controller tipis + View CLI (jika entry point dibutuhkan)
-- [ ] Tests + jalankan tests
+- [ ] Tests + jalankan tests (ikuti skill `write-math-grader-tests` / `docs/testing.md` — tanpa file test baru)
 - [ ] Artefak intermediate tersimpan
 - [ ] Tidak merusak phase sebelumnya
 ```
@@ -67,6 +67,7 @@ Buat struktur dari `docs/architecture.md`:
 ## Referensi
 
 - [phases.md](phases.md) — ringkasan Phase 1–9
-- `docs/architecture.md`, `docs/conventions.md`, `docs/math-topics.md`
+- `docs/architecture.md`, `docs/conventions.md`, `docs/math-topics.md`, `docs/testing.md`
 - `docs/topik.md` — silabus domain
 - `docs/plan_ai_math_grader_ollama.md` §21, §23, §31, §33, §35
+- Skill tests: `.cursor/skills/write-math-grader-tests`

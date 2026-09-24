@@ -7,6 +7,7 @@ from pathlib import Path
 from app.config import AppConfig
 from app.functions.ink_layout import InkLayoutParams
 from app.functions.kunci_ingest import load_exam_schema, load_question_stems_from_kunci
+from app.interfaces.llm_client import LlmClient
 from app.models.exam_schema import ExamSchema
 from app.services.vision.ink_region_proposer import InkRegionProposer
 from app.services.vision.ollama_client import OllamaClient
@@ -19,6 +20,7 @@ def ink_params_from_config(config: AppConfig) -> InkLayoutParams:
         threshold=ink.threshold,
         merge_gap_ratio=ink.merge_gap_ratio,
         min_block_height_ratio=ink.min_block_height_ratio,
+        min_row_ink_ratio=ink.min_row_ink_ratio,
         header_fraction=ink.header_fraction,
         column_valley_ratio=ink.column_valley_ratio,
         margin_ratio=ink.margin_ratio,
@@ -29,7 +31,7 @@ def build_vision_recognizer(
     config: AppConfig,
     recognition_dir: Path,
     *,
-    client: OllamaClient | None = None,
+    client: LlmClient | None = None,
     exam_schema: ExamSchema | None = None,
     load_schema_from_standard: bool = True,
 ) -> OllamaVisionRecognizer:

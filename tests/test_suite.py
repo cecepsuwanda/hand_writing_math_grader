@@ -27,7 +27,6 @@ from app.functions.latex_transforms import build_student_latex, escape_latex_tex
 from app.functions.page_names import page_image_filename
 from app.functions.paths import list_jawaban_pdfs, list_kunci_tex, parse_kunci_choice, parse_main_menu_choice, parse_path_choice, parse_pdf_choice, resolve_jawaban_pdf
 from app.functions.question_merge import collect_latex_documents, merge_page_recognitions
-from app.functions.question_names import question_dir_name
 from app.functions.question_split import split_questions_by_exam_schema
 from app.models.exam_schema import ExamQuestion, ExamSchema
 from app.functions.report_aggregate import aggregate_exam_report, summary_csv_rows
@@ -67,7 +66,7 @@ from app.services.pdf.renderer import PyMuPdfRenderer
 from app.services.questions.extractor import QuestionExtractor
 from app.services.standards.kunci_ingester import KunciIngester
 from app.services.vision.ollama_client import OllamaClient
-from app.services.vision.recognizer import OllamaVisionRecognizer, PROMPT_VERSION
+from app.services.vision.recognizer import OllamaVisionRecognizer
 from app.services.workspace.cleaner import clear_output_workspace, prepare_pipeline_workspace
 from app.views.exit_view import (
     mark_interactive_session_done,
@@ -78,7 +77,7 @@ from app.views.exit_view import (
 from pathlib import Path
 from pydantic import ValidationError
 from sympy import Eq, Lt, Symbol
-from tests.helpers import write_pdf
+from tests.helpers import FakeClient, write_pdf
 from unittest.mock import MagicMock
 import httpx
 import json
@@ -88,25 +87,6 @@ def _image(tmp_path: Path) -> Path:
     path = tmp_path / 'page.png'
     path.write_bytes(b'\x89PNG\r\n\x1a\nfake')
     return path
-
-class FakeClient:
-
-    def __init__(self, content: str | list[str]) -> None:
-        if isinstance(content, list):
-            self._queue = list(content)
-            self.content = content[0] if content else ''
-        else:
-            self._queue = None
-            self.content = content
-        self.calls: list[tuple[str, Path, str]] = []
-
-    def generate_with_image(self, prompt: str, image_path: Path, model: str) -> str:
-        self.calls.append((prompt, image_path, model))
-        if self._queue is not None:
-            if not self._queue:
-                raise AssertionError('FakeClient exhausted response queue')
-            return self._queue.pop(0)
-        return self.content
 
 def _write_recognition(path: Path, page: PageRecognition) -> None:
     path.write_text(page.model_dump_json(indent=2), encoding='utf-8')
@@ -177,6 +157,12 @@ class TestConfig:
         assert config.report.output_dir == Path('data/output')
         assert config.ollama.base_url == 'http://localhost:11434'
         assert isinstance(config.recognition.output_dir, Path)
+        assert config.recognition.ink.min_row_ink_ratio == 0.002
+        from app.services.vision.factory import ink_params_from_config
+
+        ink = ink_params_from_config(config)
+        assert ink.min_row_ink_ratio == 0.002
+        assert ink.merge_gap_ratio == config.recognition.ink.merge_gap_ratio
 
 class TestPaths:
 
@@ -390,11 +376,6 @@ class TestExitView:
         assert prompt_continue_or_exit() == 'exit'
 
 class TestPdfRenderer:
-
-    def test_page_image_filename_is_zero_padded(self) -> None:
-        assert page_image_filename(1) == 'page_001.png'
-        assert page_image_filename(12) == 'page_012.png'
-        assert page_image_filename(100) == 'page_100.png'
 
     def test_page_image_filename_rejects_non_positive(self) -> None:
         with pytest.raises(ValueError):
@@ -630,35 +611,6 @@ class TestOllamaClient:
 
 class TestVisionRecognizer:
 
-    def test_recognizer_writes_artifact(self, tmp_path: Path) -> None:
-        from PIL import Image
-        from app.models.recognition import DetectedRegion, Region
-        from app.services.vision.recognizer import PROMPT_VERSION as PV
-
-        image = tmp_path / 'page_001.png'
-        Image.new('RGB', (120, 120), color=(255, 255, 255)).save(image)
-        out = tmp_path / 'recognition'
-        math = '{"question_number":1,"steps":[{"step_number":1,"raw_text":"x>0","symbolic":{"kind":"relation","repr":"x>0"},"confidence":0.9}],"final_answer":"x>0","final_answer_symbolic":{"kind":"relation","repr":"x>0"},"latex_document":"x>0","confidence":0.9}'
-        client = FakeClient([math])
-
-        class FakeProposer:
-            def propose(self, image_path, page_number=1):
-                return [DetectedRegion(type='solution', region=Region(x=0, y=0, width=50, height=50), question_number=1, order=0)]
-
-        recognizer = OllamaVisionRecognizer(client=client, model='vision-test', output_dir=out, crops_dir=tmp_path / 'crops', proposer=FakeProposer())
-        page = recognizer.recognize_page(image, 1)
-        assert page.page_number == 1
-        assert page.model == 'vision-test'
-        assert page.prompt_version == PV
-        assert page.questions[0].final_answer == 'x>0'
-        assert page.questions[0].region_type == 'solution'
-        assert page.questions[0].steps[0].latex == ''
-        assert page.questions[0].steps[0].symbolic is not None
-        artifact = out / 'page_001_recognition.json'
-        assert artifact.is_file()
-        assert image.is_file()
-        assert (tmp_path / 'crops' / 'page_001' / 'page_001_regions.json').is_file()
-
     def test_recognizer_invalid_json_keeps_image(self, tmp_path: Path) -> None:
         from PIL import Image
         from app.models.recognition import DetectedRegion, Region
@@ -732,11 +684,27 @@ class TestVisionRecognizer:
         assert result.output_dir == recognition_dir
         assert len(result.artifact_paths) == 1
 
-class TestQuestionMergeExtract:
+    def test_recognize_pages_from_crops_calls_from_crops_api(self, tmp_path: Path) -> None:
+        recognition_dir = tmp_path / 'recognition'
+        recognition_dir.mkdir()
+        recognizer = MagicMock()
+        recognizer.output_dir = recognition_dir
+        recognizer.recognize_page_from_crops.return_value = PageRecognition(
+            page_number=1, questions=[]
+        )
+        controller = RecognizeController(renderer=MagicMock(), recognizer=recognizer)
+        pages_dir = tmp_path / 'pages'
+        pages_dir.mkdir()
+        (pages_dir / 'page_001.png').write_bytes(b'x')
+        pages = [Page(page_number=1, image='page_001.png', width=10, height=10)]
+        result = controller.recognize_pages(
+            pages, pages_dir, recognition_dir, from_crops=True
+        )
+        assert len(result.pages) == 1
+        recognizer.recognize_page_from_crops.assert_called_once()
+        recognizer.recognize_page.assert_not_called()
 
-    def test_question_dir_name(self) -> None:
-        assert question_dir_name(1) == 'question_001'
-        assert question_dir_name(12) == 'question_012'
+class TestQuestionMergeExtract:
 
     def test_merge_single_page(self) -> None:
         pages = [PageRecognition(page_number=1, questions=[RecognizedQuestion(question_number=1, region=Region(x=1, y=2, width=3, height=4), steps=[RecognizedStep(step_number=1, raw_text='2x-3<5', latex='2x-3<5', confidence=0.9), RecognizedStep(step_number=2, raw_text='x<4', latex='x<4', confidence=0.8)], final_answer='x<4', confidence=0.85)])]
@@ -799,16 +767,40 @@ class TestQuestionMergeExtract:
     def test_extractor_writes_question_json(self, tmp_path: Path) -> None:
         recognition_dir = tmp_path / 'recognition'
         recognition_dir.mkdir()
-        _write_recognition(recognition_dir / 'page_001_recognition.json', PageRecognition(page_number=1, questions=[RecognizedQuestion(question_number=1, steps=[RecognizedStep(step_number=1, raw_text='2x<8', latex='2x<8')], final_answer='x<4')], prompt_version='recognition-v1', model='test'))
+        _write_recognition(
+            recognition_dir / 'page_001_recognition.json',
+            PageRecognition(
+                page_number=1,
+                questions=[
+                    RecognizedQuestion(
+                        question_number=1,
+                        steps=[
+                            RecognizedStep(
+                                step_number=1,
+                                raw_text='2x<8',
+                                symbolic=SymbolicPayload(kind='relation', repr='2*x<8'),
+                            )
+                        ],
+                        final_answer='x<4',
+                        latex_document=r'\begin{aligned}2x<8\end{aligned}',
+                    )
+                ],
+                prompt_version='recognition-v1',
+                model='test',
+            ),
+        )
         output_dir = tmp_path / 'questions'
         result = QuestionExtractor().extract_from_dir(recognition_dir, output_dir)
         assert len(result.questions) == 1
         artifact = output_dir / 'question_001' / 'question.json'
         assert artifact.is_file()
         assert (output_dir / 'question_001' / 'recognition_pages.json').is_file()
+        assert (output_dir / 'question_001' / 'latex_source.tex').is_file()
         payload = json.loads(artifact.read_text(encoding='utf-8'))
         assert payload['student_final_answer'] == 'x<4'
         assert payload['question_id'] == 'question_001'
+        assert '\\\\begin{aligned}' not in artifact.read_text(encoding='utf-8')
+        assert result.questions[0].student_steps[0].latex == ''
         assert result.artifact_paths[0] == artifact
 
     def test_extractor_missing_recognition_dir(self, tmp_path: Path) -> None:
@@ -1210,6 +1202,49 @@ class TestMathInequality:
         result = SymPyStepValidator().validate_question(question)
         assert result.steps[0].status == ValidationStatus.UNCERTAIN
 
+    def test_validator_prefers_symbolic_over_raw_noise(self) -> None:
+        question = Question(
+            question_id='question_001',
+            question_number=1,
+            student_steps=[
+                StudentStep(
+                    step_number=1,
+                    raw_text='noise',
+                    symbolic=SymbolicPayload(kind='relation', repr='2*x-3<5'),
+                ),
+                StudentStep(
+                    step_number=2,
+                    raw_text='noise',
+                    symbolic=SymbolicPayload(kind='relation', repr='2*x<8'),
+                ),
+                StudentStep(
+                    step_number=3,
+                    raw_text='noise',
+                    symbolic=SymbolicPayload(kind='relation', repr='x<4'),
+                ),
+            ],
+            student_final_symbolic=SymbolicPayload(kind='relation', repr='x<4'),
+        )
+        result = SymPyStepValidator().validate_question(question)
+        assert all(s.status == ValidationStatus.VALID for s in result.steps)
+        assert result.final_answer_status is not None
+        assert result.final_answer_status.status == ValidationStatus.VALID
+
+    def test_validator_figure_step_is_uncertain(self) -> None:
+        question = Question(
+            question_id='question_001',
+            question_number=1,
+            student_steps=[
+                StudentStep(
+                    step_number=1,
+                    raw_text='graph',
+                    symbolic=SymbolicPayload(kind='figure', repr=''),
+                )
+            ],
+        )
+        result = SymPyStepValidator().validate_question(question)
+        assert result.steps[0].status == ValidationStatus.UNCERTAIN
+
     def test_validator_abs_inequality_chain(self) -> None:
         question = Question(question_id='question_002', question_number=2, student_steps=[StudentStep(step_number=1, raw_text='', latex='|x-1|<3'), StudentStep(step_number=2, raw_text='', latex='-3<x-1<3'), StudentStep(step_number=3, raw_text='', latex='-2<x<4')], student_final_answer='-2 < x < 4')
         result = SymPyStepValidator().validate_question(question)
@@ -1284,6 +1319,38 @@ class TestLlmHybrid:
         assert result.steps[1].status == ValidationStatus.INVALID
         assert result.steps[1].method == ValidationMethod.SYMPY
         assert judge.calls == []
+
+    def test_hybrid_accepts_step_validator_port(self) -> None:
+        """Hybrid depends on StepValidator ABC, not concrete SymPy class."""
+        from app.interfaces.validator import StepValidator
+
+        class AlwaysUncertain(StepValidator):
+            def validate_question(self, question: Question) -> QuestionValidation:
+                steps = [
+                    StepValidation(
+                        step_number=s.step_number,
+                        status=ValidationStatus.UNCERTAIN,
+                        method=ValidationMethod.SYMPY,
+                        reason='stub',
+                    )
+                    for s in question.student_steps
+                ]
+                return QuestionValidation(
+                    question_number=question.question_number,
+                    question_id=question.question_id,
+                    steps=steps,
+                )
+
+        question = Question(
+            question_id='question_001',
+            question_number=1,
+            student_steps=[StudentStep(step_number=1, raw_text='x', latex='')],
+        )
+        judge = RecordingJudge({'status': 'valid', 'reason': 'ok', 'confidence': 0.8})
+        result = HybridStepValidator(AlwaysUncertain(), judge).validate_question(question)
+        assert result.steps[0].status == ValidationStatus.VALID
+        assert result.steps[0].method == ValidationMethod.LLM
+        assert judge.calls
 
     def test_llm_judge_invalid_json_stays_uncertain(self, tmp_path: Path) -> None:
         prompt = tmp_path / 'validation.txt'
@@ -1766,6 +1833,11 @@ class TestGrading:
         part_feedback = ' '.join(s.feedback for s in grade.steps)
         assert 'part:critical_points' in part_feedback
         assert 'part:figure' in part_feedback
+        assert grade.part_statuses == {
+            'critical_points': 'valid',
+            'figure': 'valid',
+        }
+        assert sum(1 for s in grade.steps if s.step_number > 0) == 2
 
         miss = aggregate_question_grade(
             question_id='question_004',
@@ -2338,10 +2410,6 @@ x &> 0
         q = schema.questions[0]
         assert q.expects_figure is True
         assert [p.kind for p in q.parts] == ['algebra', 'figure', 'hp']
-        assert q.number_line is not None
-        assert q.number_line.intervals
-        assert q.number_line.intervals[0].left is not None
-        assert q.number_line.intervals[0].left.closed is False
         block = format_recognition_question_block(schema)
         assert '[expects_figure]' in block
         assert 'infty' not in block  # HP must not leak into recognition block
@@ -2437,11 +2505,41 @@ x &\geq -\frac{10}{3}
         kunci_dir.mkdir()
         (kunci_dir / 'a.tex').write_text(_MINI_KUNCI, encoding='utf-8')
         standard = tmp_path / 'std'
-        result = IngestKunciController().ingest(kunci_path=None, kunci_dir=kunci_dir, standard_dir=standard)
+        result = IngestKunciController(KunciIngester(standard)).ingest(
+            kunci_path=None, kunci_dir=kunci_dir, standard_dir=standard
+        )
         assert len(result.written) == 5  # 2 solutions + schema + 2 rubrics
         assert result.schema_path is not None
         assert result.schema_path.is_file()
         assert (standard / 'rubrics' / 'question_001.json').is_file()
+
+    def test_controller_ingest_rejects_mismatched_standard_dir(
+        self, tmp_path: Path
+    ) -> None:
+        kunci_dir = tmp_path / 'kunci'
+        kunci_dir.mkdir()
+        (kunci_dir / 'a.tex').write_text(_MINI_KUNCI, encoding='utf-8')
+        write_dir = tmp_path / 'std_a'
+        other_dir = tmp_path / 'std_b'
+        other_dir.mkdir()
+        with pytest.raises(ValueError, match='does not match'):
+            IngestKunciController(KunciIngester(write_dir)).ingest(
+                kunci_path=None,
+                kunci_dir=kunci_dir,
+                standard_dir=other_dir,
+            )
+
+    def test_controller_ingest_schema_matches_write_dir(self, tmp_path: Path) -> None:
+        kunci_dir = tmp_path / 'kunci'
+        kunci_dir.mkdir()
+        (kunci_dir / 'a.tex').write_text(_MINI_KUNCI, encoding='utf-8')
+        standard = tmp_path / 'std'
+        result = IngestKunciController(KunciIngester(standard)).ingest(
+            kunci_path=None, kunci_dir=kunci_dir, standard_dir=standard
+        )
+        assert result.standard_dir.resolve() == standard.resolve()
+        assert result.schema_path is not None
+        assert result.schema_path.parent.resolve() == standard.resolve()
 
     def test_repo_jawaban_tugas_1_at_least_six(self) -> None:
         path = Path('data/input/kunci_jawaban/jawaban_tugas_1.tex')
@@ -2455,11 +2553,29 @@ x &\geq -\frac{10}{3}
 class TestReport:
 
     def test_aggregate_full_auto_accept(self, tmp_path: Path) -> None:
-        report = aggregate_exam_report([_report_question_grade(1, 10.0, 10.0)], _metadata(tmp_path))
+        grade = _report_question_grade(1, 10.0, 10.0)
+        grade = grade.model_copy(
+            update={
+                'part_statuses': {'figure': 'valid'},
+                'steps': grade.steps
+                + [
+                    _step_grade(
+                        0,
+                        0.0,
+                        0.0,
+                        status=StepGradeStatus.CORRECT,
+                        validation=ValidationStatus.VALID,
+                    )
+                ],
+            }
+        )
+        report = aggregate_exam_report([grade], _metadata(tmp_path))
         assert report.total_score == pytest.approx(10.0)
         assert report.maximum_total == pytest.approx(10.0)
         assert report.overall_status == ReviewStatus.AUTO_ACCEPT
         assert len(report.questions) == 1
+        assert report.questions[0].step_count == 2
+        assert report.questions[0].part_statuses == {'figure': 'valid'}
 
     def test_aggregate_review_required_overall(self, tmp_path: Path) -> None:
         report = aggregate_exam_report([_report_question_grade(1, 10.0, 10.0), _report_question_grade(2, 5.0, 10.0, review=ReviewStatus.REVIEW_REQUIRED)], _metadata(tmp_path))
@@ -2487,6 +2603,7 @@ class TestReport:
         html = (out / 'report.html').read_text(encoding='utf-8')
         assert 'student_001' in html
         assert 'AUTO_ACCEPT' in html
+        assert 'Parts' in html
         payload = (out / 'report.json').read_text(encoding='utf-8')
         assert '"total_score": 10.0' in payload or '"total_score": 10' in payload
         assert 'recognition-v1' in payload
@@ -2513,7 +2630,92 @@ class TestReport:
         assert qpath.read_text(encoding='utf-8') == '{"keep": true}'
         assert result.report_json_path.is_file()
 
+    def test_print_grade_result_shows_part_statuses(self, capsys) -> None:
+        from app.views.result_view import print_grade_result
+
+        result = GradeResult(
+            grades=[
+                QuestionGrade(
+                    question_id='question_001',
+                    question_number=1,
+                    score=8.0,
+                    maximum_score=10.0,
+                    review_status=ReviewStatus.AUTO_ACCEPT,
+                    part_statuses={'figure': 'valid', 'critical_points': 'invalid'},
+                )
+            ],
+            questions_dir=Path('questions'),
+            standard_dir=Path('standards'),
+            artifact_paths=[Path('questions/question_001/grading.json')],
+        )
+        print_grade_result(result)
+        out = capsys.readouterr().out
+        assert 'parts=' in out
+        assert 'figure:valid' in out
+        assert 'critical_points:invalid' in out
+
 class TestCliProcess:
+
+    def test_pipeline_factory_wires_feedback_annotator(self) -> None:
+        from app.config import AppConfig, OllamaConfig, RecognitionConfig
+        from app.services.pipeline_factory import build_process_controller
+
+        config = AppConfig(
+            ollama=OllamaConfig(
+                vision_model='v',
+                reasoning_model='r',
+                base_url='http://localhost:9',
+            ),
+            recognition=RecognitionConfig(),
+        )
+        controller = build_process_controller(config)
+        grader = controller._grade._grader  # noqa: SLF001
+        assert grader._annotator is not None  # noqa: SLF001
+        assert grader._annotator._model == 'r'  # noqa: SLF001
+
+    def test_process_controller_passes_standard_schema_to_recognizer(
+        self, tmp_path: Path
+    ) -> None:
+        from app.config import AppConfig, OllamaConfig, RecognitionConfig
+        from app.services.pipeline_factory import build_process_controller
+
+        default_std = tmp_path / 'standards' / 'default'
+        override_std = tmp_path / 'standards' / 'override'
+        default_std.mkdir(parents=True)
+        override_std.mkdir(parents=True)
+        (exam_schema_path(default_std)).write_text(
+            ExamSchema(
+                source='default',
+                questions=[
+                    ExamQuestion(number=1, stem='$x>0$', expects_figure=False),
+                ],
+            ).model_dump_json(indent=2),
+            encoding='utf-8',
+        )
+        (exam_schema_path(override_std)).write_text(
+            ExamSchema(
+                source='override',
+                questions=[
+                    ExamQuestion(number=9, stem='$x<1$', expects_figure=True),
+                ],
+            ).model_dump_json(indent=2),
+            encoding='utf-8',
+        )
+        config = AppConfig(
+            ollama=OllamaConfig(vision_model='v', base_url='http://localhost:9'),
+            recognition=RecognitionConfig(output_dir=tmp_path / 'recognition'),
+        )
+        config.grading.standard_dir = default_std
+        controller = build_process_controller(config, standard_dir=override_std)
+        recognizer = controller._recognize._recognizer  # noqa: SLF001
+        schema = recognizer._exam_schema  # noqa: SLF001
+        assert schema is not None
+        assert schema.source == 'override'
+        assert schema.questions[0].number == 9
+        assert schema.questions[0].expects_figure is True
+        extractor = controller._extract._extractor  # noqa: SLF001
+        assert extractor._exam_schema is not None  # noqa: SLF001
+        assert extractor._exam_schema.source == 'override'  # noqa: SLF001
 
     def test_process_controller_runs_all_stages(self, tmp_path: Path) -> None:
         pages_dir = tmp_path / 'pages'

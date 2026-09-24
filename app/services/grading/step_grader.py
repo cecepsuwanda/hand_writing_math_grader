@@ -59,6 +59,7 @@ class StepGrader:
             raise GradingError(question_dir.name, str(exc)) from exc
 
         rubric = self._rubrics.load(question.question_number)
+        rubric_has_figure = any(c.id == "figure" for c in rubric.criteria)
 
         standard_status: ValidationStatus | None = None
         standard_reason = ""
@@ -72,10 +73,11 @@ class StepGrader:
             part_statuses.update(
                 self._standard_comparer.compare_milestones(question)
             )
-            part_statuses["figure"] = self._standard_comparer.compare_figure(
-                question
-            )
-        else:
+            if rubric_has_figure:
+                part_statuses["figure"] = self._standard_comparer.compare_figure(
+                    question
+                )
+        elif rubric_has_figure:
             has_figure = any(
                 step.role == "figure"
                 or (step.symbolic is not None and step.symbolic.kind == "figure")

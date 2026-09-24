@@ -46,7 +46,7 @@ class RecognizeController:
         artifact_paths: list[Path] = []
         for page in pages:
             image_path = pages_dir / page.image
-            if from_crops and hasattr(self._recognizer, "recognize_page_from_crops"):
+            if from_crops:
                 recognition = self._recognizer.recognize_page_from_crops(
                     image_path, page.page_number
                 )

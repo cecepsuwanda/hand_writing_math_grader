@@ -12,7 +12,6 @@ from app.models.validation import (
     ValidationStatus,
 )
 from app.services.math.llm_judge import LlmStepJudge
-from app.services.math.sympy_validator import SymPyStepValidator
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 class HybridStepValidator(StepValidator):
     def __init__(
         self,
-        sympy_validator: SymPyStepValidator,
+        sympy_validator: StepValidator,
         llm_judge: LlmStepJudge,
     ) -> None:
         self._sympy = sympy_validator

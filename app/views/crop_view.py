@@ -18,6 +18,18 @@ def print_crop_summary(
         print(f"  - {path}")
 
 
+def print_no_regions_json(crops_dir: Path) -> None:
+    print(f"No regions JSON found under {crops_dir}; cannot recrop.")
+
+
+def print_crops_ready(crops_dir: Path) -> None:
+    print(f"Crops ready under {crops_dir}")
+
+
+def print_recrop_result(*, page_count: int, crops_dir: Path) -> None:
+    print(f"Recropped {page_count} page(s) under {crops_dir}")
+
+
 def ask_crops_ok(*, input_fn=input) -> bool:
     """Return True if user accepts crops. Empty / y / yes → True."""
     raw = input_fn("Crop OK? [y/n]: ").strip().lower()

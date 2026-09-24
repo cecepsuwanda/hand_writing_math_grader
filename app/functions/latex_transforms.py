@@ -139,6 +139,8 @@ def build_student_latex(
     for fig in question.figure_refs:
         caption = escape_latex_text(fig.caption or "")
         lines.append(f"% figure: {caption}")
+        if fig.symbolic is not None and (fig.symbolic.repr or "").strip():
+            lines.append(f"% number_line: {fig.symbolic.repr.strip()}")
         lines.append(rf"\includegraphics{{{fig.path}}}")
 
     final = ""

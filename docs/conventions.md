@@ -86,7 +86,7 @@ Kontrak markup itemize di dalam `\textbf{Penyelesaian}`:
 | `Gambar Garis Bilangan…` / tikzpicture | `expects_figure` + part `figure` + `number_line` (dari HP) |
 | `HP: $…$` | `final` + milestone `hp` |
 
-**Grading Phase 2–3:** skor `algebra` = konsistensi langkah saja (soft-align best-method = audit). Bucket `critical_points` / `figure` di-score terpisah; `final_answer` = min(konsistensi, standard SymPy). Skor `figure` = set-equivalence `number_line` (endpoint open/closed + daerah arsir / union) vs gambar mahasiswa (`FigureRef.symbolic.repr` / caption); bila schema lama tanpa `number_line` → presence. Recognition (`crop-math-v8`) mengisi `role` per langkah (`algebra` / `critical_points` / `sign_chart` / `figure` / `hp`); figure step memakai `NUMBER_LINE(...)` di `symbolic.repr`.
+**Grading Phase 2–3:** skor `algebra` = konsistensi langkah saja (soft-align best-method = audit). Bucket `critical_points` / `figure` di-score terpisah; `final_answer` = min(konsistensi, standard SymPy). Skor `figure` = set-equivalence `number_line` (endpoint open/closed + daerah arsir / union) vs gambar mahasiswa (`FigureRef.symbolic.repr` / caption); bila schema lama tanpa `number_line` → presence. Recognition (`crop-math-v9`) mengisi `role` per langkah (`algebra` / `critical_points` / `sign_chart` / `figure` / `hp`); figure step memakai `NUMBER_LINE(...)` di `symbolic.repr`.
 
 ## CLI dan antarmuka
 
@@ -106,3 +106,7 @@ Jangan commit password/API key. Gunakan environment variables bila perlu. Prefer
 ## Logging
 
 Log: timestamp, submission_id, page, model, prompt_version, processing_time, status tahap, errors.
+
+## Testing
+
+Pytest tanpa file `test_*.py` baru: perluas lewat `class Test*` + method `test_*` di inventaris `tests/` yang sudah ada; fake/double sebagai class di `helpers.py`. Detail dan peta domain → file: [`testing.md`](testing.md).

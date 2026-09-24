@@ -14,10 +14,6 @@ class InkRegionProposer:
     def __init__(self, params: InkLayoutParams | None = None) -> None:
         self._params = params or InkLayoutParams()
 
-    @property
-    def params(self) -> InkLayoutParams:
-        return self._params
-
     def propose(self, image_path: Path, page_number: int = 1) -> list[DetectedRegion]:
         from PIL import Image
 

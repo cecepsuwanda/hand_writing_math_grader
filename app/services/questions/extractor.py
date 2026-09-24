@@ -101,6 +101,8 @@ class QuestionExtractor:
             caption = (fig.caption or "").replace("\n", " ")
             # Path may be absolute; use as-is for local compile audit.
             parts.append(f"% figure: {caption}")
+            if fig.symbolic is not None and (fig.symbolic.repr or "").strip():
+                parts.append(f"% number_line: {fig.symbolic.repr.strip()}")
             parts.append(rf"\includegraphics{{{fig.path}}}")
         if not parts:
             return

@@ -32,6 +32,7 @@
         <th>Score</th>
         <th>Max</th>
         <th>Steps</th>
+        <th>Parts</th>
         <th>Status</th>
       </tr>
     </thead>
@@ -42,6 +43,7 @@
         <td>{{ q.score }}</td>
         <td>{{ q.maximum_score }}</td>
         <td>{{ q.step_count }}</td>
+        <td>{% if q.part_statuses %}{% for pid, st in q.part_statuses.items() %}{{ pid }}={{ st }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}—{% endif %}</td>
         <td>{{ q.review_status.value }}</td>
       </tr>
       {% endfor %}

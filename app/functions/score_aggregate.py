@@ -199,6 +199,7 @@ def aggregate_question_grade(
         )
 
     parts = part_statuses or {}
+    recorded_part_statuses: dict[str, str] = {}
     for part_id, maximum in part_max.items():
         if maximum <= 0:
             continue
@@ -210,6 +211,7 @@ def aggregate_question_grade(
                 ValidationStatus.INVALID,
                 f"no {part_id} evidence",
             )
+        recorded_part_statuses[part_id] = status.value
         if status == ValidationStatus.UNCERTAIN:
             review_required = True
         step_grades.append(
@@ -315,4 +317,5 @@ def aggregate_question_grade(
         ),
         standard_final_status=standard_final_status,
         standard_step_statuses=audit_steps or None,
+        part_statuses=recorded_part_statuses or None,
     )

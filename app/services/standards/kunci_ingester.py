@@ -22,6 +22,10 @@ class KunciIngester:
     def __init__(self, standard_dir: Path) -> None:
         self._standard_dir = Path(standard_dir)
 
+    @property
+    def standard_dir(self) -> Path:
+        return self._standard_dir
+
     def ingest_file(self, kunci_path: Path) -> list[Path]:
         kunci_path = Path(kunci_path)
         tex = kunci_path.read_text(encoding="utf-8")

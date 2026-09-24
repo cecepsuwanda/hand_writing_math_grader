@@ -15,6 +15,7 @@ _TEXT_ONLY_RE = re.compile(
 _DOLLAR_RE = re.compile(r"\$+")
 
 _TOKEN_KINDS: list[tuple[re.Pattern[str], SymbolicKind]] = [
+    (re.compile(r"^NUMBER_LINE\s*\(", re.IGNORECASE), "figure"),
     (re.compile(r"^LIMIT\(", re.IGNORECASE), "limit"),
     (re.compile(r"^DIFF\(", re.IGNORECASE), "derivative"),
     (re.compile(r"^INT\(", re.IGNORECASE), "integral"),
@@ -28,6 +29,9 @@ _IMPLICATION_MARKER_RE = re.compile(
     r"\\implies\b|\\Rightarrow\b|\\Longrightarrow\b|⇒|⟹|=>",
     re.IGNORECASE,
 )
+
+_NUMBER_LINE_PREFIX_RE = re.compile(r"^\s*NUMBER_LINE\s*\(", re.IGNORECASE)
+_LATEX_TOKEN_RE = re.compile(r"\\[a-zA-Z]+")
 
 # Words that are math, not Indonesian prose, when stripping narrative.
 _MATH_WORDS = frozenset(
@@ -134,27 +138,83 @@ def _implication_math_source(raw: str) -> str | None:
     return r" \implies ".join(clauses)
 
 
+def _looks_like_number_line(text: str) -> bool:
+    return bool(_NUMBER_LINE_PREFIX_RE.match((text or "").strip()))
+
+
+def _has_latex_tokens(text: str) -> bool:
+    return bool(_LATEX_TOKEN_RE.search(text or ""))
+
+
+def _accept_rebuilt(payload: SymbolicPayload | None) -> SymbolicPayload | None:
+    if payload is None:
+        return None
+    repr_text = (payload.repr or "").strip()
+    if not repr_text:
+        return None
+    if _looks_like_number_line(repr_text):
+        return SymbolicPayload(kind="figure", repr=repr_text)
+    if _usable_math(repr_text):
+        return payload
+    return None
+
+
+def _rebuild_from_text(text: str) -> SymbolicPayload | None:
+    """Best-effort SymbolicPayload from transcription / LaTeX-ish text."""
+    source = (text or "").strip()
+    if not source:
+        return None
+    if _looks_like_number_line(source):
+        return SymbolicPayload(kind="figure", repr=source)
+
+    accepted = _accept_rebuilt(latex_to_symbolic_payload(source))
+    if accepted is not None:
+        return accepted
+
+    stripped = _strip_prose(source)
+    if stripped and stripped != source:
+        return _accept_rebuilt(latex_to_symbolic_payload(stripped))
+    return None
+
+
 def coalesce_step_symbolic(
     raw_text: str,
     symbolic: SymbolicPayload | None,
 ) -> SymbolicPayload | None:
-    """Rebuild or repair symbolic when implication / kind is inconsistent.
+    """Rebuild or repair symbolic when implication / kind / LaTeX is inconsistent.
 
     Vision sometimes truncates ``A \\\\implies B`` to only ``A`` in
-    ``symbolic.repr``. Prefer a deterministic rebuild from the math span
-    of ``raw_text``. Prose-laden rebuilds are discarded.
+    ``symbolic.repr``, omits symbolic entirely, or leaves LaTeX in ``repr``.
+    Prefer a deterministic rebuild from ``raw_text`` / normalized ``repr``.
+    Prose-laden rebuilds are discarded.
     """
     raw = (raw_text or "").strip()
     if raw and _IMPLICATION_MARKER_RE.search(raw):
         source = _implication_math_source(raw)
         rebuilt = latex_to_symbolic_payload(source) if source else None
-        if rebuilt is not None and _usable_math(rebuilt.repr):
+        accepted = _accept_rebuilt(rebuilt)
+        if accepted is not None:
+            return accepted
+
+    repr_text = ((symbolic.repr if symbolic is not None else "") or "").strip()
+
+    if symbolic is None or not repr_text:
+        rebuilt = _rebuild_from_text(raw)
+        if rebuilt is not None:
             return rebuilt
+        return symbolic
 
-    if symbolic is None:
-        return None
+    if _looks_like_number_line(repr_text):
+        return SymbolicPayload(kind="figure", repr=repr_text)
 
-    repr_text = (symbolic.repr or "").strip()
+    if _has_latex_tokens(repr_text):
+        sanitized = _accept_rebuilt(latex_to_symbolic_payload(repr_text))
+        if sanitized is not None:
+            return sanitized
+        from_raw = _rebuild_from_text(raw)
+        if from_raw is not None:
+            return from_raw
+
     if (
         symbolic.kind == "expression"
         and repr_text

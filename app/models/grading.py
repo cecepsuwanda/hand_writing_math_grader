@@ -62,6 +62,7 @@ class QuestionGrade(BaseModel):
     review_status: ReviewStatus = ReviewStatus.AUTO_ACCEPT
     standard_final_status: ValidationStatus | None = None
     standard_step_statuses: dict[str, str] | None = None
+    part_statuses: dict[str, str] | None = None
 
 
 class GradeResult(BaseModel):

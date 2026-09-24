@@ -34,6 +34,8 @@ from app.functions.regions_artifact import (
 )
 from app.functions.symbolic_from_latex import coalesce_step_symbolic
 from app.functions.step_role import coalesce_step_role
+from app.interfaces.crop_workspace import CropWorkspace
+from app.interfaces.llm_client import LlmClient
 from app.interfaces.recognizer import VisionRecognizer
 from app.models.exam_schema import ExamSchema
 from app.models.recognition import (
@@ -45,7 +47,6 @@ from app.models.recognition import (
     SymbolicPayload,
 )
 from app.services.vision.ink_region_proposer import InkRegionProposer
-from app.services.vision.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +87,12 @@ def _coerce_confidence(value: object) -> float | None:
     return number
 
 
-class OllamaVisionRecognizer(VisionRecognizer):
+class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
     """Ink boxes → crop PNGs → optional crop_math symbolic JSON."""
 
     def __init__(
         self,
-        client: OllamaClient,
+        client: LlmClient,
         model: str,
         output_dir: Path,
         crops_dir: Path | None = None,
@@ -129,10 +130,6 @@ class OllamaVisionRecognizer(VisionRecognizer):
     @property
     def crops_dir(self) -> Path:
         return self._crops_dir
-
-    @property
-    def expected_questions(self) -> list[tuple[int, str]]:
-        return list(self._expected_questions)
 
     def page_crop_dir(self, page_number: int) -> Path:
         return self._crops_dir / f"page_{page_number:03d}"

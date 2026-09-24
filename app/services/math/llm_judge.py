@@ -16,7 +16,7 @@ from app.models.validation import (
     ValidationMethod,
     ValidationStatus,
 )
-from app.services.vision.ollama_client import OllamaClient
+from app.interfaces.llm_client import LlmClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ PROMPT_VERSION = "validation-v1"
 class LlmStepJudge:
     def __init__(
         self,
-        client: OllamaClient,
+        client: LlmClient,
         model: str,
         prompt_path: Path | None = None,
         prompt_version: str = PROMPT_VERSION,

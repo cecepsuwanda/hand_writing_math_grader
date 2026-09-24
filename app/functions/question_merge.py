@@ -143,15 +143,14 @@ def _build_question(
             # Figure steps inside a solution crop → figure_refs + skip math list.
             is_figure = _is_figure_step(step)
             if is_figure:
-                if recognized.crop_path:
-                    figure_refs.append(
-                        FigureRef(
-                            path=recognized.crop_path,
-                            caption=step.raw_text,
-                            page_number=page_number,
-                            symbolic=step.symbolic,
-                        )
+                figure_refs.append(
+                    FigureRef(
+                        path=recognized.crop_path or "",
+                        caption=step.raw_text,
+                        page_number=page_number,
+                        symbolic=step.symbolic,
                     )
+                )
                 continue
             if recognized.region_type == "figure":
                 continue
@@ -172,7 +171,8 @@ def _build_question(
             final_symbolic = recognized.final_answer_symbolic
 
     if not (final_answer or "").strip():
-        for step in student_steps:
+        # Prefer the last HP step (earlier membership / uji-selang must not win).
+        for step in reversed(student_steps):
             if step.role != "hp":
                 continue
             if step.symbolic is not None and (step.symbolic.repr or "").strip():

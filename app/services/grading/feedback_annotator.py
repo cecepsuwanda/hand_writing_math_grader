@@ -11,7 +11,7 @@ from app.exceptions import OllamaTimeoutError, OllamaUnavailableError
 from app.functions.json_extract import extract_json_object
 from app.models.grading import FeedbackAnnotation, QuestionGrade
 from app.models.question import Question
-from app.services.vision.ollama_client import OllamaClient
+from app.interfaces.llm_client import LlmClient
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ PROMPT_VERSION = "grading-v1"
 class FeedbackAnnotator:
     def __init__(
         self,
-        client: OllamaClient,
+        client: LlmClient,
         model: str,
         prompt_path: Path | None = None,
     ) -> None:

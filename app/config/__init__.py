@@ -34,6 +34,7 @@ class InkLayoutConfig(BaseModel):
     threshold: int = 200
     merge_gap_ratio: float = 0.018
     min_block_height_ratio: float = 0.03
+    min_row_ink_ratio: float = 0.002
     header_fraction: float = 0.08
     column_valley_ratio: float = 0.15
     margin_ratio: float = 0.02

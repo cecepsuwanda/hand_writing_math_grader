@@ -32,6 +32,7 @@ class QuestionReportRow(BaseModel):
     maximum_score: float
     review_status: ReviewStatus
     step_count: int = 0
+    part_statuses: dict[str, str] = Field(default_factory=dict)
 
 
 class ExamReport(BaseModel):

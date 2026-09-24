@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from sympy import Interval, Union, oo, parse_expr
+from sympy import EmptySet, Interval, Union, oo, parse_expr
 from sympy.parsing.sympy_parser import (
     convert_xor,
     implicit_multiplication_application,
@@ -98,6 +98,19 @@ def number_line_to_repr(spec: NumberLineSpec) -> str:
 
 def parse_number_line_repr(text: str) -> NumberLineSpec | None:
     """Parse ``NUMBER_LINE(...)``, bare intervals, or inequality HP forms."""
+    return _parse_number_line(text, allow_inequalities=True)
+
+
+def parse_number_line_intervals_only(text: str) -> NumberLineSpec | None:
+    """Parse ``NUMBER_LINE(...)`` / bare interval atoms; reject inequalities."""
+    return _parse_number_line(text, allow_inequalities=False)
+
+
+def _parse_number_line(
+    text: str,
+    *,
+    allow_inequalities: bool,
+) -> NumberLineSpec | None:
     cleaned = (text or "").strip()
     if not cleaned:
         return None
@@ -120,6 +133,8 @@ def parse_number_line_repr(text: str) -> NumberLineSpec | None:
     if from_intervals is not None:
         return from_intervals
 
+    if not allow_inequalities:
+        return None
     return _from_inequality_text(rewritten)
 
 
@@ -136,8 +151,6 @@ def compare_number_lines(
             ValidationStatus.UNCERTAIN,
             f"could not compare number lines: {exc}",
         )
-    if left is None or right is None:
-        return ValidationStatus.UNCERTAIN, "empty number line set"
     try:
         if left == right:
             return ValidationStatus.VALID, "number line matches HP geometry"
@@ -360,7 +373,7 @@ def _parse_bound(token: str):
 
 def _spec_to_set(spec: NumberLineSpec):
     if not spec.intervals:
-        return None
+        return EmptySet
     pieces = []
     for iv in spec.intervals:
         left = -oo if iv.left is None else _parse_bound(iv.left.value)

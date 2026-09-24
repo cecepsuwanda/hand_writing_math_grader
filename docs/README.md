@@ -16,6 +16,7 @@ Wajib: **MVC**, **SOLID**, **clean code**, **OOP + functional programming**. Lih
 | [development-phases.md](development-phases.md) | Phase 1–9 dan acceptance criteria |
 | [math-topics.md](math-topics.md) | Status domain per bab + urutan implementasi |
 | [conventions.md](conventions.md) | Prinsip arsitektur wajib, SOLID, clean coding, OOP+FP, larangan |
+| [testing.md](testing.md) | Konvensi pytest: tanpa file baru, OOP `Test*`, peta domain → file |
 
 ## Target MVP
 
@@ -90,4 +91,5 @@ Expected: progress 7 tahap, ringkasan skor, artefak di `data/output/` (`report.j
 ## Panduan agent
 
 - Rules: `.cursor/rules/`
-- Skills: `.cursor/skills/implement-math-grader-phase`, `.cursor/skills/review-math-grader-compliance`
+- Skills: `.cursor/skills/implement-math-grader-phase`, `.cursor/skills/review-math-grader-compliance`, `.cursor/skills/write-math-grader-tests`
+- Testing: [testing.md](testing.md)

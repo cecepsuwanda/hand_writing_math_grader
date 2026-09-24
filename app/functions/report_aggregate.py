@@ -18,7 +18,8 @@ def aggregate_exam_report(
             score=g.score,
             maximum_score=g.maximum_score,
             review_status=g.review_status,
-            step_count=len(g.steps),
+            step_count=sum(1 for s in g.steps if s.step_number > 0),
+            part_statuses=dict(g.part_statuses or {}),
         )
         for g in ordered
     ]

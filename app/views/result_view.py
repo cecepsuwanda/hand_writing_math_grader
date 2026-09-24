@@ -44,6 +44,18 @@ def print_extract_result(result: ExtractResult) -> None:
         )
         if question.student_final_answer:
             print(dim(f"    final_answer: {question.student_final_answer}"))
+        if question.figure_refs:
+            with_nl = sum(
+                1
+                for fig in question.figure_refs
+                if fig.symbolic is not None and (fig.symbolic.repr or "").strip()
+            )
+            print(
+                dim(
+                    f"    figures: {len(question.figure_refs)} "
+                    f"({with_nl} with NUMBER_LINE symbolic)"
+                )
+            )
 
 
 def print_latex_result(result: LatexResult) -> None:
@@ -77,6 +89,12 @@ def print_grade_result(result: GradeResult) -> None:
             f"  {grade.question_id}: {grade.score}/{grade.maximum_score} "
             f"{grade.review_status.value} → {artifact}"
         )
+        if grade.part_statuses:
+            parts = ",".join(
+                f"{part_id}:{status}"
+                for part_id, status in sorted(grade.part_statuses.items())
+            )
+            print(dim(f"    parts={parts}"))
 
 
 def print_ingest_kunci_result(result: IngestKunciResult) -> None:

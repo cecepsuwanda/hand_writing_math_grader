@@ -8,7 +8,6 @@ from pathlib import Path
 
 from app.config import DEFAULT_CONFIG_PATH, AppConfig, load_config
 from app.controllers.extract_controller import ExtractController
-from app.controllers.ingest_kunci_controller import IngestKunciController
 from app.controllers.latex_controller import LatexController
 from app.controllers.render_controller import RenderController
 from app.controllers.validate_controller import ValidateController
@@ -36,13 +35,19 @@ from app.services.pdf.renderer import PyMuPdfRenderer
 from app.services.pipeline_factory import (
     build_crop_controller,
     build_grade_controller,
+    build_ingest_kunci_controller,
     build_process_controller,
     build_recognize_controller,
     build_report_controller,
     build_validator,
+    prepare_run_workspace,
 )
 from app.services.questions.extractor import QuestionExtractor
-from app.services.workspace.cleaner import prepare_pipeline_workspace
+from app.views.crop_view import (
+    print_crops_ready,
+    print_no_regions_json,
+    print_recrop_result,
+)
 from app.views.error_view import print_error
 from app.views.exit_view import (
     mark_interactive_session_done,
@@ -516,7 +521,7 @@ def _run_menu(args: argparse.Namespace) -> int:
         try:
             if choice == "ingest":
                 kunci_path = _select_kunci_interactive(config.input.kunci_jawaban_dir)
-                result = IngestKunciController().ingest(
+                result = build_ingest_kunci_controller(config).ingest(
                     kunci_path=kunci_path,
                     kunci_dir=config.input.kunci_jawaban_dir,
                     standard_dir=config.grading.standard_dir,
@@ -545,52 +550,42 @@ def _run_menu(args: argparse.Namespace) -> int:
 
 def _menu_propose_crops(
     config: AppConfig,
-    args: argparse.Namespace,
+    _args: argparse.Namespace,
     pdf_path: Path,
 ) -> int:
-    pages_dir = getattr(args, "pages_dir", None) or config.pdf.output_dir
-    recognition_dir = getattr(args, "recognition_dir", None) or config.recognition.output_dir
-    questions_dir = getattr(args, "questions_dir", None) or config.questions.output_dir
+    pages_dir = config.pdf.output_dir
     workspace_root = config.report.output_dir
-    dpi = getattr(args, "dpi", None)
-    if dpi is None:
-        dpi = config.pdf.dpi
+    dpi = config.pdf.dpi
 
-    removed = prepare_pipeline_workspace(
-        workspace_root,
-        pages_dir=pages_dir,
-        recognition_dir=recognition_dir,
-        questions_dir=questions_dir,
-        crops_dir=config.recognition.crops_dir,
-    )
+    removed = prepare_run_workspace(config)
     print_output_cleared(workspace_root, removed)
 
     crop = build_crop_controller(config)
     crop.propose_for_pdf(pdf_path, pages_dir, dpi)
     crop.confirm_loop(pages_dir, force_yes=False)
-    print(f"Crops ready under {crop.crops_dir}")
+    print_crops_ready(crop.crops_dir)
     return 0
 
 
-def _menu_recrop(config: AppConfig, args: argparse.Namespace) -> int:
-    pages_dir = getattr(args, "pages_dir", None) or config.pdf.output_dir
+def _menu_recrop(config: AppConfig, _args: argparse.Namespace) -> int:
+    pages_dir = config.pdf.output_dir
     crop = build_crop_controller(config)
     result = crop.recrop_all(pages_dir)
     if not result.pages:
-        print(f"No page_*_regions.json found under {crop.crops_dir}")
+        print_no_regions_json(crop.crops_dir)
         return 1
     crop.confirm_loop(pages_dir, force_yes=False)
-    print(f"Recropped {len(result.pages)} page(s) under {crop.crops_dir}")
+    print_recrop_result(page_count=len(result.pages), crops_dir=crop.crops_dir)
     return 0
 
 
-def _menu_finish_from_crops(config: AppConfig, args: argparse.Namespace) -> int:
-    pages_dir = getattr(args, "pages_dir", None) or config.pdf.output_dir
-    recognition_dir = getattr(args, "recognition_dir", None) or config.recognition.output_dir
-    questions_dir = getattr(args, "questions_dir", None) or config.questions.output_dir
-    output_dir = getattr(args, "output", None) or config.report.output_dir
-    standard_dir = getattr(args, "standard", None) or config.grading.standard_dir
-    student_id = getattr(args, "student_id", None) or "student_001"
+def _menu_finish_from_crops(config: AppConfig, _args: argparse.Namespace) -> int:
+    pages_dir = config.pdf.output_dir
+    recognition_dir = config.recognition.output_dir
+    questions_dir = config.questions.output_dir
+    output_dir = config.report.output_dir
+    standard_dir = config.grading.standard_dir
+    student_id = "student_001"
 
     print_models(
         vision_model=config.ollama.vision_model,
@@ -641,8 +636,9 @@ def _process_one_pdf(
     student_id = getattr(args, "student_id", None) or "student_001"
     workspace_root = config.report.output_dir
 
-    removed = prepare_pipeline_workspace(
-        workspace_root,
+    removed = prepare_run_workspace(
+        config,
+        workspace_root=workspace_root,
         pages_dir=pages_dir,
         recognition_dir=recognition_dir,
         questions_dir=questions_dir,
@@ -697,7 +693,7 @@ def _run_propose_crops(args: argparse.Namespace) -> int:
     crop = build_crop_controller(config)
     crop.propose_for_pdf(pdf_path, pages_dir, dpi)
     crop.confirm_loop(pages_dir, force_yes=bool(args.yes))
-    print(f"Crops ready under {crop.crops_dir}")
+    print_crops_ready(crop.crops_dir)
     return 0
 
 
@@ -707,10 +703,10 @@ def _run_recrop(args: argparse.Namespace) -> int:
     crop = build_crop_controller(config)
     result = crop.recrop_all(pages_dir)
     if not result.pages:
-        print(f"No page_*_regions.json found under {crop.crops_dir}")
+        print_no_regions_json(crop.crops_dir)
         return 1
     crop.confirm_loop(pages_dir, force_yes=bool(args.yes))
-    print(f"Recropped {len(result.pages)} page(s) under {crop.crops_dir}")
+    print_recrop_result(page_count=len(result.pages), crops_dir=crop.crops_dir)
     return 0
 
 
@@ -805,7 +801,7 @@ def _run_ingest_kunci(args: argparse.Namespace) -> int:
         if args.kunci_dir is not None
         else config.input.kunci_jawaban_dir
     )
-    result = IngestKunciController().ingest(
+    result = build_ingest_kunci_controller(config, standard_dir).ingest(
         kunci_path=args.kunci,
         kunci_dir=kunci_dir,
         standard_dir=standard_dir,

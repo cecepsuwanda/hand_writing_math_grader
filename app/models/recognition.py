@@ -33,7 +33,7 @@ StepRole = Literal[
     "hp",
 ]
 
-RegionType = Literal["solution", "math_block", "figure"]
+RegionType = Literal["solution", "figure"]
 
 
 class SymbolicPayload(BaseModel):

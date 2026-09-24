@@ -15,7 +15,7 @@ from app.functions.kunci_ingest import load_exam_schema
 from app.functions.number_line import (
     compare_number_lines,
     number_line_from_symbolic,
-    parse_number_line_repr,
+    parse_number_line_intervals_only,
 )
 from app.functions.standard_extract import (
     schema_question,
@@ -700,32 +700,47 @@ def _expected_number_line(schema_q: ExamQuestion | None) -> NumberLineSpec | Non
 
 
 def _student_number_line(question: Question) -> NumberLineSpec | None:
+    # Prefer explicit figure symbolic.repr over captions / inequalities.
     for ref in question.figure_refs:
-        parsed = _figure_ref_number_line(ref)
+        parsed = _figure_ref_symbolic_number_line(ref)
         if parsed is not None:
             return parsed
     for step in question.student_steps:
-        is_figure = step.role == "figure" or (
-            step.symbolic is not None and step.symbolic.kind == "figure"
-        )
-        if not is_figure:
+        if not _is_figure_student_step(step):
             continue
         if step.symbolic is not None and (step.symbolic.repr or "").strip():
-            parsed = parse_number_line_repr(step.symbolic.repr)
+            parsed = parse_number_line_intervals_only(step.symbolic.repr)
             if parsed is not None:
                 return parsed
+    for ref in question.figure_refs:
+        parsed = _figure_ref_caption_number_line(ref)
+        if parsed is not None:
+            return parsed
+    for step in question.student_steps:
+        if not _is_figure_student_step(step):
+            continue
         if (step.raw_text or "").strip():
-            parsed = parse_number_line_repr(step.raw_text)
+            parsed = parse_number_line_intervals_only(step.raw_text)
             if parsed is not None:
                 return parsed
     return None
 
 
-def _figure_ref_number_line(ref: FigureRef) -> NumberLineSpec | None:
+def _is_figure_student_step(step: StudentStep) -> bool:
+    return step.role == "figure" or (
+        step.symbolic is not None and step.symbolic.kind == "figure"
+    )
+
+
+def _figure_ref_symbolic_number_line(ref: FigureRef) -> NumberLineSpec | None:
     if ref.symbolic is not None and (ref.symbolic.repr or "").strip():
-        parsed = parse_number_line_repr(ref.symbolic.repr)
-        if parsed is not None:
-            return parsed
+        # Figure geometry only — reject algebraic inequalities as poison.
+        return parse_number_line_intervals_only(ref.symbolic.repr)
+    return None
+
+
+def _figure_ref_caption_number_line(ref: FigureRef) -> NumberLineSpec | None:
     if (ref.caption or "").strip():
-        return parse_number_line_repr(ref.caption)
+        # Captions must be interval / NUMBER_LINE geometry, not algebra.
+        return parse_number_line_intervals_only(ref.caption)
     return None

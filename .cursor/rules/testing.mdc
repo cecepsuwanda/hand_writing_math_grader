@@ -1,0 +1,27 @@
+---
+description: Konvensi testing — tanpa file baru, OOP Test*, inventaris tests/ tertutup
+alwaysApply: true
+---
+
+# Testing
+
+Jangan menambah file `tests/test_*.py`. Perluas coverage di inventaris yang sudah ada lewat **OOP**: `class Test*` + method `test_*`. Detail: `docs/testing.md`.
+
+| Domain | File |
+|--------|------|
+| Pipeline (config → CLI) | `tests/test_suite.py` |
+| Crop / ink / symbolic | `tests/test_crop_symbolic.py` |
+| Confirm / recrop | `tests/test_crop_confirm.py` |
+| Number line / figure | `tests/test_number_line.py` |
+| Helper + fake bersama | `tests/helpers.py` |
+
+```text
+❌ tests/test_foo.py baru
+❌ def test_... level modul
+❌ Kasus uji di conftest.py / live Ollama di pytest
+✅ class TestFoo + def test_...(self): di file inventaris
+✅ Fake/double sebagai class di helpers.py (atau nested)
+✅ Hapus method/class = kurangi coverage (tidak ada registry)
+```
+
+Domain baru → `class TestNama:` di file terdekat (biasanya `test_suite.py`). Skill: `write-math-grader-tests`.

@@ -1,4 +1,4 @@
-PROMPT_VERSION: crop-math-v8
+PROMPT_VERSION: crop-math-v9
 
 You transcribe handwritten math from a cropped image of student solution(s).
 The crop may include equations AND handwritten diagrams/graphs/number lines.
@@ -31,8 +31,11 @@ Rules:
   - "critical_points" — roots / critical points / zero-makers
   - "sign_chart" — interval sign tests / analisis tanda
   - "figure" — number line / diagram (symbolic.kind must be "figure")
-  - "hp" — final solution set / interval (Himpunan Penyelesaian)
-- symbolic.repr MUST be ASCII / SymPy-friendly tokens, NEVER LaTeX commands.
+  - "hp" — final solution set / interval (Himpunan Penyelesaian). Use "hp"
+    for the answer-set step even when the letters "HP" are not written
+    (e.g. "Jadi (-1,1)", "x in (2,oo)", bare interval as the conclusion).
+- symbolic.repr MUST be ASCII / SymPy-friendly tokens, NEVER LaTeX commands
+  (no \leq, \geq, \cup, \frac, \infty — use <=, >=, U, a/b, oo).
   Examples: "2*x - 3 < 5", "LIMIT((x**2-1)/(x-1), x, 1, +-)", "DIFF(x**2, x)", "INT(x, x)".
   For figure steps, symbolic.repr MUST be NUMBER_LINE(...) using interval
   notation for shaded spans only (filled circle = closed bracket, open =

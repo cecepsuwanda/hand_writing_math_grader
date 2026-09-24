@@ -44,8 +44,13 @@ description: >-
 - [ ] Domain sesuai roadmap `docs/topik.md` / `docs/math-topics.md`; tidak mengklaim support bab di luar scope saat ini
 - [ ] Nama model dari config, bukan hard-coded
 - [ ] Artefak intermediate tidak dihapus
-- [ ] Ada/ diperbarui tests untuk perubahan phase
+- [ ] Ada/diperbarui tests untuk perubahan phase (tanpa `tests/test_*.py` baru; OOP `class Test*` di file inventaris — lihat `docs/testing.md`)
 - [ ] Type hints + penanganan error eksplisit
+
+### Testing
+
+- [ ] Tidak menambah file `test_*.py` / kasus uji di `conftest.py`
+- [ ] Kasus baru = method di `class Test*` (bukan free-function di level modul)- [ ] Fake/double sebagai class; tidak memanggil Ollama live di pytest
 
 ## Format laporan
 
@@ -67,7 +72,8 @@ description: >-
 
 ## Referensi
 
-- `docs/architecture.md`, `docs/conventions.md`, `docs/math-topics.md`
+- `docs/architecture.md`, `docs/conventions.md`, `docs/math-topics.md`, `docs/testing.md`
 - `docs/topik.md`
-- `.cursor/rules/mvc-architecture.mdc`, `math-grader-core.mdc`, `recognition-and-grading.mdc`
+- `.cursor/rules/mvc-architecture.mdc`, `math-grader-core.mdc`, `recognition-and-grading.mdc`, `testing.mdc`
+- `.cursor/skills/write-math-grader-tests`
 - `docs/plan_ai_math_grader_ollama.md` §2, §23, §31, §32, §33

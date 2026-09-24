@@ -1,10 +1,22 @@
 {
   "question": 4,
-  "maximum_score": 10,
+  "maximum_score": 10.0,
   "criteria": [
-    {"id": "setup", "points": 2},
-    {"id": "transformation", "points": 4},
-    {"id": "calculation", "points": 2},
-    {"id": "final_answer", "points": 2}
+    {
+      "id": "algebra",
+      "points": 3.0
+    },
+    {
+      "id": "critical_points",
+      "points": 2.0
+    },
+    {
+      "id": "figure",
+      "points": 2.0
+    },
+    {
+      "id": "final_answer",
+      "points": 3.0
+    }
   ]
 }

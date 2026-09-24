@@ -63,14 +63,33 @@ class StepGrader:
         standard_status: ValidationStatus | None = None
         standard_reason = ""
         standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None
-        expected_step_count: int | None = None
+        part_statuses: dict[str, tuple] = {}
         if self._standard_comparer is not None:
             compared = self._standard_comparer.compare(question)
             if compared is not None:
                 standard_status, standard_reason = compared
             standard_step_results = self._standard_comparer.compare_steps(question)
-            expected_step_count = self._standard_comparer.expected_step_count(
-                question.question_number
+            part_statuses.update(
+                self._standard_comparer.compare_milestones(question)
+            )
+
+        has_figure = any(
+            step.role == "figure"
+            or (step.symbolic is not None and step.symbolic.kind == "figure")
+            for step in question.student_steps
+        ) or bool(question.figure_refs)
+        if has_figure:
+            part_statuses["figure"] = (
+                ValidationStatus.VALID,
+                "figure step present",
+            )
+        elif "figure" not in part_statuses:
+            # Only mark missing if rubric will award figure points; aggregate
+            # skips absent part_max keys. Still set INVALID so explicit miss
+            # is recorded when criterion exists.
+            part_statuses["figure"] = (
+                ValidationStatus.INVALID,
+                "no figure step",
             )
 
         grade = aggregate_question_grade(
@@ -81,7 +100,7 @@ class StepGrader:
             standard_final_status=standard_status,
             standard_final_reason=standard_reason,
             standard_step_results=standard_step_results,
-            expected_step_count=expected_step_count,
+            part_statuses=part_statuses,
         )
         if self._annotator is not None:
             grade = self._annotator.annotate(question, grade)

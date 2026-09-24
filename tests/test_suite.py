@@ -31,8 +31,9 @@ from app.functions.question_names import question_dir_name
 from app.functions.question_split import split_questions_by_exam_schema
 from app.models.exam_schema import ExamQuestion, ExamSchema
 from app.functions.report_aggregate import aggregate_exam_report, summary_csv_rows
-from app.functions.score_aggregate import aggregate_question_grade
+from app.functions.score_aggregate import aggregate_question_grade, allocate_step_max_scores
 from app.functions.standard_extract import exam_schema_path, extract_final_answer_from_tex, extract_solution_steps_from_tex, standard_solution_path
+from app.functions.step_align import align_student_steps_to_standard
 from app.models.grading import ErrorType, QuestionGrade, ReviewStatus, StepGrade, StepGradeStatus
 from app.models.grading import GradeResult, QuestionGrade, ReviewStatus
 from app.models.grading import ReviewStatus, Rubric, RubricCriterion
@@ -57,7 +58,7 @@ from app.services.grading.rubric import RubricLoader
 from app.services.grading.standard_comparer import StandardFinalComparer
 from app.services.grading.step_grader import StepGrader
 from app.services.latex.builder import LatexBuilder
-from app.services.math.equivalence import relations_equivalent
+from app.services.math.equivalence import relations_equivalent, relations_form_equivalent
 from app.services.math.hybrid_validator import HybridStepValidator
 from app.services.math.llm_judge import LlmStepJudge
 from app.services.math.parser import normalize_math_text, parse_relation
@@ -244,9 +245,13 @@ class TestPaths:
     def test_parse_main_menu_choice(self) -> None:
         assert parse_main_menu_choice('1') == 'ingest'
         assert parse_main_menu_choice('ingest') == 'ingest'
-        assert parse_main_menu_choice('2') == 'process'
-        assert parse_main_menu_choice('proses') == 'process'
-        assert parse_main_menu_choice('3') == 'exit'
+        assert parse_main_menu_choice('2') == 'propose_crops'
+        assert parse_main_menu_choice('propose') == 'propose_crops'
+        assert parse_main_menu_choice('3') == 'recrop'
+        assert parse_main_menu_choice('recrop') == 'recrop'
+        assert parse_main_menu_choice('4') == 'finish'
+        assert parse_main_menu_choice('proses') == 'finish'
+        assert parse_main_menu_choice('5') == 'exit'
         assert parse_main_menu_choice('keluar') == 'exit'
         with pytest.raises(ValueError):
             parse_main_menu_choice('9')
@@ -1022,6 +1027,22 @@ class TestMathInequality:
         assert relations_equivalent(a, b, x) is True
         assert relations_equivalent(b, c, x) is True
 
+    def test_relations_form_equivalent_distinguishes_stages(self) -> None:
+        x = Symbol('x')
+        early = parse_relation('2-3x<=12', x)
+        mid = parse_relation('-3x<=10', x)
+        late = parse_relation('x>=-10/3', x)
+        assert relations_equivalent(early, late, x) is True
+        assert relations_form_equivalent(early, late) is False
+        assert relations_form_equivalent(mid, parse_relation('2-3x-2<=12-2', x)) is True
+        assert relations_form_equivalent(late, late) is True
+        assert relations_form_equivalent(
+            parse_relation('x>1', x), parse_relation('1<x', x)
+        ) is True
+        assert relations_form_equivalent(
+            parse_relation('x>1', x), parse_relation('x<1', x)
+        ) is False
+
     def test_parse_abs_forms(self) -> None:
         x = Symbol('x')
         plain = parse_relation('|x|<2', x)
@@ -1323,6 +1344,30 @@ class TestLlmHybrid:
 
 class TestGrading:
 
+    def test_allocate_step_max_scores_uses_student_count_only(self) -> None:
+        rubric = _sample_rubric()
+        # Non-final pool = 2+4+2 = 8; five student steps get full pool.
+        per_step, final_max, part_max = allocate_step_max_scores(rubric, 5)
+        assert final_max == pytest.approx(2.0)
+        assert part_max == {}
+        assert len(per_step) == 5
+        assert sum(per_step) == pytest.approx(8.0)
+
+        validation = QuestionValidation(
+            question_number=1,
+            question_id='question_001',
+            steps=[_step(i, ValidationStatus.VALID) for i in range(1, 6)],
+            final_answer_status=_step(0, ValidationStatus.VALID),
+        )
+        grade = aggregate_question_grade(
+            question_id='question_001',
+            question_number=1,
+            validation=validation,
+            rubric=rubric,
+        )
+        assert grade.score == pytest.approx(10.0)
+        assert sum(s.max_score for s in grade.steps) == pytest.approx(8.0)
+
     def test_aggregate_full_credit(self) -> None:
         validation = QuestionValidation(question_number=1, question_id='question_001', steps=[_step(1, ValidationStatus.VALID), _step(2, ValidationStatus.VALID), _step(3, ValidationStatus.VALID), _step(4, ValidationStatus.VALID)], final_answer_status=_step(0, ValidationStatus.VALID))
         grade = aggregate_question_grade(question_id='question_001', question_number=1, validation=validation, rubric=_sample_rubric())
@@ -1515,6 +1560,19 @@ class TestGrading:
         assert texts[0] == 'x > 0'
         assert texts[1] == 'x > 2' or 'x > 1' in texts[1] or texts[1].startswith('x')
 
+        gapped = ExamQuestion(
+            number=3,
+            stem='s',
+            steps=['x>0', '', 'x>2'],
+            steps_symbolic=[
+                SymbolicPayload(kind='relation', repr='x>0'),
+                None,
+                SymbolicPayload(kind='relation', repr='x>2'),
+            ],
+        )
+        gapped_texts = standard_step_texts(gapped, None)
+        assert gapped_texts == ['x>0', '', 'x>2']
+
     def test_comparer_mismatch_invalid(self) -> None:
         standard = Path('data/output/standards/exam_001')
         question = Question(
@@ -1567,17 +1625,77 @@ class TestGrading:
         assert results is not None
         assert results[1][0] == ValidationStatus.VALID
         assert results[2][0] == ValidationStatus.INVALID
+        assert 'no matching standard step' in results[2][1]
         assert results[3][0] == ValidationStatus.VALID
+        # -3x≤10 is equivalent to key step 2 (2-3x-2≤12-2) after soft-align cursor
+        assert 'standard step 2' in results[3][1]
 
-    def test_aggregate_standard_step_mismatch_cuts_step_score(self) -> None:
+    def test_compare_steps_skips_to_later_standard(self) -> None:
+        """Student may jump to a later key step (not index-aligned)."""
+        standard = Path('data/output/standards/exam_001')
+        question = Question(
+            question_id='question_001',
+            question_number=1,
+            student_steps=[
+                StudentStep(step_number=1, raw_text='', latex=r'2-3x\leq12'),
+                StudentStep(step_number=2, raw_text='', latex=r'x\geq -\frac{10}{3}'),
+            ],
+        )
+        results = StandardFinalComparer(standard).compare_steps(question)
+        assert results is not None
+        assert results[1][0] == ValidationStatus.VALID
+        assert results[2][0] == ValidationStatus.VALID
+        # Key steps 4–5 are the ÷(-1/3) / x≥-10/3 forms; sequential index
+        # align would have compared student step 2 to key step 2 (Invalid).
+        assert 'standard step 4' in results[2][1] or 'standard step 5' in results[2][1]
+        assert 'standard step 2' not in results[2][1]
+
+    def test_align_student_steps_noncontiguous(self) -> None:
+        aligned = align_student_steps_to_standard(
+            [
+                (1, [True, False, True]),
+                (2, [True, False, True]),
+            ]
+        )
+        assert aligned[1] == (ValidationStatus.VALID, 'step matches standard step 1')
+        assert aligned[2] == (ValidationStatus.VALID, 'step matches standard step 3')
+
+    def test_align_student_steps_no_double_claim(self) -> None:
+        aligned = align_student_steps_to_standard(
+            [
+                (1, [True, False]),
+                (2, [True, False]),
+            ]
+        )
+        assert aligned[1][0] == ValidationStatus.VALID
+        assert aligned[2][0] == ValidationStatus.INVALID
+        assert 'no matching standard step' in aligned[2][1]
+
+    def test_align_student_steps_figure_skip_does_not_consume(self) -> None:
+        aligned = align_student_steps_to_standard(
+            [
+                (1, None),
+                (2, [True, False]),
+            ],
+            skip_reasons={1: 'figure step skipped for standard align'},
+        )
+        assert aligned[1][0] == ValidationStatus.UNCERTAIN
+        assert aligned[2] == (ValidationStatus.VALID, 'step matches standard step 1')
+
+    def test_align_student_steps_empty_input(self) -> None:
+        assert align_student_steps_to_standard([]) == {}
+
+    def test_aggregate_standard_step_mismatch_keeps_consistency_credit(self) -> None:
         validation = QuestionValidation(question_number=1, question_id='question_001', steps=[_step(1, ValidationStatus.VALID), _step(2, ValidationStatus.VALID), _step(3, ValidationStatus.VALID)], final_answer_status=_step(0, ValidationStatus.VALID))
         grade = aggregate_question_grade(question_id='question_001', question_number=1, validation=validation, rubric=_sample_rubric(), standard_final_status=ValidationStatus.VALID, standard_final_reason='matches', standard_step_results={1: (ValidationStatus.VALID, 'step matches standard'), 2: (ValidationStatus.INVALID, 'step differs from standard'), 3: (ValidationStatus.VALID, 'step matches standard')})
-        assert grade.steps[1].score == pytest.approx(0.0)
+        # Soft-align mismatch is audit-only; consistency VALID still earns full step credit.
+        assert grade.steps[1].score == pytest.approx(grade.steps[0].score)
         assert 'standard:' in grade.steps[1].feedback
         assert grade.standard_step_statuses == {'1': 'valid', '2': 'invalid', '3': 'valid'}
-        assert grade.score == pytest.approx(grade.steps[0].score + grade.steps[2].score + 2.0)
+        assert grade.score == pytest.approx(10.0)
+        assert grade.review_status == ReviewStatus.AUTO_ACCEPT
 
-    def test_aggregate_unaligned_step_earns_nothing(self) -> None:
+    def test_aggregate_unaligned_step_keeps_consistency_credit(self) -> None:
         validation = QuestionValidation(
             question_number=1,
             question_id='question_001',
@@ -1591,8 +1709,9 @@ class TestGrading:
             rubric=_sample_rubric(),
             standard_step_results={1: (ValidationStatus.VALID, 'step matches standard')},
         )
-        assert grade.steps[1].score == pytest.approx(0.0)
+        assert grade.steps[1].score == pytest.approx(grade.steps[0].score)
         assert 'no matching standard step' in grade.steps[1].feedback
+        assert grade.standard_step_statuses == {'1': 'valid', '2': 'invalid'}
 
     def test_comparer_prose_uncertain(self, tmp_path: Path) -> None:
         standard = tmp_path / 'exam'
@@ -1612,6 +1731,279 @@ class TestGrading:
         assert grade.final_answer.score == pytest.approx(0.0)
         assert grade.standard_final_status == ValidationStatus.INVALID
         assert 'standard:' in grade.final_answer.feedback
+
+    def test_part_scoring_critical_points_and_figure(self) -> None:
+        from app.models.grading import Rubric, RubricCriterion
+
+        rubric = Rubric(
+            question=4,
+            maximum_score=10,
+            criteria=[
+                RubricCriterion(id='algebra', points=3),
+                RubricCriterion(id='critical_points', points=2),
+                RubricCriterion(id='figure', points=2),
+                RubricCriterion(id='final_answer', points=3),
+            ],
+        )
+        validation = QuestionValidation(
+            question_number=4,
+            question_id='question_004',
+            steps=[_step(1, ValidationStatus.VALID), _step(2, ValidationStatus.VALID)],
+            final_answer_status=_step(0, ValidationStatus.VALID),
+        )
+        grade = aggregate_question_grade(
+            question_id='question_004',
+            question_number=4,
+            validation=validation,
+            rubric=rubric,
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses={
+                'critical_points': (ValidationStatus.VALID, 'matches milestone'),
+                'figure': (ValidationStatus.VALID, 'figure step present'),
+            },
+        )
+        assert grade.score == pytest.approx(10.0)
+        part_feedback = ' '.join(s.feedback for s in grade.steps)
+        assert 'part:critical_points' in part_feedback
+        assert 'part:figure' in part_feedback
+
+        miss = aggregate_question_grade(
+            question_id='question_004',
+            question_number=4,
+            validation=validation,
+            rubric=rubric,
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses={
+                'critical_points': (ValidationStatus.INVALID, 'no match'),
+                'figure': (ValidationStatus.INVALID, 'no figure step'),
+            },
+        )
+        # algebra 3 + final 3 = 6; critical/figure zeroed
+        assert miss.score == pytest.approx(6.0)
+
+        partial = aggregate_question_grade(
+            question_id='question_004',
+            question_number=4,
+            validation=validation,
+            rubric=rubric,
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses={
+                'critical_points': (
+                    ValidationStatus.INVALID,
+                    'matches 1/3 of milestone critical_points',
+                    1 / 3,
+                ),
+                'figure': (ValidationStatus.VALID, 'figure step present'),
+            },
+        )
+        # algebra 3 + critical 2*(1/3) rounded + figure 2 + final 3
+        assert partial.score == pytest.approx(8.6667, abs=1e-4)
+
+    def test_milestone_coverage_and_figure_role_skip(self, tmp_path: Path) -> None:
+        from app.models.exam_schema import ExamMilestone
+        from app.models.recognition import SymbolicPayload
+
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='s',
+                    steps=['x > 1'],
+                    steps_symbolic=[
+                        SymbolicPayload(kind='relation', repr='x > 1'),
+                    ],
+                    milestones=[
+                        ExamMilestone(
+                            role='critical_points',
+                            steps=['x = 0', 'x = 1', 'x = 2'],
+                        ),
+                        ExamMilestone(
+                            role='sign_chart',
+                            steps=['x < 0'],
+                        ),
+                    ],
+                )
+            ],
+        )
+        question = Question(
+            question_id='question_001',
+            question_number=1,
+            student_steps=[
+                StudentStep(
+                    step_number=1,
+                    raw_text='x>1',
+                    role='figure',
+                    symbolic=SymbolicPayload(kind='relation', repr='x > 1'),
+                ),
+                StudentStep(
+                    step_number=2,
+                    raw_text='x=0',
+                    role='critical_points',
+                    symbolic=SymbolicPayload(kind='relation', repr='x = 0'),
+                ),
+            ],
+        )
+        comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
+        aligned = comparer.compare_steps(question)
+        assert aligned is not None
+        assert aligned[1][0] == ValidationStatus.UNCERTAIN
+        assert 'figure' in aligned[1][1]
+        marks = comparer.compare_milestones(question)
+        status, reason, fraction = marks['critical_points']
+        assert status != ValidationStatus.VALID
+        # one of three roots, and the sign-chart atom misses: mean of 1/3 and 0
+        assert fraction == pytest.approx((1 / 3 + 0) / 2)
+        assert '1/3' in reason
+
+        covered = question.model_copy(
+            update={
+                'student_steps': [
+                    StudentStep(
+                        step_number=1,
+                        raw_text='x=0',
+                        symbolic=SymbolicPayload(kind='relation', repr='x = 0'),
+                    ),
+                    StudentStep(
+                        step_number=2,
+                        raw_text='x=1',
+                        symbolic=SymbolicPayload(kind='relation', repr='x = 1'),
+                    ),
+                    StudentStep(
+                        step_number=3,
+                        raw_text='x=2',
+                        symbolic=SymbolicPayload(kind='relation', repr='x = 2'),
+                    ),
+                    StudentStep(
+                        step_number=4,
+                        raw_text='x<0',
+                        symbolic=SymbolicPayload(kind='relation', repr='x < 0'),
+                    ),
+                ]
+            }
+        )
+        full = comparer.compare_milestones(covered)
+        assert full['critical_points'][0] == ValidationStatus.VALID
+        assert full['critical_points'][2] == pytest.approx(1.0)
+
+    def test_compare_steps_none_without_algebra_bank(self, tmp_path: Path) -> None:
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='s',
+                    final='x>1',
+                )
+            ],
+        )
+        question = Question(
+            question_id='question_001',
+            question_number=1,
+            student_steps=[
+                StudentStep(step_number=1, raw_text='x>0', latex='x>0'),
+            ],
+        )
+        assert (
+            StandardFinalComparer(tmp_path, exam_schema=schema).compare_steps(question)
+            is None
+        )
+
+    def test_build_exam_question_without_hp_has_empty_final(self) -> None:
+        tex = r'''
+\begin{enumerate}
+\item $x>0$
+\begin{align}
+x &> 0 \\
+x &> 1
+\end{align}
+\end{enumerate}
+'''
+        schema = build_exam_schema(tex, source='no-hp')
+        assert schema.questions[0].final == ''
+        assert schema.questions[0].final_symbolic is None
+
+    def test_best_method_align_prefers_quadratic_bank(self, tmp_path: Path) -> None:
+        from app.models.exam_schema import (
+            ExamMethod,
+            ExamQuestion,
+            ExamSchema,
+        )
+        from app.models.question import StudentStep
+        from app.models.recognition import SymbolicPayload
+
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(
+                    number=4,
+                    stem='2x^2-5x-3<0',
+                    steps=['2*x**2 - 5*x - 3 < 0'],
+                    steps_symbolic=[
+                        SymbolicPayload(
+                            kind='relation', repr='2*x**2 - 5*x - 3 < 0'
+                        )
+                    ],
+                    methods=[
+                        ExamMethod(
+                            id='factoring',
+                            label='Pemaktoran',
+                            steps=['(2*x + 1)*(x - 3) = 0'],
+                            steps_symbolic=[
+                                SymbolicPayload(
+                                    kind='relation',
+                                    repr='(2*x + 1)*(x - 3) = 0',
+                                )
+                            ],
+                        ),
+                        ExamMethod(
+                            id='quadratic_formula',
+                            label='Rumus ABC',
+                            steps=['x = (-b + sqrt(b**2 - 4*a*c))/(2*a)'],
+                            steps_symbolic=[
+                                SymbolicPayload(
+                                    kind='relation',
+                                    repr='x = (5 + 7)/4',
+                                )
+                            ],
+                        ),
+                    ],
+                    final='(-1/2, 3)',
+                )
+            ],
+        )
+        standard = tmp_path / 'exam'
+        standard.mkdir()
+        (standard / 'exam_schema.json').write_text(
+            schema.model_dump_json(indent=2), encoding='utf-8'
+        )
+        question = Question(
+            question_id='question_004',
+            question_number=4,
+            student_steps=[
+                StudentStep(
+                    step_number=1,
+                    raw_text='2x^2-5x-3<0',
+                    symbolic=SymbolicPayload(
+                        kind='relation', repr='2*x**2 - 5*x - 3 < 0'
+                    ),
+                ),
+                StudentStep(
+                    step_number=2,
+                    raw_text='x=(5+7)/4',
+                    symbolic=SymbolicPayload(
+                        kind='relation', repr='x = (5 + 7)/4'
+                    ),
+                ),
+            ],
+        )
+        aligned = StandardFinalComparer(standard, exam_schema=schema).compare_steps(
+            question
+        )
+        assert aligned is not None
+        assert aligned[1][0] == ValidationStatus.VALID
+        assert aligned[2][0] == ValidationStatus.VALID
+        assert 'quadratic_formula' in aligned[2][1]
 
     def test_step_grader_with_standard_match(self, tmp_path: Path) -> None:
         standard = tmp_path / 'standards' / 'exam_001'
@@ -1708,6 +2100,73 @@ class TestKunciIngest:
         assert 'expects_figure' not in block
         assert 'infty' not in block.lower()
 
+    def test_multi_method_schema_and_rubric(self) -> None:
+        from app.functions.kunci_ingest import rubric_from_parts
+
+        multi = r'''
+\begin{enumerate}
+\item $2x^{2}-5x-3 < 0$
+\textbf{Penyelesaian:}
+\begin{itemize}
+\item Langkah-langkah Penyelesaian
+\begin{align}
+2x^2 - 5x - 3 &< 0 \\
+\text{Cari akar-akar persamaan } 2x^2 - 5x - 3 &= 0
+\end{align}
+\item Metode 1: Pemaktoran
+\begin{align}
+(2x + 1)(x - 3) &= 0 \\
+x &= -\frac{1}{2}
+\end{align}
+\item Metode 2: Rumus ABC
+\begin{align}
+x_1,x_2 &= \frac{-b \pm \sqrt{b^2 - 4ac}}{2a} \\
+x_1 &= 3
+\end{align}
+\item Analisis Tanda
+\begin{align}
+\text{Selang } x < -\frac{1}{2}: \quad & 4 > 0
+\end{align}
+\item Gambar Garis Bilangan
+\begin{center}
+\begin{tikzpicture}
+\draw (0,0)--(1,0);
+\end{tikzpicture}
+\end{center}
+\item HP: $\left(-\frac{1}{2}, 3\right)$
+\end{itemize}
+\end{enumerate}
+'''
+        schema = build_exam_schema(multi, source='multi')
+        q = schema.questions[0]
+        assert len(q.methods) == 2
+        assert {m.id for m in q.methods} == {'factoring', 'quadratic_formula'}
+        assert len(q.steps) == 2
+        shared_blob = ' '.join(q.steps)
+        assert 'b^2' not in shared_blob.replace(' ', '')
+        assert 'pm' not in shared_blob
+        kinds = {p.kind for p in q.parts}
+        assert kinds == {'algebra', 'sign_chart', 'figure', 'hp'}
+        assert 'sign_chart' in {m.role for m in q.milestones}
+        assert 'hp' in {m.role for m in q.milestones}
+        rubric = rubric_from_parts(q.number, q.parts)
+        assert rubric.maximum_score == 10
+        assert sum(c.points for c in rubric.criteria) == pytest.approx(10.0)
+        ids = {c.id for c in rubric.criteria}
+        assert ids == {'algebra', 'critical_points', 'figure', 'final_answer'}
+
+        single = build_exam_schema(_MINI_KUNCI, source='mini')
+        q1 = single.questions[0]
+        assert q1.methods == []
+        assert len(q1.steps) >= 1
+        assert 'algebra' in {p.kind for p in q1.parts}
+
+        rendered = ingest_kunci_tex(multi, source_note='multi.tex')[0][1]
+        assert '% method: factoring' in rendered
+        assert '% method: quadratic_formula' in rendered
+        assert '% role: sign_chart' in rendered
+        assert '% final answer' in rendered
+
     def test_latex_to_symbolic_skips_text_only(self) -> None:
         from app.functions.symbolic_from_latex import latex_to_symbolic_payload
 
@@ -1718,6 +2177,54 @@ class TestKunciIngest:
         assert payload.kind == 'relation'
         assert '>=' in payload.repr
         assert 'oo' not in payload.repr
+
+    def test_implies_normalize_and_symbolic(self) -> None:
+        from sympy.logic.boolalg import And
+
+        from app.functions.symbolic_from_latex import (
+            coalesce_step_symbolic,
+            latex_to_symbolic_payload,
+        )
+        from app.models.recognition import SymbolicPayload
+        from app.services.math.parser import parse_math_step
+
+        for raw in (
+            r'-3x = 0 \implies x = 0',
+            r'-3x = 0 \Rightarrow x = 0',
+            '-3x = 0 => x = 0',
+        ):
+            normalized = normalize_math_text(raw)
+            assert ' and ' in normalized
+            assert 'x = 0' in normalized.replace(' ', '') or 'x=0' in normalized.replace(
+                ' ', ''
+            )
+
+        payload = latex_to_symbolic_payload(r'-3x = 0 \implies x = 0')
+        assert payload is not None
+        assert payload.kind == 'relation'
+        assert 'and' in payload.repr
+        assert '-3' in payload.repr.replace(' ', '')
+        assert 'x = 0' in payload.repr or 'x=0' in payload.repr.replace(' ', '')
+
+        truncated = SymbolicPayload(kind='expression', repr='-3*x = 0')
+        fixed = coalesce_step_symbolic(r'-3x = 0 \implies x = 0', truncated)
+        assert fixed is not None
+        assert fixed.kind == 'relation'
+        assert 'and' in fixed.repr
+        assert 'x = 0' in fixed.repr or 'x=0' in fixed.repr.replace(' ', '')
+
+        kind_only = coalesce_step_symbolic(
+            '-3*x = 0',
+            SymbolicPayload(kind='expression', repr='-3*x = 0'),
+        )
+        assert kind_only is not None
+        assert kind_only.kind == 'relation'
+        assert kind_only.repr == '-3*x = 0'
+
+        x = Symbol('x')
+        step = parse_math_step('-3*x = 0 and x = 0', x)
+        assert step.kind == 'relation'
+        assert isinstance(step.value, And)
 
     def test_build_exam_schema_text_steps_null_symbolic(self) -> None:
         tex = r'''
@@ -1850,6 +2357,14 @@ x &> 0
         assert loaded.questions[0].stem
         assert loaded.questions[0].final_symbolic is not None
         assert 'oo' in loaded.questions[0].final_symbolic.repr
+        rubric_path = standard / 'rubrics' / 'question_001.json'
+        assert rubric_path in written
+        assert rubric_path.is_file()
+        from app.models.grading import Rubric
+
+        rubric = Rubric.model_validate_json(rubric_path.read_text(encoding='utf-8'))
+        assert rubric.maximum_score == 10
+        assert sum(c.points for c in rubric.criteria) == pytest.approx(10.0)
 
     def test_repo_exam_schema_at_least_six(self) -> None:
         path = Path('data/input/kunci_jawaban/jawaban_tugas_1.tex')
@@ -1906,10 +2421,11 @@ x &\geq -\frac{10}{3}
         (standard / 'rubrics').mkdir(parents=True)
         (standard / 'rubrics' / 'keep.json').write_text('{}', encoding='utf-8')
         written = KunciIngester(standard).ingest_file(kunci)
-        assert len(written) == 3
+        assert len(written) == 5  # 2 solutions + schema + 2 rubrics
         assert (standard / 'solutions' / 'question_001.tex').is_file()
         assert (standard / 'solutions' / 'question_002.tex').is_file()
         assert (standard / 'exam_schema.json').is_file()
+        assert (standard / 'rubrics' / 'question_001.json').is_file()
         assert (standard / 'rubrics' / 'keep.json').is_file()
 
     def test_controller_ingest_dir(self, tmp_path: Path) -> None:
@@ -1918,9 +2434,10 @@ x &\geq -\frac{10}{3}
         (kunci_dir / 'a.tex').write_text(_MINI_KUNCI, encoding='utf-8')
         standard = tmp_path / 'std'
         result = IngestKunciController().ingest(kunci_path=None, kunci_dir=kunci_dir, standard_dir=standard)
-        assert len(result.written) == 3
+        assert len(result.written) == 5  # 2 solutions + schema + 2 rubrics
         assert result.schema_path is not None
         assert result.schema_path.is_file()
+        assert (standard / 'rubrics' / 'question_001.json').is_file()
 
     def test_repo_jawaban_tugas_1_at_least_six(self) -> None:
         path = Path('data/input/kunci_jawaban/jawaban_tugas_1.tex')
@@ -2041,6 +2558,82 @@ class TestCliProcess:
         validate.validate.assert_called_once()
         grade.grade.assert_called_once()
         report.report.assert_called_once()
+
+    def test_process_from_crops_skips_render_and_wipe(self, tmp_path: Path) -> None:
+        pages_dir = tmp_path / 'pages'
+        pages_dir.mkdir()
+        (pages_dir / 'pages.json').write_text(
+            '[{"page_number":1,"image":"page_001.png","width":10,"height":10}]',
+            encoding='utf-8',
+        )
+        crops = tmp_path / 'crops' / 'page_001'
+        crops.mkdir(parents=True)
+        (crops / 'page_001_regions.json').write_text(
+            '{"page_number":1,"source":"ink","regions":[]}',
+            encoding='utf-8',
+        )
+        recognition_dir = tmp_path / 'recognition'
+        recognition_dir.mkdir()
+        stale_recognition = recognition_dir / 'page_009_recognition.json'
+        stale_recognition.write_text('{}', encoding='utf-8')
+        questions_dir = tmp_path / 'questions'
+        questions_dir.mkdir()
+        leftover = questions_dir / 'question_099' / 'question.json'
+        leftover.parent.mkdir()
+        leftover.write_text('{}', encoding='utf-8')
+        output_dir = tmp_path / 'output'
+        render = MagicMock()
+        recognize = MagicMock()
+        recognize.recognize_pages.return_value = RecognizeResult(
+            pages=[], output_dir=recognition_dir, artifact_paths=[]
+        )
+        extract = MagicMock()
+        extract.extract.return_value = ExtractResult(
+            questions=[], output_dir=questions_dir, artifact_paths=[]
+        )
+        latex = MagicMock()
+        latex.build.return_value = LatexResult(artifacts=[], questions_dir=questions_dir)
+        validate = MagicMock()
+        validate.validate.return_value = ValidateResult(
+            validations=[], questions_dir=questions_dir, artifact_paths=[]
+        )
+        grade = MagicMock()
+        grade.grade.return_value = GradeResult(
+            grades=[_process_question_grade()],
+            questions_dir=questions_dir,
+            standard_dir=tmp_path / 'standards',
+            artifact_paths=[],
+        )
+        report = MagicMock()
+        report.report.return_value = _report_result(tmp_path)
+        cleared: list = []
+        controller = ProcessController(
+            render_controller=render,
+            recognize_controller=recognize,
+            extract_controller=extract,
+            latex_controller=latex,
+            validate_controller=validate,
+            grade_controller=grade,
+            report_controller=report,
+            on_output_cleared=lambda root, names: cleared.append((root, names)),
+        )
+        result = controller.process_from_crops(
+            pages_dir=pages_dir,
+            recognition_dir=recognition_dir,
+            questions_dir=questions_dir,
+            output_dir=output_dir,
+            student_id='student_001',
+            crops_dir=tmp_path / 'crops',
+        )
+        assert cleared == []
+        assert not leftover.exists()
+        assert not stale_recognition.exists()
+        assert (pages_dir / 'pages.json').is_file()
+        assert (crops / 'page_001_regions.json').is_file()
+        render.render.assert_not_called()
+        recognize.recognize_pages.assert_called_once()
+        assert recognize.recognize_pages.call_args.kwargs.get('from_crops') is True
+        assert result.total_score == pytest.approx(8.0)
 
     def test_cli_process_success(self, tmp_path: Path, monkeypatch, capsys) -> None:
         pdf = tmp_path / 'answer.pdf'
@@ -2289,11 +2882,21 @@ class TestCliProcess:
         assert 'Selesai.' in out
         assert 'Proses PDF lain' in out
 
-    def test_cli_menu_process_defaults_student_id(self, tmp_path: Path, monkeypatch, capsys) -> None:
+    def test_cli_menu_finish_defaults_student_id(self, tmp_path: Path, monkeypatch, capsys) -> None:
         jawaban = tmp_path / 'jawaban'
         jawaban.mkdir()
-        pdf = jawaban / 'alpha.pdf'
-        pdf.write_bytes(b'%PDF')
+        pages_dir = tmp_path / 'pages'
+        pages_dir.mkdir()
+        (pages_dir / 'pages.json').write_text(
+            '[{"page_number":1,"image":"page_001.png","width":10,"height":10}]',
+            encoding='utf-8',
+        )
+        crops_dir = tmp_path / 'crops' / 'page_001'
+        crops_dir.mkdir(parents=True)
+        (crops_dir / 'page_001_regions.json').write_text(
+            '{"page_number":1,"source":"ink","regions":[]}',
+            encoding='utf-8',
+        )
         output_dir = tmp_path / 'output'
         config_path = tmp_path / 'config.yaml'
         config_path.write_text(
@@ -2303,6 +2906,11 @@ class TestCliProcess:
                     '  vision_model: "vision-test"',
                     'input:',
                     f'  jawaban_dir: {jawaban.as_posix()}',
+                    'pdf:',
+                    f'  output_dir: {pages_dir.as_posix()}',
+                    'recognition:',
+                    f'  crops_dir: {(tmp_path / "crops").as_posix()}',
+                    f'  output_dir: {(tmp_path / "recognition").as_posix()}',
                     'report:',
                     f'  output_dir: {output_dir.as_posix()}',
                 ]
@@ -2315,7 +2923,7 @@ class TestCliProcess:
             def __init__(self, **kwargs) -> None:
                 pass
 
-            def process(self, pdf_path, **kwargs):
+            def process_from_crops(self, **kwargs):
                 captured.append(kwargs.get('student_id'))
                 from app.models.process import ProcessResult
 
@@ -2330,14 +2938,14 @@ class TestCliProcess:
                     summary_csv_path=None,
                     report_html_path=None,
                     questions_dir=tmp_path / 'questions',
-                    pages_dir=tmp_path / 'pages',
+                    pages_dir=pages_dir,
                     recognition_dir=tmp_path / 'recognition',
                 )
 
         stdin = MagicMock()
         stdin.isatty.return_value = True
         monkeypatch.setattr('app.cli.sys.stdin', stdin)
-        answers = iter(['2', '1', '3'])
+        answers = iter(['4', '5'])
         monkeypatch.setattr('builtins.input', lambda _p='': next(answers))
         monkeypatch.setattr('app.cli.build_process_controller', lambda config, **kwargs: CapturingProcessController(**kwargs))
         exit_code = main(['--config', str(config_path), 'menu'])

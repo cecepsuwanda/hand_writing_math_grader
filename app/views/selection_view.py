@@ -12,8 +12,10 @@ def print_main_menu() -> None:
         bold("Math Grader"),
         "",
         "  1. Ingest kunci jawaban (.tex)",
-        "  2. Proses PDF jawaban mahasiswa",
-        "  3. Keluar",
+        "  2. Pilih PDF → render halaman → crop ink (konfirmasi)",
+        "  3. Crop ulang dari page_*_regions.json",
+        "  4. Lanjutkan grading (recognize → report) dari crops",
+        "  5. Keluar",
         "",
         dim("Pilih nomor, lalu Enter."),
     ]

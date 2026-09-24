@@ -35,6 +35,14 @@ _LATEX_REPLACEMENTS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"∩"), " and "),
     (re.compile(r"\\circ"), " o "),
     (re.compile(r"\\infty\b"), "oo"),
+    # Implication before \\to so \\Rightarrow is not partially matched.
+    (
+        re.compile(
+            r"\\implies\b|\\Rightarrow\b|\\Longrightarrow\b"
+        ),
+        " and ",
+    ),
+    (re.compile(r"⇒|⟹|=>"), " and "),
     (re.compile(r"\\to\b"), "->"),
     (re.compile(r"\\sin\b"), "sin"),
     (re.compile(r"\\cos\b"), "cos"),

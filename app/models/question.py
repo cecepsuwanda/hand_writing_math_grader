@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from app.models.recognition import Region, SymbolicPayload
+from app.models.recognition import Region, StepRole, SymbolicPayload
 
 
 class SegmentationStatus(str, Enum):
@@ -21,6 +21,7 @@ class StudentStep(BaseModel):
     # Deprecated in JSON pipeline: leave empty; use symbolic for SymPy.
     latex: str = ""
     symbolic: SymbolicPayload | None = None
+    role: StepRole | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page_number: int | None = None
 

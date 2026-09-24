@@ -11,10 +11,12 @@ Urutan wajib. Satu phase per sesi. Setiap implementasi harus patuh **MVC**, **SO
 
 ## Phase 2 — Ollama Vision
 
-- Modul: `services/vision/ollama_client.py`, `recognizer.py`, `ink_region_proposer.py`, `factory.py`
+- Modul: `services/vision/ollama_client.py`, `recognizer.py`, `ink_region_proposer.py`, `factory.py`; `controllers/crop_controller.py`
 - Interface: `VisionRecognizer`
 - Prompt: `prompts/crop_math.txt` (ink bbox → crop)
-- Acceptance: image → recognition JSON (Pydantic) + crops (`region_XX_solution.png`, `ink/` audit)
+- Artefak: `page_NNN_regions.json` (editable) + `region_XX_solution.png`
+- CLI: `propose-crops`, `recrop`; confirm loop before recognize (`--yes` skips)
+- Acceptance: image → regions JSON + crops → recognition JSON (Pydantic)
 - Fitur: retry, timeout, logging; `recognition.ink.*` dari config
 
 ## Phase 3 — Question Extraction
@@ -44,7 +46,7 @@ Urutan wajib. Satu phase per sesi. Setiap implementasi harus patuh **MVC**, **SO
 - Prompt: `prompts/grading.txt`
 - Acceptance: partial credit; rentang skor sesuai testdata
 - Follow-up: bandingkan ke standard solution / kunci (`data/input/kunci_jawaban`, `standards/.../solutions`)
-  → **Done (slice):** final answer + sequential step-align via SymPy; `ingest-kunci` CLI for enumerate+align+HP TeX
+  → **Done (slice):** final = min(konsistensi, standard SymPy); soft-align steps = audit; skor langkah = konsistensi; `ingest-kunci` CLI for enumerate+align+HP TeX
 
 ## Phase 8 — Report
 

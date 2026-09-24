@@ -49,7 +49,7 @@ Katalog resmi: [`topik.md`](topik.md). Status dan urutan implementasi: [math-top
 
 ## Recognition fidelity
 
-Recognition memakai **ink bbox**: clustering tinta deterministik (`ink_layout`), lalu Pillow crop + `crop_math`. Konteks ujian ke vision: **stem + expects_figure** dari `exam_schema` saja — jangan kirim steps/HP ke OCR.
+Recognition memakai **ink bbox**: clustering tinta deterministik (`ink_layout`), lalu Pillow crop + konfirmasi user (`page_*_regions.json` editable) + `crop_math`. Konteks ujian ke vision: **stem + expects_figure** dari `exam_schema` saja — jangan kirim steps/HP ke OCR.
 
 Saat recognition, LLM **tidak boleh**:
 
@@ -65,11 +65,28 @@ Jika ragu: flag confidence / `uncertain` / `review_required`, pertahankan gambar
 1. Syntax / parse (symbolic ASCII / LaTeX artefak).
 2. SymPy konsistensi langkah mahasiswa.
 3. LLM judge hanya jika deterministic checker tidak cukup.
-4. **Grading:** bandingkan ke `exam_schema` `final_symbolic` / `steps_symbolic` (fallback solutions `.tex`); skor = min(konsistensi, standard).
+4. **Grading:** skor langkah = konsistensi; soft-align ke `exam_schema` / solutions `.tex` = audit; skor `final_answer` = min(konsistensi, standard).
 5. Partial credit; bedakan conceptual / calculation / carry-forward error.
 6. Jangan nolkan semua skor hanya karena final answer salah.
 
 Output LLM wajib divalidasi terhadap schema. Status `uncertain` dan `REVIEW_REQUIRED` diizinkan.
+
+## Kunci jawaban (ingest)
+
+`python -m app.cli ingest-kunci` mem-parse `data/input/kunci_jawaban/*.tex` menjadi `exam_schema.json`, `solutions/question_NNN.tex`, dan `rubrics/question_NNN.json`.
+
+Kontrak markup itemize di dalam `\textbf{Penyelesaian}`:
+
+| Item | Hasil schema |
+|------|----------------|
+| `Langkah-langkah…` | `steps` (shared algebra) |
+| `Metode N: Label` | `methods[]` (`id` slug, mis. Pemaktoran→`factoring`, Rumus ABC→`quadratic_formula`) |
+| `Tentukan Titik Kritis` / `Titik Potong` | milestone + part `critical_points` |
+| `Analisis Tanda` | milestone + part `sign_chart` |
+| `Gambar Garis Bilangan…` / tikzpicture | `expects_figure` + part `figure` |
+| `HP: $…$` | `final` + milestone `hp` |
+
+**Grading Phase 2–3:** skor `algebra` = konsistensi langkah saja (soft-align best-method = audit). Bucket `critical_points` / `figure` di-score terpisah; `final_answer` = min(konsistensi, standard SymPy). Recognition (`crop-math-v7`) mengisi `role` per langkah (`algebra` / `critical_points` / `sign_chart` / `figure` / `hp`); bila kosong diinfer dari teks/symbolic.
 
 ## CLI dan antarmuka
 

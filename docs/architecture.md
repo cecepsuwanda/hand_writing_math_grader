@@ -9,7 +9,8 @@ Proyek ini wajib memakai **MVC**, **SOLID**, **clean code**, serta **OOP** berda
 ```text
 PDF → page images
   → ink-cluster bboxes (deterministic; Pillow)
-  → Pillow crop (+ padding; crops/page_XXX/region_*.png)
+  → write editable page_NNN_regions.json + Pillow crops
+  → human confirm / edit JSON / recrop (CLI propose-crops | recrop; --yes skips)
   → crop_math VLM → symbolic JSON (+ latex_source.tex)
   → question merge → student.tex → SymPy validation → grading → report
 ```
@@ -18,7 +19,7 @@ Recognition dan grading **dipisah**. JSON soal menyimpan `raw_text` + `symbolic`
 
 `exam_schema.json`: recognition memakai **stem + expects_figure (+ parts)** saja; `steps`/`final`/`HP` hanya untuk grading.
 
-**Validasi:** konsistensi langkah mahasiswa (SymPy ± LLM). **Grading:** compare ke `exam_schema` `final_symbolic` / `steps_symbolic` (fallback `standards/.../solutions/`) via SymPy; skor = min(konsistensi, standard). Ingest kunci: `ingest-kunci`. Opsional HTTP: `app/api.py` (wiring sama `pipeline_factory`); CLI tetap entry wajib.
+**Validasi:** konsistensi langkah mahasiswa (SymPy ± LLM). **Grading:** skor langkah = konsistensi; soft-align ke `exam_schema` / `standards/.../solutions` = audit; skor `final_answer` = min(konsistensi, standard SymPy). Ingest kunci: `ingest-kunci`. Opsional HTTP: `app/api.py` (wiring sama `pipeline_factory`); CLI tetap entry wajib.
 
 ## Lapisan MVC
 
@@ -77,7 +78,7 @@ Awal perintah `process` mengosongkan `data/output/` (kecuali `standards/`) terma
 ## Kontrak CLI
 
 ```text
-python -m app.cli menu                    # menu utama: ingest kunci / proses PDF / keluar
+python -m app.cli menu                    # menu: ingest / crop ink / recrop / grading / keluar
 python -m app.cli process                 # pilih PDF dari data/input/jawaban
 python -m app.cli process file.pdf
 python -m app.cli ingest-kunci            # tulis solutions/ + exam_schema.json

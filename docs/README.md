@@ -22,7 +22,7 @@ Wajib: **MVC**, **SOLID**, **clean code**, **OOP + functional programming**. Lih
 CLI Python (MVC) untuk soal **pertidaksamaan (topik 1.5)**, 1–5 halaman:
 
 ```text
-PDF → PNG → ink bbox → crop → Vision symbolic JSON
+PDF → PNG → ink bbox → confirm/edit regions.json → crop → Vision symbolic JSON
   → LaTeX artefak → SymPy (± LLM) → grade vs exam_schema → report
 ```
 
@@ -48,7 +48,7 @@ Letakkan PDF jawaban di `data/input/jawaban/`. Jawaban standar per soal: `data/o
 
 Opsional API: `python -m app.api` (FastAPI — bukan pengganti CLI).
 
-Pilih aksi lewat menu utama (ingest kunci / proses PDF / keluar):
+Pilih aksi lewat menu utama (ingest / crop ink / recrop / lanjut grading / keluar):
 
 ```bash
 python -m app.cli menu
@@ -71,7 +71,7 @@ Setiap `process` mengosongkan `data/output/` dulu (kecuali `standards/`), lalu m
 Tidak dijalankan di CI/`pytest`. Syarat: Ollama listening + `vision_model` / `reasoning_model` di [`app/config/config.yaml`](../app/config/config.yaml).
 
 ```bash
-# Interactive main menu (ingest kunci / process PDF / exit)
+# Interactive main menu (ingest / crop / recrop / finish / exit)
 python -m app.cli menu
 
 # Bare filename resolves under jawaban/

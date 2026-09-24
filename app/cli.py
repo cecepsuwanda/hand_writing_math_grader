@@ -34,6 +34,7 @@ from app.functions.paths import (
 from app.services.latex.builder import LatexBuilder
 from app.services.pdf.renderer import PyMuPdfRenderer
 from app.services.pipeline_factory import (
+    build_crop_controller,
     build_grade_controller,
     build_process_controller,
     build_recognize_controller,
@@ -132,6 +133,62 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Render DPI (default: config pdf.dpi)",
+    )
+    recognize_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip interactive crop confirmation",
+    )
+    recognize_parser.add_argument(
+        "--use-existing-crops",
+        action="store_true",
+        help="Reuse existing page_*_regions.json instead of re-running ink propose",
+    )
+
+    propose_crops_parser = subparsers.add_parser(
+        "propose-crops",
+        help="Ink-propose region boxes, write page_*_regions.json, crop PNGs, confirm",
+    )
+    propose_crops_parser.add_argument(
+        "pdf",
+        type=Path,
+        help="Student answer PDF (searched under data/input/jawaban if needed)",
+    )
+    propose_crops_parser.add_argument(
+        "--pages-dir",
+        type=Path,
+        default=None,
+        help="Directory for page PNGs (default: config pdf.output_dir)",
+    )
+    propose_crops_parser.add_argument(
+        "--dpi",
+        type=int,
+        default=None,
+        help="Render DPI (default: config pdf.dpi)",
+    )
+    propose_crops_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip interactive crop confirmation",
+    )
+
+    recrop_parser = subparsers.add_parser(
+        "recrop",
+        help="Re-crop PNGs from editable page_*_regions.json under crops/",
+    )
+    recrop_parser.add_argument(
+        "--pages-dir",
+        type=Path,
+        default=None,
+        help="Directory for page PNGs (default: config pdf.output_dir)",
+    )
+    recrop_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip interactive crop confirmation after recrop",
     )
 
     extract_parser = subparsers.add_parser(
@@ -297,6 +354,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory for question artifacts (default: config questions.output_dir)",
     )
+    process_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip interactive crop confirmation",
+    )
+    process_parser.add_argument(
+        "--use-existing-crops",
+        action="store_true",
+        help="Reuse existing page_*_regions.json (skip ink re-propose)",
+    )
 
     ingest_parser = subparsers.add_parser(
         "ingest-kunci",
@@ -335,6 +403,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "render":
             return _run_render(args)
+        if args.command == "propose-crops":
+            return _run_propose_crops(args)
+        if args.command == "recrop":
+            return _run_recrop(args)
         if args.command == "recognize":
             return _run_recognize(args)
         if args.command == "extract":
@@ -415,7 +487,8 @@ def _run_menu(args: argparse.Namespace) -> int:
         print_error(
             MathGraderError(
                 "Interactive menu requires a terminal. "
-                "Use `process`, `ingest-kunci`, or other subcommands instead."
+                "Use `process`, `propose-crops`, `recrop`, `ingest-kunci`, "
+                "or other subcommands instead."
             )
         )
         return 1
@@ -425,7 +498,7 @@ def _run_menu(args: argparse.Namespace) -> int:
     while True:
         print_main_menu()
         try:
-            raw = input("Pilihan [1/2/3]: ")
+            raw = input("Pilihan [1-5]: ")
         except (EOFError, KeyboardInterrupt):
             print()
             mark_interactive_session_done()
@@ -450,17 +523,95 @@ def _run_menu(args: argparse.Namespace) -> int:
                 )
                 print_ingest_kunci_result(result)
                 last_code = 0
-            else:
+            elif choice == "propose_crops":
+                pdf_path = _select_pdf_interactive(config.input.jawaban_dir)
+                print_selected_pdf(pdf_path)
+                last_code = _menu_propose_crops(config, args, pdf_path)
+            elif choice == "recrop":
+                last_code = _menu_recrop(config, args)
+            elif choice == "finish":
                 if not config.ollama.vision_model.strip():
                     raise OllamaModelNotConfiguredError()
-                pdf_path = _select_pdf_interactive(config.input.jawaban_dir)
-                last_code = _process_one_pdf(config, args, pdf_path)
+                last_code = _menu_finish_from_crops(config, args)
+            else:
+                raise InvalidMenuSelectionError(f"unhandled choice: {choice}")
         except MathGraderError as exc:
             print_error(exc)
             last_code = 1
         except Exception as exc:  # noqa: BLE001 — CLI boundary maps unexpected → exit 2
             print_error(exc)
             last_code = 2
+
+
+def _menu_propose_crops(
+    config: AppConfig,
+    args: argparse.Namespace,
+    pdf_path: Path,
+) -> int:
+    pages_dir = getattr(args, "pages_dir", None) or config.pdf.output_dir
+    recognition_dir = getattr(args, "recognition_dir", None) or config.recognition.output_dir
+    questions_dir = getattr(args, "questions_dir", None) or config.questions.output_dir
+    workspace_root = config.report.output_dir
+    dpi = getattr(args, "dpi", None)
+    if dpi is None:
+        dpi = config.pdf.dpi
+
+    removed = prepare_pipeline_workspace(
+        workspace_root,
+        pages_dir=pages_dir,
+        recognition_dir=recognition_dir,
+        questions_dir=questions_dir,
+        crops_dir=config.recognition.crops_dir,
+    )
+    print_output_cleared(workspace_root, removed)
+
+    crop = build_crop_controller(config)
+    crop.propose_for_pdf(pdf_path, pages_dir, dpi)
+    crop.confirm_loop(pages_dir, force_yes=False)
+    print(f"Crops ready under {crop.crops_dir}")
+    return 0
+
+
+def _menu_recrop(config: AppConfig, args: argparse.Namespace) -> int:
+    pages_dir = getattr(args, "pages_dir", None) or config.pdf.output_dir
+    crop = build_crop_controller(config)
+    result = crop.recrop_all(pages_dir)
+    if not result.pages:
+        print(f"No page_*_regions.json found under {crop.crops_dir}")
+        return 1
+    crop.confirm_loop(pages_dir, force_yes=False)
+    print(f"Recropped {len(result.pages)} page(s) under {crop.crops_dir}")
+    return 0
+
+
+def _menu_finish_from_crops(config: AppConfig, args: argparse.Namespace) -> int:
+    pages_dir = getattr(args, "pages_dir", None) or config.pdf.output_dir
+    recognition_dir = getattr(args, "recognition_dir", None) or config.recognition.output_dir
+    questions_dir = getattr(args, "questions_dir", None) or config.questions.output_dir
+    output_dir = getattr(args, "output", None) or config.report.output_dir
+    standard_dir = getattr(args, "standard", None) or config.grading.standard_dir
+    student_id = getattr(args, "student_id", None) or "student_001"
+
+    print_models(
+        vision_model=config.ollama.vision_model,
+        reasoning_model=config.ollama.reasoning_model,
+    )
+    controller = build_process_controller(
+        config,
+        recognition_dir=recognition_dir,
+        standard_dir=standard_dir,
+        on_progress=print_progress,
+    )
+    result = controller.process_from_crops(
+        pages_dir=pages_dir,
+        recognition_dir=recognition_dir,
+        questions_dir=questions_dir,
+        output_dir=output_dir,
+        student_id=student_id,
+        crops_dir=config.recognition.crops_dir,
+    )
+    print_process_summary(result)
+    return 0
 
 
 def _process_one_pdf(
@@ -520,6 +671,8 @@ def _process_one_pdf(
         workspace_root=workspace_root,
         reset_workspace=False,
         crops_dir=config.recognition.crops_dir,
+        force_yes=bool(getattr(args, "yes", False)),
+        use_existing_crops=bool(getattr(args, "use_existing_crops", False)),
     )
     print_process_summary(result)
     return 0
@@ -536,6 +689,31 @@ def _run_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_propose_crops(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    pdf_path = _resolve_pdf(args, config)
+    pages_dir = args.pages_dir if args.pages_dir is not None else config.pdf.output_dir
+    dpi = args.dpi if args.dpi is not None else config.pdf.dpi
+    crop = build_crop_controller(config)
+    crop.propose_for_pdf(pdf_path, pages_dir, dpi)
+    crop.confirm_loop(pages_dir, force_yes=bool(args.yes))
+    print(f"Crops ready under {crop.crops_dir}")
+    return 0
+
+
+def _run_recrop(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    pages_dir = args.pages_dir if args.pages_dir is not None else config.pdf.output_dir
+    crop = build_crop_controller(config)
+    result = crop.recrop_all(pages_dir)
+    if not result.pages:
+        print(f"No page_*_regions.json found under {crop.crops_dir}")
+        return 1
+    crop.confirm_loop(pages_dir, force_yes=bool(args.yes))
+    print(f"Recropped {len(result.pages)} page(s) under {crop.crops_dir}")
+    return 0
+
+
 def _run_recognize(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     if not config.ollama.vision_model.strip():
@@ -548,11 +726,20 @@ def _run_recognize(args: argparse.Namespace) -> int:
     )
     dpi = args.dpi if args.dpi is not None else config.pdf.dpi
 
-    result = build_recognize_controller(config, recognition_dir).recognize(
-        pdf_path=pdf_path,
-        pages_dir=pages_dir,
-        recognition_dir=recognition_dir,
-        dpi=dpi,
+    render_result = RenderController(PyMuPdfRenderer()).render(pdf_path, pages_dir, dpi)
+    crop = build_crop_controller(config, recognition_dir)
+    crop.ensure_crops_confirmed(
+        render_result.pages,
+        pages_dir,
+        use_existing=bool(getattr(args, "use_existing_crops", False)),
+        force_yes=bool(getattr(args, "yes", False)),
+    )
+
+    result = build_recognize_controller(config, recognition_dir).recognize_pages(
+        render_result.pages,
+        pages_dir,
+        recognition_dir,
+        from_crops=True,
     )
     print_recognize_result(result)
     return 0

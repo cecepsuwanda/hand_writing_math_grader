@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 
-MainMenuChoice = Literal["ingest", "process", "exit"]
+MainMenuChoice = Literal["ingest", "propose_crops", "recrop", "finish", "exit"]
 
 
 def list_jawaban_pdfs(jawaban_dir: Path) -> list[Path]:
@@ -101,7 +101,7 @@ def parse_kunci_choice(tex_files: list[Path], raw: str) -> Path:
 
 
 def parse_main_menu_choice(raw: str) -> MainMenuChoice:
-    """Parse main menu input into ``ingest`` / ``process`` / ``exit``.
+    """Parse main menu into ingest / propose_crops / recrop / finish / exit.
 
     Raises:
         ValueError: if the choice is empty or unknown.
@@ -111,8 +111,12 @@ def parse_main_menu_choice(raw: str) -> MainMenuChoice:
         raise ValueError("empty selection")
     if choice in {"1", "ingest", "kunci", "i"}:
         return "ingest"
-    if choice in {"2", "process", "pdf", "proses", "p"}:
-        return "process"
-    if choice in {"3", "exit", "keluar", "q"}:
+    if choice in {"2", "propose-crops", "propose_crops", "propose", "crop", "c", "pdf"}:
+        return "propose_crops"
+    if choice in {"3", "recrop", "re-crop", "r"}:
+        return "recrop"
+    if choice in {"4", "finish", "lanjut", "grade", "proses", "process", "p"}:
+        return "finish"
+    if choice in {"5", "exit", "keluar", "q"}:
         return "exit"
     raise ValueError(f"unknown menu choice: {raw.strip()}")

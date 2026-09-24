@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import AppConfig
+from app.controllers.crop_controller import CropController
 from app.controllers.extract_controller import ExtractController
 from app.controllers.grade_controller import GradeController
 from app.controllers.latex_controller import LatexController
@@ -97,6 +98,21 @@ def build_recognize_controller(
     )
 
 
+def build_crop_controller(
+    config: AppConfig, recognition_dir: Path | None = None
+) -> CropController:
+    recognition = (
+        Path(recognition_dir)
+        if recognition_dir is not None
+        else config.recognition.output_dir
+    )
+    recognizer = build_vision_recognizer(config, recognition)
+    return CropController(
+        renderer=PyMuPdfRenderer(),
+        recognizer=recognizer,
+    )
+
+
 def build_process_controller(
     config: AppConfig,
     *,
@@ -112,9 +128,14 @@ def build_process_controller(
         else config.recognition.output_dir
     )
     standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    recognizer = build_vision_recognizer(config, recognition)
+    renderer = PyMuPdfRenderer()
     return ProcessController(
-        render_controller=RenderController(PyMuPdfRenderer()),
-        recognize_controller=build_recognize_controller(config, recognition),
+        render_controller=RenderController(renderer),
+        recognize_controller=RecognizeController(
+            renderer=renderer, recognizer=recognizer
+        ),
+        crop_controller=CropController(renderer=renderer, recognizer=recognizer),
         extract_controller=ExtractController(
             extractor=QuestionExtractor(
                 exam_schema=load_exam_schema(standard),

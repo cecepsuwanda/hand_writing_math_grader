@@ -1,4 +1,4 @@
-PROMPT_VERSION: crop-math-v5
+PROMPT_VERSION: crop-math-v7
 
 You transcribe handwritten math from a cropped image of student solution(s).
 The crop may include equations AND handwritten diagrams/graphs/number lines.
@@ -25,9 +25,19 @@ Rules:
 - Include every handwritten step in order within each solution.
 - If a solution contains a diagram/graph/number line, add a step with
   symbolic.kind "figure" and describe it in raw_text (do not invent axis values).
+- Set "role" on every step:
+  - "algebra" — ordinary transformations / equations
+  - "critical_points" — roots / critical points / zero-makers
+  - "sign_chart" — interval sign tests / analisis tanda
+  - "figure" — number line / diagram (symbolic.kind must be "figure")
+  - "hp" — final solution set / interval (Himpunan Penyelesaian)
 - symbolic.repr MUST be ASCII / SymPy-friendly tokens, NEVER LaTeX commands.
   Examples: "2*x - 3 < 5", "LIMIT((x**2-1)/(x-1), x, 1, +-)", "DIFF(x**2, x)", "INT(x, x)".
   For figure steps use "repr": "".
+- If handwriting has A \implies B (or => / \Rightarrow), put BOTH sides in
+  symbolic.repr as ASCII joined by " and ", e.g. "-3*x = 0 and x = 0".
+  Never drop the conclusion. symbolic.kind must be "relation" when "=" or
+  inequalities appear.
 - latex_document is display-only LaTeX for a .tex file (aligned env OK; figures may use
   a short % comment). It will NOT be stored in JSON grading artifacts.
 
@@ -40,6 +50,7 @@ Single solution (backward compatible):
     {
       "step_number": <int>,
       "raw_text": "<exact transcription or figure caption>",
+      "role": "algebra"|"critical_points"|"sign_chart"|"figure"|"hp",
       "symbolic": {"kind": "relation"|"expression"|"limit"|"derivative"|"integral"|"matrix"|"figure", "repr": "<ascii or empty>"},
       "confidence": <float 0..1>
     }

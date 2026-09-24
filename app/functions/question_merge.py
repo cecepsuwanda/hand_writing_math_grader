@@ -132,7 +132,10 @@ def _build_question(
             if step.confidence is not None:
                 confidences.append(step.confidence)
             # Figure steps inside a solution crop → figure_refs + skip math list.
-            if step.symbolic is not None and step.symbolic.kind == "figure":
+            is_figure = step.role == "figure" or (
+                step.symbolic is not None and step.symbolic.kind == "figure"
+            )
+            if is_figure:
                 if recognized.crop_path:
                     figure_refs.append(
                         FigureRef(
@@ -150,6 +153,7 @@ def _build_question(
                     raw_text=step.raw_text,
                     latex="",
                     symbolic=step.symbolic,
+                    role=step.role,
                     confidence=step.confidence,
                     page_number=page_number,
                 )
@@ -158,6 +162,18 @@ def _build_question(
             final_answer = recognized.final_answer
         if recognized.final_answer_symbolic is not None:
             final_symbolic = recognized.final_answer_symbolic
+
+    if not (final_answer or "").strip():
+        for step in student_steps:
+            if step.role != "hp":
+                continue
+            if step.symbolic is not None and (step.symbolic.repr or "").strip():
+                final_answer = step.symbolic.repr.strip()
+                final_symbolic = step.symbolic
+                break
+            if (step.raw_text or "").strip():
+                final_answer = step.raw_text.strip()
+                break
 
     for index, step in enumerate(student_steps, start=1):
         student_steps[index - 1] = step.model_copy(update={"step_number": index})

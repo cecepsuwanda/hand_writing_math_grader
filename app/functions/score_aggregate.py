@@ -12,39 +12,42 @@ from app.models.grading import (
 )
 from app.models.validation import QuestionValidation, StepValidation, ValidationStatus
 
+# Rubric ids scored outside the per-step algebra pool.
+_PART_CRITERION_IDS = frozenset({"critical_points", "figure", "final_answer"})
+
 
 def allocate_step_max_scores(
     rubric: Rubric,
     step_count: int,
-    *,
-    expected_step_count: int | None = None,
-) -> tuple[list[float], float]:
-    """Split non-final criteria across steps; return (per_step_max, final_max).
+) -> tuple[list[float], float, dict[str, float]]:
+    """Split algebra pool across steps; return (per_step_max, final_max, part_max).
 
-    When ``expected_step_count`` is larger than observed steps, the pool is
-    divided by the expected count so incomplete solutions cannot earn the
-    entire step pool from a single valid fragment.
+    ``part_max`` holds points for ``critical_points`` / ``figure`` (and any
+    other reserved part ids except ``final_answer``, which is ``final_max``).
     """
     final_points = 0.0
     pool = 0.0
+    part_max: dict[str, float] = {}
     for criterion in rubric.criteria:
         if criterion.id == "final_answer":
             final_points += criterion.points
+        elif criterion.id in _PART_CRITERION_IDS:
+            part_max[criterion.id] = (
+                part_max.get(criterion.id, 0.0) + criterion.points
+            )
         else:
+            # algebra and legacy ids (setup/transformation/…) → step pool
             pool += criterion.points
 
     if step_count <= 0:
-        return [], final_points
+        return [], final_points, part_max
 
-    slots = max(step_count, expected_step_count or 0)
-    per = pool / slots
+    per = pool / step_count
     scores = [round(per, 4) for _ in range(step_count)]
-    # Fix rounding so awarded step maxes stay consistent; leftover stays unearned
-    # when expected_step_count > step_count.
-    if slots == step_count and scores:
+    if scores:
         diff = round(pool - sum(scores), 4)
         scores[-1] = round(scores[-1] + diff, 4)
-    return scores, final_points
+    return scores, final_points, part_max
 
 
 def score_fraction(status: ValidationStatus) -> float:
@@ -96,6 +99,44 @@ def deterministic_feedback(validation: StepValidation, error_type: ErrorType) ->
     return base
 
 
+def _part_mark(
+    entry: tuple,
+) -> tuple[ValidationStatus, str, float | None]:
+    """Unpack ``(status, reason)`` or ``(status, reason, fraction)``."""
+    status = entry[0]
+    reason = str(entry[1])
+    if len(entry) >= 3 and entry[2] is not None:
+        return status, reason, float(entry[2])
+    return status, reason, None
+
+
+def _part_step_grade(
+    *,
+    part_id: str,
+    maximum: float,
+    status: ValidationStatus,
+    reason: str,
+    fraction: float | None = None,
+) -> StepGrade:
+    earned_fraction = (
+        score_fraction(status) if fraction is None else min(1.0, max(0.0, fraction))
+    )
+    earned = round(maximum * earned_fraction, 4)
+    return StepGrade(
+        step_number=0,
+        score=earned,
+        max_score=maximum,
+        status=grade_status_for(status, earned, maximum),
+        error_type=(
+            ErrorType.UNCERTAIN
+            if status == ValidationStatus.UNCERTAIN
+            else ErrorType.NONE
+        ),
+        feedback=f"part:{part_id}; {reason}",
+        validation_status=status,
+    )
+
+
 def aggregate_question_grade(
     *,
     question_id: str,
@@ -105,13 +146,11 @@ def aggregate_question_grade(
     standard_final_status: ValidationStatus | None = None,
     standard_final_reason: str = "",
     standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None,
-    expected_step_count: int | None = None,
+    part_statuses: dict[str, tuple] | None = None,
 ) -> QuestionGrade:
     steps = sorted(validation.steps, key=lambda s: s.step_number)
-    per_step_max, final_max = allocate_step_max_scores(
-        rubric,
-        len(steps),
-        expected_step_count=expected_step_count,
+    per_step_max, final_max, part_max = allocate_step_max_scores(
+        rubric, len(steps)
     )
 
     step_grades: list[StepGrade] = []
@@ -124,37 +163,27 @@ def aggregate_question_grade(
         if step_val.status == ValidationStatus.UNCERTAIN:
             review_required = True
 
-        std_entry = None
-        if standard_step_results:
+        # Soft-align to the key is audit/feedback only; step score is
+        # consistency alone so alternate valid paths are not zeroed.
+        fraction = consistency_fraction
+        label_status = step_val.status
+        std_reason = ""
+        if standard_step_results is not None:
             std_entry = standard_step_results.get(step_val.step_number)
-            if std_entry is None:
-                # A partial align map means this step has no standard row.
-                # Do not award consistency-only credit for the gap.
-                std_entry = (
-                    ValidationStatus.INVALID,
-                    "no matching standard step",
+            if std_entry is not None:
+                std_status, std_reason = std_entry
+                audit_steps[str(step_val.step_number)] = std_status.value
+            else:
+                std_reason = "no matching standard step"
+                audit_steps[str(step_val.step_number)] = (
+                    ValidationStatus.INVALID.value
                 )
-            std_status, std_reason = std_entry
-            audit_steps[str(step_val.step_number)] = std_status.value
-            std_fraction = score_fraction(std_status)
-            if std_status == ValidationStatus.UNCERTAIN:
-                review_required = True
-            fraction = min(consistency_fraction, std_fraction)
-            label_status = (
-                std_status
-                if std_fraction <= consistency_fraction
-                else step_val.status
-            )
-        else:
-            fraction = consistency_fraction
-            label_status = step_val.status
-            std_reason = ""
 
         earned = round(maximum * fraction, 4)
         prev = steps[index - 1] if index > 0 else None
         error_type = infer_error_type(step_val, previous=prev)
         feedback = deterministic_feedback(step_val, error_type)
-        if std_entry is not None and std_reason:
+        if standard_step_results is not None and std_reason:
             feedback = f"{feedback}; standard: {std_reason}"
 
         step_grades.append(
@@ -166,6 +195,30 @@ def aggregate_question_grade(
                 error_type=error_type,
                 feedback=feedback,
                 validation_status=step_val.status,
+            )
+        )
+
+    parts = part_statuses or {}
+    for part_id, maximum in part_max.items():
+        if maximum <= 0:
+            continue
+        fraction: float | None = None
+        if part_id in parts:
+            status, reason, fraction = _part_mark(parts[part_id])
+        else:
+            status, reason = (
+                ValidationStatus.INVALID,
+                f"no {part_id} evidence",
+            )
+        if status == ValidationStatus.UNCERTAIN:
+            review_required = True
+        step_grades.append(
+            _part_step_grade(
+                part_id=part_id,
+                maximum=maximum,
+                status=status,
+                reason=reason,
+                fraction=fraction,
             )
         )
 

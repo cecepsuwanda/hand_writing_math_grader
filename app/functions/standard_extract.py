@@ -91,13 +91,65 @@ def standard_step_texts(
                 and schema_q.steps[index].strip()
             ):
                 result.append(schema_q.steps[index].strip())
+                continue
+            # Keep the slot so later standard steps keep their index.
+            result.append("")
         return result
 
     if tex_steps:
         return tex_steps
     if schema_q is not None and schema_q.steps:
-        return [step.strip() for step in schema_q.steps if step.strip()]
+        return [(step or "").strip() for step in schema_q.steps]
     return []
+
+
+def _method_step_texts(method) -> list[str]:
+    result: list[str] = []
+    symbolic = getattr(method, "steps_symbolic", None) or []
+    latex_steps = getattr(method, "steps", None) or []
+    length = max(len(symbolic), len(latex_steps))
+    for index in range(length):
+        repr_text = ""
+        if index < len(symbolic) and symbolic[index] is not None:
+            repr_text = (symbolic[index].repr or "").strip()
+        if repr_text:
+            result.append(repr_text)
+            continue
+        if index < len(latex_steps) and (latex_steps[index] or "").strip():
+            result.append(latex_steps[index].strip())
+            continue
+        result.append("")
+    return result
+
+
+def standard_method_step_banks(
+    schema_q: ExamQuestion | None,
+    tex: str | None = None,
+) -> list[tuple[str, list[str]]]:
+    """Return ``(bank_id, step_texts)`` for best-method soft-align.
+
+    Without methods: one ``shared`` bank from top-level steps (TeX fallback).
+    With methods: one bank per method = shared steps + that method's steps.
+    """
+    shared = standard_step_texts(schema_q, tex)
+    if schema_q is None or not schema_q.methods:
+        if _bank_has_math(shared):
+            return [("shared", shared)]
+        return []
+
+    banks: list[tuple[str, list[str]]] = []
+    for method in schema_q.methods:
+        method_steps = _method_step_texts(method)
+        combined = list(shared) + method_steps
+        if _bank_has_math(combined):
+            banks.append((method.id or "method", combined))
+    if not banks and _bank_has_math(shared):
+        return [("shared", shared)]
+    return banks
+
+
+def _bank_has_math(steps: list[str]) -> bool:
+    return any(step.strip() for step in steps)
 
 
 def extract_final_answer_from_tex(text: str) -> str | None:

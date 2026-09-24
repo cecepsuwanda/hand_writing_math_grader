@@ -16,13 +16,14 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 - Load PDF, render PNG per halaman, metadata ukuran, nama file deterministik.
 - Acceptance: PDF di `data/input/jawaban/` → `data/output/pages/page_001.png`, …
 
-## Phase 2 — Ollama Vision (ink crop)
+## Phase 2 — Ollama Vision (ink crop + confirm)
 
-- Client Ollama, ink-cluster bboxes → Pillow crop → `crop_math` symbolic JSON.
+- Client Ollama, ink-cluster bboxes → write `page_NNN_regions.json` → Pillow crop → **human confirm** (edit JSON + `recrop`) → `crop_math` symbolic JSON.
 - Prompt: `crop_math.txt`.
+- CLI: `propose-crops`, `recrop`; `recognize` / `process` confirm unless `--yes`.
 - Recognition context dari `exam_schema`: **stem + expects_figure saja** (bukan steps/HP).
-- Acceptance: page image → recognition JSON valid (schema) + crops artifact (`region_XX_solution.png`, `ink/` audit).
-- Config: `recognition.ink.*` (threshold, merge gaps, margins).
+- Acceptance: page image → editable regions JSON + crop PNGs → recognition JSON valid.
+- Config: `recognition.ink.*` (threshold, merge gaps, margins). Single regions artifact (no `*_regions_ink.json`).
 
 ## Phase 3 — Question Extraction
 
@@ -50,9 +51,11 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 - Rubric, skor per langkah, partial credit, feedback.
 - Acceptance: dataset uji menghasilkan rentang skor yang diharapkan.
 - Compare final answer ke `standards/.../solutions/` (SymPy); skor `final_answer` = min(konsistensi, standard).
-- Step-align sequential (index) ke baris `aligned`/`align` di solutions; skor langkah = min(konsistensi, standard).
-- Ingest kunci: `python -m app.cli ingest-kunci` menulis `standards/.../solutions` **dan** `exam_schema.json` dari `data/input/kunci_jawaban/` (pola enumerate+align+HP+tikzpicture flag; schema menyimpan LaTeX + `SymbolicPayload` untuk stem/steps/HP; overwrite solutions/schema saja). Recognition memuat schema bila ada (stem + `expects_figure` saja).
-- Follow-up: kunci LaTeX arbitrary / auto-rubric.
+- Step-align **best-method** soft-align (shared+method bank; relational *form*) — **audit/feedback saja**; skor langkah algebra = konsistensi mahasiswa (jalur alternatif valid tidak dipotong).
+- Skor parts: `critical_points` (set-equivalence milestone), `figure` (presence), `final_answer` = min(konsistensi, standard).
+- Ingest kunci: `python -m app.cli ingest-kunci` menulis `standards/.../solutions`, `exam_schema.json`, dan `rubrics/` dari `data/input/kunci_jawaban/` (Metode N → `methods[]`; shared `steps`; parts algebra/critical_points/sign_chart/figure/hp). Recognition memuat schema bila ada (stem + `expects_figure` saja).
+- Recognition (`crop-math-v7`): field `role` per langkah; grading figure/milestone/HP memakai role (+ fallback legacy).
+- Follow-up selesai untuk multi-metode MVP (Phase 1–3).
 
 ## Phase 8 — Report
 
@@ -62,7 +65,7 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 
 - Subcommand lengkap, progress/summary terminal, exit code jelas.
 - `process` mendukung pilihan PDF interaktif dari `data/input/jawaban/`.
-- `menu` (default `run.bat`): ingest kunci / proses PDF / keluar.
+- `menu` (default `run.bat`): ingest kunci / crop ink / recrop / lanjut grading / keluar.
 - Awal `process` mengosongkan `data/output/` kecuali `standards/`.
 - Pastikan View/Controller/Service terpisah (MVC).
 - Bukan web UI.

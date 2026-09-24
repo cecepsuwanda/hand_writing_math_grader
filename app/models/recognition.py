@@ -25,6 +25,14 @@ SymbolicKind = Literal[
     "figure",
 ]
 
+StepRole = Literal[
+    "algebra",
+    "critical_points",
+    "sign_chart",
+    "figure",
+    "hp",
+]
+
 RegionType = Literal["solution", "math_block", "figure"]
 
 
@@ -46,6 +54,7 @@ class RecognizedStep(BaseModel):
     # Deprecated: new pipeline leaves this empty; LaTeX lives only in .tex artifacts.
     latex: str = ""
     symbolic: SymbolicPayload | None = None
+    role: StepRole | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 

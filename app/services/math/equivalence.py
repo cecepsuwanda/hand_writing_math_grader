@@ -29,7 +29,15 @@ from sympy import (
     together,
     zoo,
 )
-from sympy.core.relational import Relational
+from sympy.core.relational import (
+    Equality,
+    GreaterThan,
+    LessThan,
+    Relational,
+    StrictGreaterThan,
+    StrictLessThan,
+    Unequality,
+)
 from sympy.logic.boolalg import Boolean
 from sympy.functions.elementary.exponential import ExpBase
 
@@ -79,6 +87,69 @@ def relations_equivalent(
 
     try:
         return bool(prev_set == curr_set)
+    except Exception:
+        return None
+
+
+# Mirrored inequality ops: ``x > 1`` and ``1 < x`` are the same written form.
+_REL_MIRROR: dict[type, type] = {
+    StrictGreaterThan: StrictLessThan,
+    StrictLessThan: StrictGreaterThan,
+    GreaterThan: LessThan,
+    LessThan: GreaterThan,
+}
+
+
+def _form_sides(
+    left_lhs: Expr,
+    left_rhs: Expr,
+    right_lhs: Expr,
+    right_rhs: Expr,
+) -> bool | None:
+    lhs = expressions_equivalent(left_lhs, right_lhs)
+    rhs = expressions_equivalent(left_rhs, right_rhs)
+    if lhs is True and rhs is True:
+        return True
+    if lhs is False or rhs is False:
+        return False
+    return None
+
+
+def relations_form_equivalent(previous: Boolean, current: Boolean) -> bool | None:
+    """Compare written relational form (not solution sets).
+
+    Used for step-to-standard soft-align so algebraically equivalent but
+    differently staged inequalities (e.g. ``2-3x<=12`` vs ``x>=-10/3``)
+    do not collapse to a single match. Mirrored atoms (``x > 1`` vs
+    ``1 < x``) still match.
+    """
+    if isinstance(previous, Relational) and isinstance(current, Relational):
+        if type(previous) is type(current):
+            direct = _form_sides(
+                previous.lhs, previous.rhs, current.lhs, current.rhs
+            )
+            if direct is True:
+                return True
+            if isinstance(previous, (Equality, Unequality)):
+                swapped = _form_sides(
+                    previous.lhs, previous.rhs, current.rhs, current.lhs
+                )
+                if swapped is True:
+                    return True
+                if direct is False and swapped is False:
+                    return False
+                return None
+            return direct
+        mirror = _REL_MIRROR.get(type(previous))
+        if mirror is not None and isinstance(current, mirror):
+            return _form_sides(
+                previous.lhs, previous.rhs, current.rhs, current.lhs
+            )
+        return False
+
+    # Compound propositions: fall back to structural equality after simplify.
+    try:
+        return bool(simplify(previous) == simplify(current))
     except Exception:
         return None
 

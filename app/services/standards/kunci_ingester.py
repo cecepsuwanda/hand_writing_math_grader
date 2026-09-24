@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from app.functions.kunci_ingest import build_exam_schema, ingest_kunci_tex
+from app.functions.kunci_ingest import (
+    build_exam_schema,
+    ingest_kunci_tex,
+    rubric_from_parts,
+)
 from app.functions.standard_extract import exam_schema_path, standard_solution_path
 from app.models.exam_schema import ExamSchema
 
@@ -13,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class KunciIngester:
-    """Write ``solutions/question_NNN.tex`` and ``exam_schema.json`` (rubrics untouched)."""
+    """Write solutions, exam_schema.json, and part-based rubrics."""
 
     def __init__(self, standard_dir: Path) -> None:
         self._standard_dir = Path(standard_dir)
@@ -35,6 +39,7 @@ class KunciIngester:
         schema = build_exam_schema(tex, source=kunci_path.name)
         schema_path = self._write_exam_schema(schema)
         written.append(schema_path)
+        written.extend(self._write_rubrics(schema))
         return written
 
     def ingest_dir(self, kunci_dir: Path) -> list[Path]:
@@ -43,8 +48,8 @@ class KunciIngester:
         tex_files = sorted(kunci_dir.glob("*.tex"))
         if not tex_files:
             return written
-        # First file drives schema + solutions; additional files append solutions only
-        # then rebuild schema from the first (exam) file for a stable recognition source.
+        # First file drives schema + solutions + rubrics; additional files append
+        # solutions only then rebuild schema from the first (exam) file.
         for index, path in enumerate(tex_files):
             if index == 0:
                 written.extend(self.ingest_file(path))
@@ -69,3 +74,15 @@ class KunciIngester:
             len(schema.questions),
         )
         return path
+
+    def _write_rubrics(self, schema: ExamSchema) -> list[Path]:
+        rubrics_dir = self._standard_dir / "rubrics"
+        rubrics_dir.mkdir(parents=True, exist_ok=True)
+        written: list[Path] = []
+        for question in schema.questions:
+            rubric = rubric_from_parts(question.number, question.parts)
+            path = rubrics_dir / f"question_{question.number:03d}.json"
+            path.write_text(rubric.model_dump_json(indent=2), encoding="utf-8")
+            written.append(path)
+            logger.info("Wrote rubric %s", path)
+        return written

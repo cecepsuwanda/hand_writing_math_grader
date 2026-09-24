@@ -112,18 +112,21 @@ def test_merge_symbolic_and_inline_figures() -> None:
                             raw_text="2x-3<5",
                             latex="",
                             symbolic=SymbolicPayload(kind="relation", repr="2*x-3<5"),
+                            role="algebra",
                         ),
                         RecognizedStep(
                             step_number=2,
                             raw_text="number line",
                             latex="",
                             symbolic=SymbolicPayload(kind="figure", repr=""),
+                            role="figure",
                         ),
                         RecognizedStep(
                             step_number=3,
                             raw_text="x<4",
                             latex="",
                             symbolic=SymbolicPayload(kind="relation", repr="x<4"),
+                            role="hp",
                         ),
                     ],
                     final_answer="x<4",
@@ -138,9 +141,33 @@ def test_merge_symbolic_and_inline_figures() -> None:
     q = questions[0]
     assert len(q.student_steps) == 2
     assert q.student_steps[0].latex == ""
+    assert q.student_steps[0].role == "algebra"
+    assert q.student_steps[1].role == "hp"
     assert len(q.figure_refs) == 1
     assert q.figure_refs[0].caption == "number line"
     assert collect_latex_documents(pages)[1]
+
+
+def test_coalesce_step_role_infers_from_text() -> None:
+    from app.functions.step_role import coalesce_step_role
+    from app.models.recognition import SymbolicPayload
+
+    assert coalesce_step_role("x>1", SymbolicPayload(kind="relation", repr="x>1"), None) == "algebra"
+    assert (
+        coalesce_step_role(
+            "number line",
+            SymbolicPayload(kind="figure", repr=""),
+            None,
+        )
+        == "figure"
+    )
+    assert coalesce_step_role("HP = (1, oo)", None, None) == "hp"
+    assert coalesce_step_role("HP = (1, oo)", None, "algebra") == "hp"
+    assert coalesce_step_role("Jadi HP = (-1,1)", None, None) == "hp"
+    assert coalesce_step_role("Titik kritis x=0", None, None) == "critical_points"
+    assert coalesce_step_role("x>1", None, "sign_chart") == "sign_chart"
+    assert coalesce_step_role("solusi pada selang (-1,1)", None, None) == "algebra"
+    assert coalesce_step_role("uji selang x<0", None, "algebra") == "sign_chart"
 
 
 def test_extractor_writes_latex_sidecar_not_in_json(tmp_path: Path) -> None:
@@ -278,7 +305,10 @@ def test_two_pass_recognizer_uses_ink_proposer(tmp_path: Path) -> None:
     regions = json.loads(
         (crops / "page_001" / "page_001_regions.json").read_text(encoding="utf-8")
     )
-    assert regions["ink"][0]["crop_path"] == "region_00_solution.png"
+    assert regions["regions"][0]["crop_path"] == "region_00_solution.png"
+    assert "ink" not in regions
+    assert "selected" not in regions
+    assert not (crops / "page_001" / "page_001_regions_ink.json").exists()
     assert page.prompt_version.startswith("crop-math")
 
 
@@ -626,7 +656,102 @@ def test_recognizer_uses_exam_schema_flags(tmp_path: Path) -> None:
 
 
 def test_prompt_version_reads_crop_math_header() -> None:
-    assert PROMPT_VERSION.startswith("crop-math")
+    assert PROMPT_VERSION.startswith("crop-math-v7")
+
+
+def test_recognizer_coalesces_step_role(tmp_path: Path) -> None:
+    image_path = tmp_path / "page.png"
+    Image.new("RGB", (200, 200), color=(240, 240, 240)).save(image_path)
+
+    math_json = (
+        '{"question_number":1,"steps":['
+        '{"step_number":1,"raw_text":"x>1",'
+        '"symbolic":{"kind":"relation","repr":"x>1"},"confidence":0.9},'
+        '{"step_number":2,"raw_text":"number line diagram",'
+        '"symbolic":{"kind":"figure","repr":""},"confidence":0.8},'
+        '{"step_number":3,"raw_text":"HP = (1, oo)",'
+        '"symbolic":{"kind":"expression","repr":"HP = (1, oo)"},"confidence":0.9}'
+        '],"final_answer":"","final_answer_symbolic":null,'
+        '"latex_document":"x>1","confidence":0.9}'
+    )
+
+    class FakeClient:
+        def generate_with_image(self, prompt: str, image_path: Path, model: str) -> str:
+            return math_json
+
+    class FakeProposer:
+        def propose(self, image_path: Path, page_number: int = 1):
+            return [
+                DetectedRegion(
+                    type="solution",
+                    region=Region(x=10, y=10, width=80, height=90),
+                    question_number=1,
+                    order=0,
+                )
+            ]
+
+    recognizer = OllamaVisionRecognizer(
+        client=FakeClient(),  # type: ignore[arg-type]
+        model="test-model",
+        output_dir=tmp_path / "recognition",
+        crops_dir=tmp_path / "crops",
+        proposer=FakeProposer(),  # type: ignore[arg-type]
+    )
+    page = recognizer.recognize_page(image_path, 1)
+    roles = [s.role for s in page.questions[0].steps]
+    assert roles[0] == "algebra"
+    assert roles[1] == "figure"
+    assert roles[2] == "hp"
+
+
+def test_recognizer_coalesces_truncated_implies(tmp_path: Path) -> None:
+    image_path = tmp_path / "page.png"
+    Image.new("RGB", (200, 200), color=(240, 240, 240)).save(image_path)
+
+    math_json = (
+        '{"question_number":7,"steps":[{"step_number":1,'
+        '"raw_text":"-3x = 0 \\\\implies x = 0",'
+        '"symbolic":{"kind":"expression","repr":"-3*x = 0"},"confidence":0.9}],'
+        '"final_answer":"Karena faktor -3x = 0 \\\\implies x = 0 (pembuat nol)",'
+        '"final_answer_symbolic":{"kind":"relation","repr":"x=0"},'
+        '"latex_document":"x=0","confidence":0.9}'
+    )
+
+    class FakeClient:
+        def generate_with_image(self, prompt: str, image_path: Path, model: str) -> str:
+            return math_json
+
+    class FakeProposer:
+        def propose(self, image_path: Path, page_number: int = 1):
+            return [
+                DetectedRegion(
+                    type="solution",
+                    region=Region(x=10, y=10, width=80, height=90),
+                    question_number=7,
+                    order=0,
+                )
+            ]
+
+    recognizer = OllamaVisionRecognizer(
+        client=FakeClient(),  # type: ignore[arg-type]
+        model="test-model",
+        output_dir=tmp_path / "recognition",
+        crops_dir=tmp_path / "crops",
+        proposer=FakeProposer(),  # type: ignore[arg-type]
+    )
+    page = recognizer.recognize_page(image_path, 1)
+    assert len(page.questions) == 1
+    step = page.questions[0].steps[0]
+    assert step.symbolic is not None
+    assert step.symbolic.kind == "relation"
+    assert "and" in step.symbolic.repr
+    assert "x = 0" in step.symbolic.repr or "x=0" in step.symbolic.repr.replace(
+        " ", ""
+    )
+    final_sym = page.questions[0].final_answer_symbolic
+    assert final_sym is not None
+    assert "and" in final_sym.repr
+    assert "Karena" not in final_sym.repr
 
 
 def test_duplicate_question_kept_as_zero(tmp_path: Path) -> None:
@@ -695,13 +820,12 @@ def test_duplicate_question_kept_as_zero(tmp_path: Path) -> None:
     assert (page_crops / "region_00_solution.png").is_file()
     assert (page_crops / "region_01_solution.png").is_file()
     assert not (page_crops / "ink").exists()
-    ink_meta = json.loads(
-        (tmp_path / "crops" / "page_001" / "page_001_regions_ink.json").read_text(
-            encoding="utf-8"
-        )
+    assert not (page_crops / "page_001_regions_ink.json").exists()
+    meta = json.loads(
+        (page_crops / "page_001_regions.json").read_text(encoding="utf-8")
     )
-    assert ink_meta["regions"][0]["crop_path"] == "region_00_solution.png"
-    assert ink_meta["regions"][1]["crop_path"] == "region_01_solution.png"
+    assert meta["regions"][0]["crop_path"] == "region_00_solution.png"
+    assert meta["regions"][1]["crop_path"] == "region_01_solution.png"
 
 
 def test_malformed_crop_fields_do_not_abort(tmp_path: Path) -> None:

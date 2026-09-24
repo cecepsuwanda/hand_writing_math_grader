@@ -19,6 +19,26 @@ ExamPartKind = Literal[
 ExamMilestoneRole = Literal["critical_points", "sign_chart", "hp"]
 
 
+class NumberLineEndpoint(BaseModel):
+    """Finite endpoint mark on a number line (filled = closed)."""
+
+    value: str
+    closed: bool
+
+
+class NumberLineInterval(BaseModel):
+    """One connected shaded region; ``None`` endpoint means unbounded ray."""
+
+    left: NumberLineEndpoint | None = None
+    right: NumberLineEndpoint | None = None
+
+
+class NumberLineSpec(BaseModel):
+    """HP geometry for figure grading (endpoints + shaded spans)."""
+
+    intervals: list[NumberLineInterval] = Field(default_factory=list)
+
+
 class ExamPart(BaseModel):
     kind: ExamPartKind
     order: int = Field(ge=1)
@@ -50,6 +70,7 @@ class ExamQuestion(BaseModel):
     final: str = ""
     final_symbolic: SymbolicPayload | None = None
     expects_figure: bool = False
+    number_line: NumberLineSpec | None = None
     parts: list[ExamPart] = Field(default_factory=list)
 
 

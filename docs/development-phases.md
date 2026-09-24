@@ -52,9 +52,9 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 - Acceptance: dataset uji menghasilkan rentang skor yang diharapkan.
 - Compare final answer ke `standards/.../solutions/` (SymPy); skor `final_answer` = min(konsistensi, standard).
 - Step-align **best-method** soft-align (shared+method bank; relational *form*) — **audit/feedback saja**; skor langkah algebra = konsistensi mahasiswa (jalur alternatif valid tidak dipotong).
-- Skor parts: `critical_points` (set-equivalence milestone), `figure` (presence), `final_answer` = min(konsistensi, standard).
-- Ingest kunci: `python -m app.cli ingest-kunci` menulis `standards/.../solutions`, `exam_schema.json`, dan `rubrics/` dari `data/input/kunci_jawaban/` (Metode N → `methods[]`; shared `steps`; parts algebra/critical_points/sign_chart/figure/hp). Recognition memuat schema bila ada (stem + `expects_figure` saja).
-- Recognition (`crop-math-v7`): field `role` per langkah; grading figure/milestone/HP memakai role (+ fallback legacy).
+- Skor parts: `critical_points` (set-equivalence milestone), `figure` (number_line set-equivalence; presence fallback), `final_answer` = min(konsistensi, standard).
+- Ingest kunci: `python -m app.cli ingest-kunci` menulis `standards/.../solutions`, `exam_schema.json`, dan `rubrics/` dari `data/input/kunci_jawaban/` (Metode N → `methods[]`; shared `steps`; parts algebra/critical_points/sign_chart/figure/hp; `number_line` dari HP bila `expects_figure`). Recognition memuat schema bila ada (stem + `expects_figure` saja).
+- Recognition (`crop-math-v8`): field `role` per langkah; figure `symbolic.repr` = `NUMBER_LINE(...)`; grading figure/milestone/HP memakai role (+ fallback legacy).
 - Follow-up selesai untuk multi-metode MVP (Phase 1–3).
 
 ## Phase 8 — Report

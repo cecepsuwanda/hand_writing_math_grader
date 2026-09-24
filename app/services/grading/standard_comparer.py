@@ -12,6 +12,11 @@ from sympy.logic.boolalg import Boolean
 
 from app.exceptions import MathParseError
 from app.functions.kunci_ingest import load_exam_schema
+from app.functions.number_line import (
+    compare_number_lines,
+    number_line_from_symbolic,
+    parse_number_line_repr,
+)
 from app.functions.standard_extract import (
     schema_question,
     standard_final_text,
@@ -20,8 +25,8 @@ from app.functions.standard_extract import (
     standard_step_texts,
 )
 from app.functions.step_align import align_student_steps_to_standard
-from app.models.exam_schema import ExamMilestone, ExamSchema
-from app.models.question import Question, StudentStep
+from app.models.exam_schema import ExamMilestone, ExamQuestion, ExamSchema, NumberLineSpec
+from app.models.question import FigureRef, Question, StudentStep
 from app.models.validation import ValidationStatus
 from app.services.math.equivalence import (
     derivatives_equivalent,
@@ -299,6 +304,30 @@ class StandardFinalComparer:
         elif sc is not None:
             out["critical_points"] = sc
         return out
+
+    def compare_figure(
+        self,
+        question: Question,
+    ) -> tuple[ValidationStatus, str]:
+        """Score figure part: number-line geometry vs schema, else presence."""
+        schema_q = schema_question(self._schema, question.question_number)
+        has_figure = _question_has_figure(question)
+        expected = _expected_number_line(schema_q)
+
+        if not has_figure:
+            return ValidationStatus.INVALID, "no figure step"
+
+        if expected is None:
+            # Old schemas / no HP-derived geometry: presence-only fallback.
+            return ValidationStatus.VALID, "figure step present"
+
+        actual = _student_number_line(question)
+        if actual is None:
+            return (
+                ValidationStatus.UNCERTAIN,
+                "figure present but number_line unparseable",
+            )
+        return compare_number_lines(expected, actual)
 
     def _milestone_match(
         self,
@@ -643,3 +672,60 @@ class StandardFinalComparer:
             assert isinstance(student.value, Expr)
             return integrals_equivalent(standard.value, student.value)
         return None
+
+
+def _question_has_figure(question: Question) -> bool:
+    if question.figure_refs:
+        return True
+    return any(
+        step.role == "figure"
+        or (step.symbolic is not None and step.symbolic.kind == "figure")
+        for step in question.student_steps
+    )
+
+
+def _expected_number_line(schema_q: ExamQuestion | None) -> NumberLineSpec | None:
+    if schema_q is None:
+        return None
+    if schema_q.number_line is not None and schema_q.number_line.intervals:
+        return schema_q.number_line
+    # Interval HP on a non-figure question is not number-line geometry.
+    if not schema_q.expects_figure:
+        return None
+    if schema_q.final_symbolic is not None:
+        return number_line_from_symbolic(schema_q.final_symbolic)
+    if (schema_q.final or "").strip():
+        return number_line_from_symbolic(schema_q.final)
+    return None
+
+
+def _student_number_line(question: Question) -> NumberLineSpec | None:
+    for ref in question.figure_refs:
+        parsed = _figure_ref_number_line(ref)
+        if parsed is not None:
+            return parsed
+    for step in question.student_steps:
+        is_figure = step.role == "figure" or (
+            step.symbolic is not None and step.symbolic.kind == "figure"
+        )
+        if not is_figure:
+            continue
+        if step.symbolic is not None and (step.symbolic.repr or "").strip():
+            parsed = parse_number_line_repr(step.symbolic.repr)
+            if parsed is not None:
+                return parsed
+        if (step.raw_text or "").strip():
+            parsed = parse_number_line_repr(step.raw_text)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _figure_ref_number_line(ref: FigureRef) -> NumberLineSpec | None:
+    if ref.symbolic is not None and (ref.symbolic.repr or "").strip():
+        parsed = parse_number_line_repr(ref.symbolic.repr)
+        if parsed is not None:
+            return parsed
+    if (ref.caption or "").strip():
+        return parse_number_line_repr(ref.caption)
+    return None

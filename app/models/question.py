@@ -37,6 +37,7 @@ class FigureRef(BaseModel):
     path: str
     caption: str = ""
     page_number: int | None = None
+    symbolic: SymbolicPayload | None = None
 
 
 class Question(BaseModel):

@@ -83,10 +83,10 @@ Kontrak markup itemize di dalam `\textbf{Penyelesaian}`:
 | `Metode N: Label` | `methods[]` (`id` slug, mis. Pemaktoran→`factoring`, Rumus ABC→`quadratic_formula`) |
 | `Tentukan Titik Kritis` / `Titik Potong` | milestone + part `critical_points` |
 | `Analisis Tanda` | milestone + part `sign_chart` |
-| `Gambar Garis Bilangan…` / tikzpicture | `expects_figure` + part `figure` |
+| `Gambar Garis Bilangan…` / tikzpicture | `expects_figure` + part `figure` + `number_line` (dari HP) |
 | `HP: $…$` | `final` + milestone `hp` |
 
-**Grading Phase 2–3:** skor `algebra` = konsistensi langkah saja (soft-align best-method = audit). Bucket `critical_points` / `figure` di-score terpisah; `final_answer` = min(konsistensi, standard SymPy). Recognition (`crop-math-v7`) mengisi `role` per langkah (`algebra` / `critical_points` / `sign_chart` / `figure` / `hp`); bila kosong diinfer dari teks/symbolic.
+**Grading Phase 2–3:** skor `algebra` = konsistensi langkah saja (soft-align best-method = audit). Bucket `critical_points` / `figure` di-score terpisah; `final_answer` = min(konsistensi, standard SymPy). Skor `figure` = set-equivalence `number_line` (endpoint open/closed + daerah arsir / union) vs gambar mahasiswa (`FigureRef.symbolic.repr` / caption); bila schema lama tanpa `number_line` → presence. Recognition (`crop-math-v8`) mengisi `role` per langkah (`algebra` / `critical_points` / `sign_chart` / `figure` / `hp`); figure step memakai `NUMBER_LINE(...)` di `symbolic.repr`.
 
 ## CLI dan antarmuka
 

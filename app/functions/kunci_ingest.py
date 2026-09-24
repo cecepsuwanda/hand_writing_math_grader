@@ -9,6 +9,7 @@ from app.functions.standard_extract import (
     exam_schema_path,
     extract_solution_steps_from_tex,
 )
+from app.functions.number_line import number_line_from_symbolic, number_line_to_repr
 from app.functions.symbolic_from_latex import latex_to_symbolic_payload
 from app.models.exam_schema import (
     ExamMethod,
@@ -254,6 +255,13 @@ def render_standard_solution_tex(
             elif (milestone.latex or "").strip():
                 lines.append(f"% {milestone.latex.strip()}")
                 lines.append("")
+        if question.expects_figure:
+            lines.append("% role: figure")
+            if question.number_line is not None and question.number_line.intervals:
+                lines.append(
+                    f"% number_line: {number_line_to_repr(question.number_line)}"
+                )
+            lines.append("")
         final_text = (question.final or final or "").strip()
     else:
         shared = list(steps or [])
@@ -480,6 +488,13 @@ def build_exam_question(number: int, item_tex: str) -> ExamQuestion | None:
 
     expects_figure = item_expects_figure(item_tex)
     final_text = final or ""
+    number_line = None
+    if expects_figure and final_text:
+        number_line = number_line_from_symbolic(
+            latex_to_symbolic_payload(final_text)
+        )
+        if number_line is None:
+            number_line = number_line_from_symbolic(final_text)
     if final_text:
         milestones.append(
             ExamMilestone(
@@ -519,6 +534,7 @@ def build_exam_question(number: int, item_tex: str) -> ExamQuestion | None:
             latex_to_symbolic_payload(final_text) if final_text else None
         ),
         expects_figure=expects_figure,
+        number_line=number_line,
         parts=parts,
     )
 

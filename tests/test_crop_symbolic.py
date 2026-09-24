@@ -118,7 +118,10 @@ def test_merge_symbolic_and_inline_figures() -> None:
                             step_number=2,
                             raw_text="number line",
                             latex="",
-                            symbolic=SymbolicPayload(kind="figure", repr=""),
+                            symbolic=SymbolicPayload(
+                                kind="figure",
+                                repr="NUMBER_LINE((1,oo))",
+                            ),
                             role="figure",
                         ),
                         RecognizedStep(
@@ -145,7 +148,50 @@ def test_merge_symbolic_and_inline_figures() -> None:
     assert q.student_steps[1].role == "hp"
     assert len(q.figure_refs) == 1
     assert q.figure_refs[0].caption == "number line"
+    assert q.figure_refs[0].symbolic is not None
+    assert q.figure_refs[0].symbolic.repr == "NUMBER_LINE((1,oo))"
     assert collect_latex_documents(pages)[1]
+
+
+def test_figure_crop_uses_figure_step_not_leading_algebra() -> None:
+    pages = [
+        PageRecognition(
+            page_number=1,
+            questions=[
+                RecognizedQuestion(
+                    question_number=1,
+                    region_type="figure",
+                    crop_path="crops/fig.png",
+                    steps=[
+                        RecognizedStep(
+                            step_number=1,
+                            raw_text="x > 1",
+                            latex="",
+                            symbolic=SymbolicPayload(kind="relation", repr="x > 1"),
+                            role="algebra",
+                        ),
+                        RecognizedStep(
+                            step_number=2,
+                            raw_text="open ray from 1",
+                            latex="",
+                            symbolic=SymbolicPayload(
+                                kind="figure",
+                                repr="NUMBER_LINE((1,oo))",
+                            ),
+                            role="figure",
+                        ),
+                    ],
+                ),
+            ],
+        )
+    ]
+    questions = merge_page_recognitions(pages)
+    assert len(questions) == 1
+    refs = questions[0].figure_refs
+    assert len(refs) == 1
+    assert refs[0].symbolic is not None
+    assert refs[0].symbolic.repr == "NUMBER_LINE((1,oo))"
+    assert refs[0].caption == "open ray from 1"
 
 
 def test_coalesce_step_role_infers_from_text() -> None:
@@ -656,7 +702,7 @@ def test_recognizer_uses_exam_schema_flags(tmp_path: Path) -> None:
 
 
 def test_prompt_version_reads_crop_math_header() -> None:
-    assert PROMPT_VERSION.startswith("crop-math-v7")
+    assert PROMPT_VERSION.startswith("crop-math-v8")
 
 
 def test_recognizer_coalesces_step_role(tmp_path: Path) -> None:

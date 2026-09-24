@@ -72,25 +72,25 @@ class StepGrader:
             part_statuses.update(
                 self._standard_comparer.compare_milestones(question)
             )
-
-        has_figure = any(
-            step.role == "figure"
-            or (step.symbolic is not None and step.symbolic.kind == "figure")
-            for step in question.student_steps
-        ) or bool(question.figure_refs)
-        if has_figure:
-            part_statuses["figure"] = (
-                ValidationStatus.VALID,
-                "figure step present",
+            part_statuses["figure"] = self._standard_comparer.compare_figure(
+                question
             )
-        elif "figure" not in part_statuses:
-            # Only mark missing if rubric will award figure points; aggregate
-            # skips absent part_max keys. Still set INVALID so explicit miss
-            # is recorded when criterion exists.
-            part_statuses["figure"] = (
-                ValidationStatus.INVALID,
-                "no figure step",
-            )
+        else:
+            has_figure = any(
+                step.role == "figure"
+                or (step.symbolic is not None and step.symbolic.kind == "figure")
+                for step in question.student_steps
+            ) or bool(question.figure_refs)
+            if has_figure:
+                part_statuses["figure"] = (
+                    ValidationStatus.VALID,
+                    "figure step present",
+                )
+            else:
+                part_statuses["figure"] = (
+                    ValidationStatus.INVALID,
+                    "no figure step",
+                )
 
         grade = aggregate_question_grade(
             question_id=question.question_id,

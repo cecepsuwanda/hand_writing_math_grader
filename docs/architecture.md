@@ -17,7 +17,7 @@ PDF → page images
 
 Recognition dan grading **dipisah**. JSON soal menyimpan `raw_text` + `symbolic` (bukan LaTeX). LaTeX hanya di artefak `.tex`. Satu crop boleh menghasilkan beberapa soal bila ink menggabungkan jawaban dan model mengembalikan `{"questions":[...]}`.
 
-`exam_schema.json`: recognition memakai **stem + expects_figure (+ parts)** saja; `steps`/`final`/`HP` hanya untuk grading.
+`exam_schema.json`: recognition memakai **stem + expects_figure (+ parts)** saja; `steps`/`final`/`HP`/`number_line` hanya untuk grading.
 
 **Validasi:** konsistensi langkah mahasiswa (SymPy ± LLM). **Grading:** skor langkah = konsistensi; soft-align ke `exam_schema` / `standards/.../solutions` = audit; skor `final_answer` = min(konsistensi, standard SymPy). Ingest kunci: `ingest-kunci`. Opsional HTTP: `app/api.py` (wiring sama `pipeline_factory`); CLI tetap entry wajib.
 

@@ -12,7 +12,12 @@ from app.models.question import (
     SegmentationStatus,
     StudentStep,
 )
-from app.models.recognition import PageRecognition, RecognizedQuestion, SymbolicPayload
+from app.models.recognition import (
+    PageRecognition,
+    RecognizedQuestion,
+    RecognizedStep,
+    SymbolicPayload,
+)
 
 
 def merge_page_recognitions(pages: list[PageRecognition]) -> list[Question]:
@@ -116,15 +121,19 @@ def _build_question(
         if recognized.confidence is not None:
             confidences.append(recognized.confidence)
 
-        if recognized.region_type == "figure" and recognized.crop_path:
-            caption = ""
-            if recognized.steps:
-                caption = recognized.steps[0].raw_text
+        if (
+            recognized.region_type == "figure"
+            and recognized.crop_path
+            and _first_figure_step(recognized.steps) is None
+        ):
+            # No tagged figure step: keep the crop, without algebra symbolic.
+            caption = recognized.steps[0].raw_text if recognized.steps else ""
             figure_refs.append(
                 FigureRef(
                     path=recognized.crop_path,
                     caption=caption,
                     page_number=page_number,
+                    symbolic=None,
                 )
             )
 
@@ -132,9 +141,7 @@ def _build_question(
             if step.confidence is not None:
                 confidences.append(step.confidence)
             # Figure steps inside a solution crop → figure_refs + skip math list.
-            is_figure = step.role == "figure" or (
-                step.symbolic is not None and step.symbolic.kind == "figure"
-            )
+            is_figure = _is_figure_step(step)
             if is_figure:
                 if recognized.crop_path:
                     figure_refs.append(
@@ -142,6 +149,7 @@ def _build_question(
                             path=recognized.crop_path,
                             caption=step.raw_text,
                             page_number=page_number,
+                            symbolic=step.symbolic,
                         )
                     )
                 continue
@@ -191,3 +199,16 @@ def _build_question(
         confidence=confidence,
         segmentation_status=status,
     )
+
+
+def _is_figure_step(step: RecognizedStep) -> bool:
+    return step.role == "figure" or (
+        step.symbolic is not None and step.symbolic.kind == "figure"
+    )
+
+
+def _first_figure_step(steps: list[RecognizedStep]) -> RecognizedStep | None:
+    for step in steps:
+        if _is_figure_step(step):
+            return step
+    return None

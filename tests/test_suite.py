@@ -2338,6 +2338,10 @@ x &> 0
         q = schema.questions[0]
         assert q.expects_figure is True
         assert [p.kind for p in q.parts] == ['algebra', 'figure', 'hp']
+        assert q.number_line is not None
+        assert q.number_line.intervals
+        assert q.number_line.intervals[0].left is not None
+        assert q.number_line.intervals[0].left.closed is False
         block = format_recognition_question_block(schema)
         assert '[expects_figure]' in block
         assert 'infty' not in block  # HP must not leak into recognition block

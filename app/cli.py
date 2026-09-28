@@ -20,6 +20,7 @@ from app.exceptions import (
     NoKunciTexError,
     OllamaModelNotConfiguredError,
     PdfNotFoundError,
+    UnknownTopicError,
 )
 from app.functions.kunci_ingest import load_exam_schema
 from app.functions.paths import (
@@ -28,6 +29,7 @@ from app.functions.paths import (
     parse_kunci_choice,
     parse_main_menu_choice,
     parse_pdf_choice,
+    parse_topic_choice,
     resolve_jawaban_pdf,
 )
 from app.services.latex.builder import LatexBuilder
@@ -43,6 +45,7 @@ from app.services.pipeline_factory import (
     prepare_run_workspace,
 )
 from app.services.questions.extractor import QuestionExtractor
+from app.topics.registry import get_pack, list_packs
 from app.views.crop_view import (
     print_crops_ready,
     print_no_regions_json,
@@ -77,7 +80,18 @@ from app.views.selection_view import (
     print_output_cleared,
     print_selected_kunci,
     print_selected_pdf,
+    print_selected_topic,
+    print_topic_menu,
 )
+
+
+def _add_topic_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--topic",
+        type=str,
+        default=None,
+        help="Topic pack id (default: config grading.topic_id or exam_schema)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -273,6 +287,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Standards directory (default: config grading.standard_dir)",
     )
+    _add_topic_arg(grade_parser)
 
     report_parser = subparsers.add_parser(
         "report",
@@ -370,6 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reuse existing page_*_regions.json (skip ink re-propose)",
     )
+    _add_topic_arg(process_parser)
 
     ingest_parser = subparsers.add_parser(
         "ingest-kunci",
@@ -394,11 +410,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory of kunci .tex files (default: config input.kunci_jawaban_dir)",
     )
+    _add_topic_arg(ingest_parser)
 
-    subparsers.add_parser(
+    menu_parser = subparsers.add_parser(
         "menu",
         help="Interactive main menu (ingest kunci / process PDF / exit)",
     )
+    _add_topic_arg(menu_parser)
     return parser
 
 
@@ -499,11 +517,24 @@ def _run_menu(args: argparse.Namespace) -> int:
         return 1
 
     config = load_config(args.config)
+    session_topic_id = (
+        args.topic if getattr(args, "topic", None) else config.grading.topic_id
+    )
+    try:
+        active_pack = get_pack(session_topic_id)
+    except UnknownTopicError as exc:
+        print_error(exc)
+        return 1
+    session_topic_id = active_pack.id
     last_code = 0
     while True:
-        print_main_menu()
+        pack = get_pack(session_topic_id)
+        print_main_menu(
+            active_topic_label=pack.label,
+            active_topic_id=pack.id,
+        )
         try:
-            raw = input("Pilihan [1-5]: ")
+            raw = input("Pilihan [1-6]: ")
         except (EOFError, KeyboardInterrupt):
             print()
             mark_interactive_session_done()
@@ -519,9 +550,22 @@ def _run_menu(args: argparse.Namespace) -> int:
             return last_code
 
         try:
-            if choice == "ingest":
+            if choice == "select_topic":
+                session_topic_id = _select_topic_interactive(session_topic_id)
+                config = config.model_copy(
+                    update={
+                        "grading": config.grading.model_copy(
+                            update={"topic_id": session_topic_id}
+                        )
+                    }
+                )
+                last_code = 0
+            elif choice == "ingest":
                 kunci_path = _select_kunci_interactive(config.input.kunci_jawaban_dir)
-                result = build_ingest_kunci_controller(config).ingest(
+                result = build_ingest_kunci_controller(
+                    config,
+                    topic_id=session_topic_id,
+                ).ingest(
                     kunci_path=kunci_path,
                     kunci_dir=config.input.kunci_jawaban_dir,
                     standard_dir=config.grading.standard_dir,
@@ -537,7 +581,9 @@ def _run_menu(args: argparse.Namespace) -> int:
             elif choice == "finish":
                 if not config.ollama.vision_model.strip():
                     raise OllamaModelNotConfiguredError()
-                last_code = _menu_finish_from_crops(config, args)
+                last_code = _menu_finish_from_crops(
+                    config, args, topic_id=session_topic_id
+                )
             else:
                 raise InvalidMenuSelectionError(f"unhandled choice: {choice}")
         except MathGraderError as exc:
@@ -546,6 +592,25 @@ def _run_menu(args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001 — CLI boundary maps unexpected → exit 2
             print_error(exc)
             last_code = 2
+
+
+def _select_topic_interactive(active_topic_id: str) -> str:
+    packs = list_packs()
+    print_topic_menu(packs, active_topic_id=active_topic_id)
+    known = [p.id for p in packs]
+    while True:
+        try:
+            raw = input("Pilihan topik: ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return active_topic_id
+        try:
+            topic_id = parse_topic_choice(raw, known)
+            pack = get_pack(topic_id)
+            print_selected_topic(pack)
+            return pack.id
+        except (ValueError, UnknownTopicError) as exc:
+            print_error(InvalidMenuSelectionError(str(exc)))
 
 
 def _menu_propose_crops(
@@ -579,7 +644,12 @@ def _menu_recrop(config: AppConfig, _args: argparse.Namespace) -> int:
     return 0
 
 
-def _menu_finish_from_crops(config: AppConfig, _args: argparse.Namespace) -> int:
+def _menu_finish_from_crops(
+    config: AppConfig,
+    _args: argparse.Namespace,
+    *,
+    topic_id: str | None = None,
+) -> int:
     pages_dir = config.pdf.output_dir
     recognition_dir = config.recognition.output_dir
     questions_dir = config.questions.output_dir
@@ -595,6 +665,7 @@ def _menu_finish_from_crops(config: AppConfig, _args: argparse.Namespace) -> int
         config,
         recognition_dir=recognition_dir,
         standard_dir=standard_dir,
+        topic_id=topic_id,
         on_progress=print_progress,
     )
     result = controller.process_from_crops(
@@ -654,6 +725,7 @@ def _process_one_pdf(
         config,
         recognition_dir=recognition_dir,
         standard_dir=standard_dir,
+        topic_id=getattr(args, "topic", None),
         on_progress=print_progress,
     )
     result = controller.process(
@@ -801,7 +873,11 @@ def _run_ingest_kunci(args: argparse.Namespace) -> int:
         if args.kunci_dir is not None
         else config.input.kunci_jawaban_dir
     )
-    result = build_ingest_kunci_controller(config, standard_dir).ingest(
+    result = build_ingest_kunci_controller(
+        config,
+        standard_dir,
+        topic_id=getattr(args, "topic", None),
+    ).ingest(
         kunci_path=args.kunci,
         kunci_dir=kunci_dir,
         standard_dir=standard_dir,
@@ -833,7 +909,11 @@ def _run_grade(args: argparse.Namespace) -> int:
     standard_dir = (
         args.standard if args.standard is not None else config.grading.standard_dir
     )
-    controller = build_grade_controller(config, standard_dir)
+    controller = build_grade_controller(
+        config,
+        standard_dir,
+        topic_id=getattr(args, "topic", None),
+    )
     result = controller.grade(questions_dir)
     print_grade_result(result)
     return 0

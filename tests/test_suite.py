@@ -229,15 +229,17 @@ class TestPaths:
         assert parse_path_choice(files, 'TWO.tex', kind='kunci', default_suffix='.tex') == files[1]
 
     def test_parse_main_menu_choice(self) -> None:
-        assert parse_main_menu_choice('1') == 'ingest'
+        assert parse_main_menu_choice('1') == 'select_topic'
+        assert parse_main_menu_choice('topic') == 'select_topic'
+        assert parse_main_menu_choice('2') == 'ingest'
         assert parse_main_menu_choice('ingest') == 'ingest'
-        assert parse_main_menu_choice('2') == 'propose_crops'
+        assert parse_main_menu_choice('3') == 'propose_crops'
         assert parse_main_menu_choice('propose') == 'propose_crops'
-        assert parse_main_menu_choice('3') == 'recrop'
+        assert parse_main_menu_choice('4') == 'recrop'
         assert parse_main_menu_choice('recrop') == 'recrop'
-        assert parse_main_menu_choice('4') == 'finish'
+        assert parse_main_menu_choice('5') == 'finish'
         assert parse_main_menu_choice('proses') == 'finish'
-        assert parse_main_menu_choice('5') == 'exit'
+        assert parse_main_menu_choice('6') == 'exit'
         assert parse_main_menu_choice('keluar') == 'exit'
         with pytest.raises(ValueError):
             parse_main_menu_choice('9')
@@ -3151,7 +3153,7 @@ class TestCliProcess:
         stdin = MagicMock()
         stdin.isatty.return_value = True
         monkeypatch.setattr('app.cli.sys.stdin', stdin)
-        answers = iter(['4', '5'])
+        answers = iter(['5', '6'])
         monkeypatch.setattr('builtins.input', lambda _p='': next(answers))
         monkeypatch.setattr('app.cli.build_process_controller', lambda config, **kwargs: CapturingProcessController(**kwargs))
         exit_code = main(['--config', str(config_path), 'menu'])

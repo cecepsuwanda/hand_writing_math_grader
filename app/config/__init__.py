@@ -52,6 +52,7 @@ class QuestionsConfig(BaseModel):
 
 class GradingConfig(BaseModel):
     standard_dir: Path = Path("data/output/standards/exam_001")
+    topic_id: str = "1.5"
 
 
 class ReportConfig(BaseModel):

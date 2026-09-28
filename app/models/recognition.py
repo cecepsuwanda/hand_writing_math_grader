@@ -25,13 +25,8 @@ SymbolicKind = Literal[
     "figure",
 ]
 
-StepRole = Literal[
-    "algebra",
-    "critical_points",
-    "sign_chart",
-    "figure",
-    "hp",
-]
+# Free-form; validated / coalesced by the active TopicPack.
+StepRole = str
 
 RegionType = Literal["solution", "figure"]
 

@@ -3,17 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
-from app.functions.abs_normalize import rewrite_abs_notation
-from app.functions.derivative_normalize import rewrite_derivative_notation
-from app.functions.det_inverse_normalize import rewrite_det_inverse_notation
+from app.capabilities.registry import ALL_CAPABILITY_IDS, apply_capabilities
 from app.functions.frac_normalize import rewrite_frac_notation
-from app.functions.integral_normalize import rewrite_integral_notation
-from app.functions.interval_normalize import rewrite_interval_membership
-from app.functions.limit_normalize import rewrite_limit_notation
-from app.functions.matrix_normalize import rewrite_matrix_notation
-from app.functions.transcendental_normalize import rewrite_transcendental_notation
-from app.functions.vector_normalize import rewrite_vector_notation
+from app.topics.runtime import get_active_pack
 
 _FINAL_ANSWER_PREFIX_RE = re.compile(
     r"^(?:jawaban\s+akhir|final\s+answer|langkah)\s*[:：-]?\s*",
@@ -35,7 +29,6 @@ _LATEX_REPLACEMENTS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"∩"), " and "),
     (re.compile(r"\\circ"), " o "),
     (re.compile(r"\\infty\b"), "oo"),
-    # Implication before \\to so \\Rightarrow is not partially matched.
     (
         re.compile(
             r"\\implies\b|\\Rightarrow\b|\\Longrightarrow\b"
@@ -58,30 +51,52 @@ _LATEX_REPLACEMENTS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
-def normalize_math_text(text: str) -> str:
-    """Convert LaTeX-ish math into a SymPy-parseable string."""
+def _resolve_capability_ids(
+    capability_ids: Sequence[str] | None,
+) -> tuple[str, ...]:
+    if capability_ids is not None:
+        return tuple(capability_ids)
+    pack = get_active_pack()
+    if pack is not None:
+        return tuple(pack.capability_ids)
+    return ALL_CAPABILITY_IDS
+
+
+def normalize_math_text(
+    text: str,
+    *,
+    capability_ids: Sequence[str] | None = None,
+) -> str:
+    """Convert LaTeX-ish math into a SymPy-parseable string.
+
+    Domain rewrites are driven by ``capability_ids`` (explicit), else the
+    active TopicPack, else the full legacy capability chain.
+    """
     cleaned = text.strip()
-    # Matrix rewrite before '&' → space (LaTeX column separators).
-    cleaned = rewrite_matrix_notation(cleaned)
-    cleaned = rewrite_det_inverse_notation(cleaned)
-    cleaned = rewrite_vector_notation(cleaned)
+    caps = _resolve_capability_ids(capability_ids)
+
+    # Matrix / det / vector before '&' → space (LaTeX column separators).
+    early = [c for c in ("matrix", "det_inverse", "vector") if c in caps]
+    rest = [c for c in caps if c not in {"matrix", "det_inverse", "vector"}]
+    cleaned = apply_capabilities(cleaned, early)
     cleaned = cleaned.replace("&", " ")
     cleaned = "\n".join(
         line for line in cleaned.splitlines() if not line.strip().startswith("%")
     )
     cleaned = " ".join(cleaned.split())
     cleaned = _FINAL_ANSWER_PREFIX_RE.sub("", cleaned).strip()
-    cleaned = rewrite_abs_notation(cleaned)
-    # Strip before interval rewrite so \left(...\right] matches interval atoms.
+
+    # Abs before stripping \\left/\\right so bar forms stay intact; interval
+    # needs \\left stripped first (legacy order).
+    if "abs" in rest:
+        cleaned = apply_capabilities(cleaned, ("abs",))
+        rest = [c for c in rest if c != "abs"]
+
     cleaned = re.sub(r"\\left|\\right", "", cleaned)
-    cleaned = rewrite_interval_membership(cleaned)
-    cleaned = rewrite_limit_notation(cleaned)
-    cleaned = rewrite_derivative_notation(cleaned)
-    cleaned = rewrite_integral_notation(cleaned)
-    cleaned = rewrite_transcendental_notation(cleaned)
+    cleaned = apply_capabilities(cleaned, rest)
+
     for pattern, repl in _LATEX_REPLACEMENTS:
         cleaned = pattern.sub(repl, cleaned)
-    # Expand \frac before brace flattening so {a}{b} does not become (a)(b).
     cleaned = rewrite_frac_notation(cleaned)
     cleaned = cleaned.replace(r"\{", "(").replace(r"\}", ")")
     cleaned = cleaned.replace("{", "(").replace("}", ")")

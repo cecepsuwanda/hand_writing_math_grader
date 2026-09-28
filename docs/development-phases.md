@@ -65,11 +65,23 @@ Setiap phase: implementasi → tulis test → jalankan test → pertahankan peri
 
 - Subcommand lengkap, progress/summary terminal, exit code jelas.
 - `process` mendukung pilihan PDF interaktif dari `data/input/jawaban/`.
-- `menu` (default `run.bat`): ingest kunci / crop ink / recrop / lanjut grading / keluar.
+- `menu` (default `run.bat`): pilih topik / ingest kunci / crop ink / recrop / lanjut grading / keluar.
 - Awal `process` mengosongkan `data/output/` kecuali `standards/`.
 - Pastikan View/Controller/Service terpisah (MVC).
 - Bukan web UI.
 - Opsional pasca-MVP: `python -m app.api` (FastAPI tipis `/health`, `/api/process`, `/api/results/{id}`) — adapter di atas controller yang sama.
+
+## Topic packs (pasca Phase 9)
+
+Plugin silabus di `app/topics/` + capability di `app/capabilities/`:
+
+| Pack id | Status | Catatan |
+|---------|--------|---------|
+| `1.5` | **Default / MVP** | HP + critical_points + number_line |
+| `2` | Registered (slice) | Abs inequality; reuse roles 1.5 |
+| `3`…`11` | Planned | Satu pack per bab setelah acceptance slice hijau; urutan [`math-topics.md`](math-topics.md) |
+
+Pilih lewat menu item 1, `grading.topic_id`, atau `--topic`.
 
 ## Scope MVP matematika
 

@@ -67,6 +67,17 @@ app/
 └── prompts/               # crop_math, validation, grading
 ```
 
+## Topic packs & capabilities
+
+Grading/ingest/role vocabulary is **topic-pack** based (`app/topics/`):
+
+- User selects a pack via `menu` → **Pilih topik**, config `grading.topic_id`, or `--topic ID`.
+- Packs declare `capability_ids` consumed by `math_normalize` (`app/capabilities/`).
+- Registered packs today: `1.5` (MVP inequality), `2` (abs inequality slice).
+- `exam_schema.json` stores `topic_id` at ingest time.
+
+Core pipeline (MVC controllers) stays pack-agnostic; new syllabus topics add a pack (+ capabilities if needed), not a core rewrite.
+
 ## Audit trail
 
 Setiap keputusan skor harus menyimpan bukti: gambar, crops/`*_regions*.json`, recognition, LaTeX mahasiswa, hasil SymPy/LLM, alasan, skor, confidence, referensi halaman.
@@ -78,10 +89,10 @@ Awal perintah `process` mengosongkan `data/output/` (kecuali `standards/`) terma
 ## Kontrak CLI
 
 ```text
-python -m app.cli menu                    # menu: ingest / crop ink / recrop / grading / keluar
-python -m app.cli process                 # pilih PDF dari data/input/jawaban
+python -m app.cli menu                    # menu: topik / ingest / crop / recrop / grading / keluar
+python -m app.cli process [--topic 1.5]
 python -m app.cli process file.pdf
-python -m app.cli ingest-kunci            # tulis solutions/ + exam_schema.json
+python -m app.cli ingest-kunci [--topic 1.5]
 python -m app.cli render|recognize|extract|validate|grade|report ...
 ```
 

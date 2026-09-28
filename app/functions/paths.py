@@ -6,7 +6,14 @@ from pathlib import Path
 from typing import Literal
 
 
-MainMenuChoice = Literal["ingest", "propose_crops", "recrop", "finish", "exit"]
+MainMenuChoice = Literal[
+    "select_topic",
+    "ingest",
+    "propose_crops",
+    "recrop",
+    "finish",
+    "exit",
+]
 
 
 def list_jawaban_pdfs(jawaban_dir: Path) -> list[Path]:
@@ -101,7 +108,7 @@ def parse_kunci_choice(tex_files: list[Path], raw: str) -> Path:
 
 
 def parse_main_menu_choice(raw: str) -> MainMenuChoice:
-    """Parse main menu into ingest / propose_crops / recrop / finish / exit.
+    """Parse main menu into select_topic / ingest / crops / finish / exit.
 
     Raises:
         ValueError: if the choice is empty or unknown.
@@ -109,14 +116,34 @@ def parse_main_menu_choice(raw: str) -> MainMenuChoice:
     choice = raw.strip().lower()
     if not choice:
         raise ValueError("empty selection")
-    if choice in {"1", "ingest", "kunci", "i"}:
+    if choice in {"1", "topic", "topik", "t", "select_topic", "select-topic"}:
+        return "select_topic"
+    if choice in {"2", "ingest", "kunci", "i"}:
         return "ingest"
-    if choice in {"2", "propose-crops", "propose_crops", "propose", "crop", "c", "pdf"}:
+    if choice in {"3", "propose-crops", "propose_crops", "propose", "crop", "c", "pdf"}:
         return "propose_crops"
-    if choice in {"3", "recrop", "re-crop", "r"}:
+    if choice in {"4", "recrop", "re-crop", "r"}:
         return "recrop"
-    if choice in {"4", "finish", "lanjut", "grade", "proses", "process", "p"}:
+    if choice in {"5", "finish", "lanjut", "grade", "proses", "process", "p"}:
         return "finish"
-    if choice in {"5", "exit", "keluar", "q"}:
+    if choice in {"6", "exit", "keluar", "q"}:
         return "exit"
     raise ValueError(f"unknown menu choice: {raw.strip()}")
+
+
+def parse_topic_choice(raw: str, known_ids: list[str]) -> str:
+    """Map menu choice (1-based index or pack id) to a topic id.
+
+    Raises:
+        ValueError: if empty or unknown.
+    """
+    choice = raw.strip()
+    if not choice:
+        raise ValueError("empty selection")
+    if choice in known_ids:
+        return choice
+    if choice.isdigit():
+        index = int(choice)
+        if 1 <= index <= len(known_ids):
+            return known_ids[index - 1]
+    raise ValueError(f"unknown topic: {choice}")

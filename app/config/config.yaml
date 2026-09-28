@@ -32,6 +32,7 @@ questions:
 
 grading:
   standard_dir: data/output/standards/exam_001
+  topic_id: "1.5"
 
 report:
   output_dir: data/output

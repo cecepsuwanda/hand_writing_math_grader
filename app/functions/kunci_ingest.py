@@ -18,7 +18,7 @@ from app.models.exam_schema import (
     ExamQuestion,
     ExamSchema,
 )
-from app.models.grading import Rubric, RubricCriterion
+from app.models.grading import Rubric
 
 _ENUMERATE_BODY_RE = re.compile(
     r"\\begin\{enumerate\}(?P<body>.*?)\\end\{enumerate\}",
@@ -96,8 +96,6 @@ _METHOD_LABEL_IDS: dict[str, str] = {
     "rumus abc": "quadratic_formula",
     "abc": "quadratic_formula",
 }
-
-_RUBRIC_TOTAL = 10.0
 
 
 def extract_soal_number(item_tex: str) -> int | None:
@@ -276,55 +274,16 @@ def render_standard_solution_tex(
     return "\n".join(lines)
 
 
-def rubric_from_parts(question_number: int, parts: list[ExamPart]) -> Rubric:
-    """Build a 10-point rubric from exam parts (topic 1.5 defaults)."""
-    kinds = {part.kind for part in parts}
-    weights: dict[str, float] = {}
-    if "algebra" in kinds:
-        weights["algebra"] = 3.0
-    if "critical_points" in kinds or "sign_chart" in kinds:
-        weights["critical_points"] = 2.0
-    if "figure" in kinds:
-        weights["figure"] = 2.0
-    if "hp" in kinds:
-        weights["final_answer"] = 3.0
+def rubric_from_parts(
+    question_number: int,
+    parts: list[ExamPart],
+    *,
+    topic_id: str | None = None,
+) -> Rubric:
+    """Build a rubric from exam parts via the active / resolved TopicPack."""
+    from app.topics.registry import resolve_pack
 
-    total = sum(weights.values())
-    if total <= 0:
-        weights = {"algebra": 5.0, "final_answer": 5.0}
-        total = _RUBRIC_TOTAL
-
-    deficit = _RUBRIC_TOTAL - total
-    if deficit > 0:
-        has_algebra = "algebra" in weights
-        has_final = "final_answer" in weights
-        if has_algebra and has_final:
-            half = deficit // 2
-            weights["algebra"] += half
-            weights["final_answer"] += deficit - half
-        elif has_algebra:
-            weights["algebra"] += deficit
-        elif has_final:
-            weights["final_answer"] += deficit
-        else:
-            weights["final_answer"] = deficit
-
-    # Prefer stable criterion order.
-    order = ("algebra", "critical_points", "figure", "final_answer")
-    criteria = [
-        RubricCriterion(id=cid, points=weights[cid])
-        for cid in order
-        if cid in weights
-    ]
-    for cid, points in weights.items():
-        if cid not in order:
-            criteria.append(RubricCriterion(id=cid, points=points))
-
-    return Rubric(
-        question=question_number,
-        maximum_score=_RUBRIC_TOTAL,
-        criteria=criteria,
-    )
+    return resolve_pack(topic_id=topic_id).rubric_from_parts(question_number, parts)
 
 
 def extract_question_stem(item_tex: str) -> str | None:
@@ -539,14 +498,19 @@ def build_exam_question(number: int, item_tex: str) -> ExamQuestion | None:
     )
 
 
-def build_exam_schema(tex: str, *, source: str = "") -> ExamSchema:
+def build_exam_schema(
+    tex: str,
+    *,
+    source: str = "",
+    topic_id: str = "1.5",
+) -> ExamSchema:
     """Parse kunci TeX into a full ``ExamSchema`` (stems, steps, HP, figure flags)."""
     questions: list[ExamQuestion] = []
     for index, item in enumerate(split_enumerate_items(tex), start=1):
         question = build_exam_question(index, item)
         if question is not None:
             questions.append(question)
-    return ExamSchema(source=source, questions=questions)
+    return ExamSchema(source=source, topic_id=topic_id, questions=questions)
 
 
 def format_recognition_stems_block(

@@ -49,6 +49,16 @@ class InvalidMenuSelectionError(MathGraderError):
         super().__init__(f"Invalid menu selection: {reason}")
 
 
+class UnknownTopicError(MathGraderError):
+    def __init__(self, topic_id: str, known: list[str] | tuple[str, ...] = ()) -> None:
+        self.topic_id = topic_id
+        self.known = list(known)
+        known_txt = ", ".join(self.known) if self.known else "(none registered)"
+        super().__init__(
+            f"Unknown topic pack '{topic_id}'. Known packs: {known_txt}."
+        )
+
+
 class InvalidPdfError(MathGraderError):
     def __init__(self, path: Path, reason: str = "invalid or corrupt PDF") -> None:
         self.path = path

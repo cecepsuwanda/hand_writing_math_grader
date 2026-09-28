@@ -6,9 +6,21 @@ Katalog resmi: [`topik.md`](topik.md). Implementasi domain mengikuti urutan bab;
 
 ```text
 MVP:  1.5 Pertidaksamaan
-Done: 2 Abs; 3 Fungsi; 4 Limit; 5 Kekontinuan; 6 Turunan; 7 Integral; 8 Transenden; 9 Matriks; 10 Det/Invers; 11 Vektor
-Next: (silabus domain selesai)
+Pack: 2 Abs (registered topic pack)
+Done: 3 Fungsi; 4 Limit; 5 Kekontinuan; 6 Turunan; 7 Integral; 8 Transenden; 9 Matriks; 10 Det/Invers; 11 Vektor
+      (slice normalize/SymPy; dedicated TopicPack TBD one bab per PR)
+Next pack after 2: 4 Limit (capability `limit` already registered)
 ```
+
+## Topic packs
+
+| Pack id | Bab | Status |
+|---------|-----|--------|
+| `1.5` | 1.5 Pertidaksamaan | **Active default** |
+| `2` | 2 Nilai mutlak | **Registered** (roles/rubric reuse 1.5) |
+| — | 3–11 | Add `app/topics/<id>/` + `register` when grading acceptance for that bab is ready |
+
+User selection: CLI menu **Pilih topik**, `grading.topic_id` in config, or `--topic`.
 
 ## Status per bab
 

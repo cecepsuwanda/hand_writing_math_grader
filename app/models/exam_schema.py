@@ -2,21 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 from app.models.recognition import SymbolicPayload
 
-ExamPartKind = Literal[
-    "algebra",
-    "critical_points",
-    "sign_chart",
-    "figure",
-    "hp",
-]
-
-ExamMilestoneRole = Literal["critical_points", "sign_chart", "hp"]
+# Free-form strings validated against the active TopicPack vocabulary.
+ExamPartKind = str
+ExamMilestoneRole = str
 
 
 class NumberLineEndpoint(BaseModel):
@@ -76,4 +68,5 @@ class ExamQuestion(BaseModel):
 
 class ExamSchema(BaseModel):
     source: str = ""
+    topic_id: str = "1.5"
     questions: list[ExamQuestion] = Field(default_factory=list)

@@ -1,25 +1,54 @@
-"""CLI prompts for selecting inputs (main menu, kunci, PDFs)."""
+"""CLI prompts for selecting inputs (main menu, kunci, PDFs, topics)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from app.interfaces.topic_pack import TopicPack
 from app.views.style import bold, box, cyan, dim, green, yellow
 
 
-def print_main_menu() -> None:
+def print_main_menu(*, active_topic_label: str = "", active_topic_id: str = "") -> None:
+    topic_line = ""
+    if active_topic_id or active_topic_label:
+        shown = active_topic_label or active_topic_id
+        topic_line = dim(f"Topik aktif: {shown} [{active_topic_id}]")
     lines = [
         bold("Math Grader"),
         "",
-        "  1. Ingest kunci jawaban (.tex)",
-        "  2. Pilih PDF → render halaman → crop ink (konfirmasi)",
-        "  3. Crop ulang dari page_*_regions.json",
-        "  4. Lanjutkan grading (recognize → report) dari crops",
-        "  5. Keluar",
-        "",
-        dim("Pilih nomor, lalu Enter."),
     ]
+    if topic_line:
+        lines.extend([topic_line, ""])
+    lines.extend(
+        [
+            "  1. Pilih topik grader",
+            "  2. Ingest kunci jawaban (.tex)",
+            "  3. Pilih PDF → render halaman → crop ink (konfirmasi)",
+            "  4. Crop ulang dari page_*_regions.json",
+            "  5. Lanjutkan grading (recognize → report) dari crops",
+            "  6. Keluar",
+            "",
+            dim("Pilih nomor, lalu Enter."),
+        ]
+    )
     print(cyan(box(lines)))
+    print()
+
+
+def print_topic_menu(packs: list[TopicPack], *, active_topic_id: str = "") -> None:
+    lines = [bold("Topik grader"), ""]
+    for index, pack in enumerate(packs, start=1):
+        marker = " *" if pack.id == active_topic_id else ""
+        lines.append(f"  {index}. {pack.label} [{pack.id}]{marker}")
+    lines.append("")
+    lines.append(dim("Pilih nomor atau id pack, lalu Enter."))
+    print(cyan(box(lines)))
+    print()
+
+
+def print_selected_topic(pack: TopicPack) -> None:
+    print(green(bold(f"Topik aktif: {pack.label}")))
+    print(dim(f"  id={pack.id}"))
     print()
 
 

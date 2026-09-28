@@ -17,6 +17,7 @@ from app.controllers.report_controller import ReportController
 from app.controllers.validate_controller import ValidateController
 from app.functions.kunci_ingest import load_exam_schema
 from app.interfaces.llm_client import LlmClient
+from app.interfaces.topic_pack import TopicPack
 from app.interfaces.validator import StepValidator
 from app.services.grading.feedback_annotator import FeedbackAnnotator
 from app.services.grading.report import JsonCsvHtmlReporter
@@ -33,6 +34,27 @@ from app.services.standards.kunci_ingester import KunciIngester
 from app.services.vision.factory import build_vision_recognizer
 from app.services.vision.ollama_client import OllamaClient
 from app.services.workspace.cleaner import prepare_pipeline_workspace
+from app.topics.runtime import set_active_pack
+
+
+def resolve_topic_pack(
+    config: AppConfig,
+    *,
+    topic_id: str | None = None,
+    standard_dir: Path | None = None,
+    prefer_schema: bool = True,
+) -> TopicPack:
+    """Resolve pack from CLI topic, exam_schema, then config.grading.topic_id."""
+    from app.topics.registry import get_pack
+
+    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    if topic_id is not None and str(topic_id).strip():
+        return get_pack(topic_id)
+    if prefer_schema:
+        schema = load_exam_schema(standard)
+        if schema is not None and (schema.topic_id or "").strip():
+            return get_pack(schema.topic_id)
+    return get_pack(config.grading.topic_id)
 
 
 def build_ollama_client(config: AppConfig) -> LlmClient:
@@ -82,9 +104,14 @@ def build_validator(config: AppConfig) -> StepValidator:
 
 
 def build_grade_controller(
-    config: AppConfig, standard_dir: Path | None = None
+    config: AppConfig,
+    standard_dir: Path | None = None,
+    *,
+    topic_id: str | None = None,
 ) -> GradeController:
     standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)
+    set_active_pack(pack)
     annotator = None
     if config.ollama.reasoning_model.strip():
         annotator = FeedbackAnnotator(
@@ -144,10 +171,21 @@ def build_crop_controller(
 
 
 def build_ingest_kunci_controller(
-    config: AppConfig, standard_dir: Path | None = None
+    config: AppConfig,
+    standard_dir: Path | None = None,
+    *,
+    topic_id: str | None = None,
 ) -> IngestKunciController:
     standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
-    return IngestKunciController(KunciIngester(standard))
+    # Fresh ingest ignores stale schema.topic_id; uses CLI/config topic.
+    pack = resolve_topic_pack(
+        config,
+        topic_id=topic_id,
+        standard_dir=standard,
+        prefer_schema=False,
+    )
+    set_active_pack(pack)
+    return IngestKunciController(KunciIngester(standard, topic_pack=pack))
 
 
 def build_process_controller(
@@ -155,6 +193,7 @@ def build_process_controller(
     *,
     recognition_dir: Path | None = None,
     standard_dir: Path | None = None,
+    topic_id: str | None = None,
     on_progress=None,
 ) -> ProcessController:
     """Wire MVC controllers for end-to-end ``process`` (CLI and API)."""
@@ -164,6 +203,8 @@ def build_process_controller(
         else config.recognition.output_dir
     )
     standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)
+    set_active_pack(pack)
     schema = load_exam_schema(standard)
     recognizer = build_vision_recognizer(config, recognition, exam_schema=schema)
     renderer = PyMuPdfRenderer()
@@ -178,7 +219,9 @@ def build_process_controller(
         ),
         latex_controller=LatexController(LatexBuilder()),
         validate_controller=ValidateController(build_validator(config)),
-        grade_controller=build_grade_controller(config, standard),
+        grade_controller=build_grade_controller(
+            config, standard, topic_id=topic_id
+        ),
         report_controller=build_report_controller(config, standard),
         on_progress=on_progress,
     )

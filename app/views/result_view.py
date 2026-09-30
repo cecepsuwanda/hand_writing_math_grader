@@ -1,10 +1,13 @@
-from app.controllers.ingest_kunci_controller import IngestKunciResult
+"""One-line summaries for each single-stage CLI subcommand."""
+
 from app.models.grading import GradeResult
 from app.models.latex import LatexResult
 from app.models.page import RenderResult
+from app.models.process import ProcessResult
 from app.models.question import ExtractResult
 from app.models.recognition import RecognizeResult
 from app.models.report import ReportResult
+from app.models.standards import IngestKunciResult
 from app.models.validation import ValidateResult
 from app.views.style import bold, dim, green
 
@@ -53,7 +56,7 @@ def print_extract_result(result: ExtractResult) -> None:
             print(
                 dim(
                     f"    figures: {len(question.figure_refs)} "
-                    f"({with_nl} with NUMBER_LINE symbolic)"
+                    f"({with_nl} with symbolic)"
                 )
             )
 
@@ -115,6 +118,16 @@ def print_report_result(result: ReportResult) -> None:
         f"{exam.total_score}/{exam.maximum_total} {exam.overall_status.value} "
         f"→ {result.output_dir}"
     )
-    print(f"  JSON: {result.report_json_path}")
-    print(f"  CSV:  {result.summary_csv_path}")
-    print(f"  HTML: {result.report_html_path}")
+    print_report_paths(result)
+
+
+def print_report_paths(result: ReportResult | ProcessResult) -> None:
+    rows = (
+        ("JSON: ", result.report_json_path),
+        ("CSV:  ", result.summary_csv_path),
+        ("HTML: ", result.report_html_path),
+        ("LaTeX: ", result.report_tex_path),
+    )
+    for label, path in rows:
+        if path:
+            print(f"  {label}{path}")

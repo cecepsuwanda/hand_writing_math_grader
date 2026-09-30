@@ -34,7 +34,7 @@ PROCESS_STAGES: tuple[ProcessStage, ...] = (
 class ProcessProgress(BaseModel):
     stage: ProcessStage
     completed: int
-    total: int = 7
+    total: int
 
 
 class QuestionScoreSummary(BaseModel):
@@ -55,6 +55,7 @@ class ProcessResult(BaseModel):
     report_json_path: Path | None = None
     summary_csv_path: Path | None = None
     report_html_path: Path | None = None
+    report_tex_path: Path | None = None
     questions_dir: Path
     pages_dir: Path
     recognition_dir: Path

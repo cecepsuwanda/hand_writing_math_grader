@@ -1,10 +1,12 @@
 ---
-description: Recognition fidelity, SymPy-before-LLM, schema validation, partial credit
-globs: app/services/**/*.py,app/prompts/**
+description: Recognition fidelity, SymPy-before-LLM, schema validation, partial credit, audit
+globs: app/services/**/*.py,app/prompts/**,app/functions/score_*.py,app/functions/step_align.py,app/functions/number_line.py,app/functions/question_crops.py,app/models/grading.py,app/models/validation.py
 alwaysApply: false
 ---
 
 # Recognition dan Grading
+
+Aturan lengkap: `docs/conventions.md` (Recognition fidelity, Validasi dan grading, Jejak audit).
 
 ## Pisahkan recognition dari grading
 
@@ -12,22 +14,24 @@ Jangan minta LLM memberi nilai langsung dari gambar.
 
 ## Recognition — salin apa adanya
 
-LLM recognition **tidak boleh**: memperbaiki persamaan, mengoreksi typo, mengarang langkah hilang, mengganti jawaban.
-
-Jika ragu → `uncertain` / confidence rendah; pertahankan gambar asli + `raw_text`.
+- LLM recognition **tidak boleh**: memperbaiki persamaan, mengoreksi typo, mengarang langkah hilang, mengganti jawaban, menyalin kunci.
+- Konteks dari `exam_schema` ke vision (crop_math, crop_label) hanya **stem + flag `expects_figure`** (`format_recognition_question_block`). Jangan kirim steps / HP / `number_line`.
+- Nomor soal: `crops/question_crops/question_NNN.json` (label-questions / relabel-questions). Nomor tunggal dipaksa, beberapa nomor membatasi model; file tidak valid → `QuestionCropsInvalidError`; folder tidak ada → peringatan + tebakan model.
+- Jika ragu → `uncertain` / confidence rendah; pertahankan gambar asli + `raw_text`.
 
 ## Validasi
 
-1. Parse / syntax  
-2. **SymPy dulu** jika memungkinkan  
-3. LLM hanya jika checker deterministik tidak cukup  
-4. Bandingkan makna matematis, bukan string LaTeX mentah  
+1. Parse / syntax
+2. **SymPy dulu** (konsistensi langkah mahasiswa)
+3. LLM judge hanya untuk langkah SymPy `uncertain`
+4. Bandingkan makna matematis, bukan string LaTeX mentah
 
-Output LLM **wajib** divalidasi terhadap schema Pydantic. Status `uncertain` / `REVIEW_REQUIRED` diizinkan — jangan paksa valid/invalid.
+Output LLM **wajib** divalidasi terhadap schema Pydantic. Pengecualian yang disadari: `OllamaQuestionLabeler` membaca dict mentah (`question_numbers`) dan membuang nilai yang tidak valid. Status `uncertain` / `REVIEW_REQUIRED` diizinkan — jangan paksa valid/invalid.
 
 ## Grading
 
-- Berbasis rubric + partial credit.
-- Bedakan conceptual / calculation / carry-forward error.
-- Jangan nolkan seluruh skor hanya karena final answer salah.
-- Simpan audit: langkah, metode validasi, alasan, skor, confidence, page ref.
+- Skor langkah = konsistensi; soft-align ke `exam_schema` / solutions = audit saja.
+- Skor `final_answer` = **min(konsistensi, standard SymPy)**. Bucket `critical_points` / `figure` di-score terpisah (set-equivalence).
+- Partial credit; jangan nolkan seluruh skor hanya karena final answer salah.
+- Error type deterministik dari grader: `calculation` / `carry_forward` / `transcription` / `uncertain`. `conceptual` hanya dari annotator LLM (feedback, tidak mengubah skor).
+- Audit: status + metode + alasan per langkah di `validation.json`; skor, error type, feedback di `grading.json`; page reference di `question.json`.

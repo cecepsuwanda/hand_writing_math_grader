@@ -1,26 +1,35 @@
 ---
-description: Konvensi testing — tanpa file baru, OOP Test*, inventaris tests/ tertutup
+description: Konvensi testing — tanpa file baru, OOP Test*, inventaris tests/ tertutup, support MVC
 alwaysApply: true
 ---
 
 # Testing
 
-Jangan menambah file `tests/test_*.py`. Perluas coverage di inventaris yang sudah ada lewat **OOP**: `class Test*` + method `test_*`. Detail: `docs/testing.md`.
+Jangan menambah file `tests/test_*.py`. Perluas coverage di inventaris yang sudah ada lewat **OOP**: `class Test*` + method `test_*`. Setup berulang diambil dari `tests/support/` (MVC). Detail: `docs/testing.md`.
 
 | Domain | File |
 |--------|------|
 | Pipeline (config → CLI) | `tests/test_suite.py` |
 | Crop / ink / symbolic | `tests/test_crop_symbolic.py` |
-| Confirm / recrop | `tests/test_crop_confirm.py` |
+| Confirm / recrop / question_crops / labeler | `tests/test_crop_confirm.py` |
 | Number line / figure | `tests/test_number_line.py` |
-| Helper + fake bersama | `tests/helpers.py` |
+| Support bersama (bukan kasus uji) | `tests/support/` |
+
+| Support | Lapisan | Contoh |
+|---------|---------|--------|
+| `builders.py` | Model | `make_question`, `make_validation`, `write_config`, `write_png` |
+| `fakes.py` | Double | `FakeClient`, `FakeProposer`, `RecordingJudge`, `RecordingProcessController` |
+| `harness.py` | Controller | `CliHarness`, `ProcessHarness`, `GradingWorkspace`, `make_recognizer` |
+| `asserts.py` | View | `assert_all_valid`, `assert_step_statuses`, `assert_contains` |
 
 ```text
 ❌ tests/test_foo.py baru
 ❌ def test_... level modul
-❌ Kasus uji di conftest.py / live Ollama di pytest
+❌ Kasus uji di conftest.py / tests/support/ / live Ollama di pytest
+❌ Salin Question(...) / config YAML / MagicMock stage per test
 ✅ class TestFoo + def test_...(self): di file inventaris
-✅ Fake/double sebagai class di helpers.py (atau nested)
+✅ Setup dari tests/support/<lapisan>.py; fake sekali pakai boleh nested
+✅ Variasi input → @pytest.mark.parametrize
 ✅ Hapus method/class = kurangi coverage (tidak ada registry)
 ```
 

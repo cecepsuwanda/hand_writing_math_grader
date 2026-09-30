@@ -6,6 +6,7 @@ from app.functions.kunci_ingest import (
     build_exam_question,
     ingest_kunci_tex,
     render_standard_solution_tex,
+    split_enumerate_items,
 )
 from app.functions.number_line import (
     compare_number_lines,
@@ -13,11 +14,17 @@ from app.functions.number_line import (
     number_line_to_repr,
     parse_number_line_repr,
 )
-from app.models.exam_schema import ExamQuestion, ExamSchema, NumberLineSpec
-from app.models.question import FigureRef, Question
-from app.models.recognition import SymbolicPayload
+from app.functions.question_merge import merge_page_recognitions
+from app.models.exam_schema import ExamQuestion, ExamSchema
+from app.models.recognition import (
+    PageRecognition,
+    RecognizedQuestion,
+    RecognizedStep,
+    SymbolicPayload,
+)
 from app.models.validation import ValidationStatus
 from app.services.grading.standard_comparer import StandardFinalComparer
+from tests.support.builders import make_figure, make_question
 
 _MINI_WITH_TIKZ = r"""
 \begin{enumerate}
@@ -125,9 +132,7 @@ class TestNumberLineCompare:
 class TestNumberLineIngest:
 
     def test_ingest_sets_number_line_and_solution_comment(self) -> None:
-        items = __import__(
-            "app.functions.kunci_ingest", fromlist=["split_enumerate_items"]
-        ).split_enumerate_items(_MINI_WITH_TIKZ)
+        items = split_enumerate_items(_MINI_WITH_TIKZ)
         q = build_exam_question(1, items[0])
         assert q is not None
         assert q.expects_figure is True
@@ -164,53 +169,20 @@ class TestCompareFigure:
         )
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
 
-        good = Question(
-            question_id="question_001",
-            question_number=1,
-            figure_refs=[
-                FigureRef(
-                    path="fig.png",
-                    caption="closed at -10/3 ray right",
-                    symbolic=SymbolicPayload(
-                        kind="figure",
-                        repr="NUMBER_LINE([-10/3,oo))",
-                    ),
-                )
-            ],
-        )
+        good = make_question(figures=[make_figure("NUMBER_LINE([-10/3,oo))", caption="closed at -10/3 ray right")])
         status, reason = comparer.compare_figure(good)
         assert status == ValidationStatus.VALID
         assert "matches" in reason
 
-        bad = Question(
-            question_id="question_001",
-            question_number=1,
-            figure_refs=[
-                FigureRef(
-                    path="fig.png",
-                    caption="open circle",
-                    symbolic=SymbolicPayload(
-                        kind="figure",
-                        repr="NUMBER_LINE((-10/3,oo))",
-                    ),
-                )
-            ],
-        )
+        bad = make_question(figures=[make_figure("NUMBER_LINE((-10/3,oo))", caption="open circle")])
         status, reason = comparer.compare_figure(bad)
         assert status == ValidationStatus.INVALID
 
-        missing = Question(question_id="question_001", question_number=1)
-        status, reason = comparer.compare_figure(missing)
+        status, reason = comparer.compare_figure(make_question())
         assert status == ValidationStatus.INVALID
         assert reason == "no figure step"
 
-        unparsed = Question(
-            question_id="question_001",
-            question_number=1,
-            figure_refs=[
-                FigureRef(path="fig.png", caption="some scribbles only"),
-            ],
-        )
+        unparsed = make_question(figures=[make_figure(caption="some scribbles only")])
         status, reason = comparer.compare_figure(unparsed)
         assert status == ValidationStatus.UNCERTAIN
         assert "unparseable" in reason
@@ -232,20 +204,7 @@ class TestCompareFigure:
             ],
         )
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
-        drawn = Question(
-            question_id="question_001",
-            question_number=1,
-            figure_refs=[
-                FigureRef(
-                    path="fig.png",
-                    caption="open ray",
-                    symbolic=SymbolicPayload(
-                        kind="figure",
-                        repr="NUMBER_LINE((-10/3,oo))",
-                    ),
-                )
-            ],
-        )
+        drawn = make_question(figures=[make_figure("NUMBER_LINE((-10/3,oo))", caption="open ray")])
         status, reason = comparer.compare_figure(drawn)
         assert status == ValidationStatus.VALID
         assert reason == "figure step present"
@@ -265,11 +224,7 @@ class TestCompareFigure:
             ],
         )
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
-        q = Question(
-            question_id="question_001",
-            question_number=1,
-            figure_refs=[FigureRef(path="f.png", caption="diagram")],
-        )
+        q = make_question(figures=[make_figure(caption="diagram", path="f.png")])
         status, reason = comparer.compare_figure(q)
         assert status == ValidationStatus.VALID
         assert reason == "figure step present"
@@ -291,21 +246,10 @@ class TestCompareFigure:
             ],
         )
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
-        q = Question(
-            question_id="question_001",
-            question_number=1,
-            figure_refs=[
-                FigureRef(path="poison.png", caption="x < 0", symbolic=None),
-                FigureRef(
-                    path="good.png",
-                    caption="open ray",
-                    symbolic=SymbolicPayload(
-                        kind="figure",
-                        repr="NUMBER_LINE((1,oo))",
-                    ),
-                ),
-            ],
-        )
+        q = make_question(figures=[
+            make_figure(caption="x < 0", path="poison.png"),
+            make_figure("NUMBER_LINE((1,oo))", caption="open ray", path="good.png"),
+        ])
         status, reason = comparer.compare_figure(q)
         assert status == ValidationStatus.VALID
         assert "matches" in reason
@@ -328,25 +272,10 @@ class TestCompareFigure:
             ],
         )
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
-        q = Question(
-            question_id="question_001",
-            question_number=1,
-            figure_refs=[
-                FigureRef(
-                    path="poison.png",
-                    caption="algebra caption",
-                    symbolic=SymbolicPayload(kind="relation", repr="x < 0"),
-                ),
-                FigureRef(
-                    path="good.png",
-                    caption="open ray",
-                    symbolic=SymbolicPayload(
-                        kind="figure",
-                        repr="NUMBER_LINE((1,oo))",
-                    ),
-                ),
-            ],
-        )
+        q = make_question(figures=[
+            make_figure("x < 0", caption="algebra caption", path="poison.png", kind="relation"),
+            make_figure("NUMBER_LINE((1,oo))", caption="open ray", path="good.png"),
+        ])
         status, reason = comparer.compare_figure(q)
         assert status == ValidationStatus.VALID
         assert "matches" in reason
@@ -354,9 +283,6 @@ class TestCompareFigure:
     def test_figure_step_without_crop_path_still_grades_geometry(self, 
         tmp_path: Path,
     ) -> None:
-        from app.functions.question_merge import merge_page_recognitions
-        from app.models.recognition import PageRecognition, RecognizedQuestion, RecognizedStep
-
         expected = parse_number_line_repr("NUMBER_LINE((1,oo))")
         assert expected is not None
         schema = ExamSchema(

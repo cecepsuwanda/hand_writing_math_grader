@@ -43,13 +43,13 @@ def summary_csv_rows(report: ExamReport) -> tuple[list[str], list[str]]:
     row = [report.metadata.student_id]
     for q in report.questions:
         header.append(f"q{q.question_number}")
-        row.append(_format_score(q.score))
+        row.append(format_score(q.score))
     header.extend(["total", "status"])
-    row.extend([_format_score(report.total_score), report.overall_status.value])
+    row.extend([format_score(report.total_score), report.overall_status.value])
     return header, row
 
 
-def _format_score(value: float) -> str:
+def format_score(value: float) -> str:
     if value == int(value):
         return str(int(value))
     return f"{value:g}"

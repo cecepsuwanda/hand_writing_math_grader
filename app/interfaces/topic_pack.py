@@ -23,7 +23,7 @@ class TopicPack(Protocol):
 
     @property
     def topik_refs(self) -> tuple[str, ...]:
-        """References into ``docs/topik.md`` (e.g. ``(\"1.5\",)``)."""
+        """Syllabus references in ``docs/math-topics.md`` (e.g. ``(\"1.5\",)``)."""
 
     @property
     def part_kinds(self) -> tuple[str, ...]:

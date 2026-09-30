@@ -11,6 +11,7 @@ from app.functions.standard_extract import (
 )
 from app.functions.number_line import number_line_from_symbolic, number_line_to_repr
 from app.functions.symbolic_from_latex import latex_to_symbolic_payload
+from app.models.defaults import DEFAULT_TOPIC_ID
 from app.models.exam_schema import (
     ExamMethod,
     ExamMilestone,
@@ -502,7 +503,7 @@ def build_exam_schema(
     tex: str,
     *,
     source: str = "",
-    topic_id: str = "1.5",
+    topic_id: str = DEFAULT_TOPIC_ID,
 ) -> ExamSchema:
     """Parse kunci TeX into a full ``ExamSchema`` (stems, steps, HP, figure flags)."""
     questions: list[ExamQuestion] = []

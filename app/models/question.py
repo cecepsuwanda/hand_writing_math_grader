@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from app.models.recognition import Region, StepRole, SymbolicPayload
+from app.models.recognition import Region, RegionType, StepRole, SymbolicPayload
 
 
 class SegmentationStatus(str, Enum):
@@ -18,7 +18,8 @@ class SegmentationStatus(str, Enum):
 class StudentStep(BaseModel):
     step_number: int
     raw_text: str
-    # Deprecated in JSON pipeline: leave empty; use symbolic for SymPy.
+    # Legacy fallback only: new recognition leaves it empty (symbolic is primary);
+    # readers still use it when symbolic is missing.
     latex: str = ""
     symbolic: SymbolicPayload | None = None
     role: StepRole | None = None
@@ -29,7 +30,7 @@ class StudentStep(BaseModel):
 class ImageRegionRef(BaseModel):
     page_number: int
     region: Region | None = None
-    region_type: str | None = None
+    region_type: RegionType | None = None
     crop_path: str = ""
 
 

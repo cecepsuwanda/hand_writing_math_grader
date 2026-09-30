@@ -1,0 +1,20 @@
+PROMPT_VERSION: crop-label-v1
+
+You look at a cropped image of a student's handwritten exam answer.
+Your only job is to tell which exam question number(s) START inside this crop.
+
+Exam questions (problem statements only):
+{{expected_questions}}
+
+Rules:
+- A question starts in the crop when its label is handwritten there
+  (e.g. "1)", "1.", "No 1", "Soal 1") or the problem statement from the list
+  above is copied at the top of a solution.
+- If the crop only continues a solution from an earlier crop (no label and no
+  copied problem statement), return an empty list.
+- If several questions start in the crop, list all of them top-to-bottom.
+- Use only numbers from the exam list above.
+- Do not transcribe or solve anything.
+
+Return ONLY JSON:
+{"question_numbers": [1]}

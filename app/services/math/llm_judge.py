@@ -8,7 +8,11 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.exceptions import OllamaTimeoutError, OllamaUnavailableError
-from app.functions.json_extract import extract_json_object, salvage_judgement_object
+from app.functions.json_extract import (
+    coerce_confidence,
+    extract_json_object,
+    salvage_judgement_object,
+)
 from app.models.question import StudentStep
 from app.models.validation import (
     LlmJudgement,
@@ -68,6 +72,11 @@ class LlmStepJudge:
                 if salvaged is None:
                     raise
                 payload = salvaged
+            if isinstance(payload, dict) and "confidence" in payload:
+                payload = {
+                    **payload,
+                    "confidence": coerce_confidence(payload["confidence"]),
+                }
             judgement = LlmJudgement.model_validate(payload)
         except (OllamaUnavailableError, OllamaTimeoutError) as exc:
             logger.warning("LLM judge unavailable: %s", exc)

@@ -7,6 +7,18 @@ def question_dir_name(question_number: int) -> str:
     return f"question_{question_number:03d}"
 
 
+def parse_question_ref(ref: str) -> str:
+    """``question_007`` / ``question_7`` / ``7`` → canonical ``question_007``.
+
+    Raises:
+        ValueError: if ``ref`` carries no positive question number.
+    """
+    raw = ref.strip().removeprefix("question_")
+    if not raw.isdigit():
+        raise ValueError(f"not a question reference: {ref!r}")
+    return question_dir_name(int(raw))
+
+
 def question_artifact_filename() -> str:
     return "question.json"
 
@@ -38,3 +50,7 @@ def summary_csv_filename() -> str:
 
 def report_html_filename() -> str:
     return "report.html"
+
+
+def report_tex_filename() -> str:
+    return "report.tex"

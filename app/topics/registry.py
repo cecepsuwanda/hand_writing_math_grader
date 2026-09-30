@@ -4,22 +4,24 @@ from __future__ import annotations
 
 from app.exceptions import UnknownTopicError
 from app.interfaces.topic_pack import TopicPack
+from app.models.defaults import DEFAULT_TOPIC_ID
 from app.models.exam_schema import ExamSchema
 from app.topics.abs_inequality_2 import PACK as ABS_INEQUALITY_2
 from app.topics.inequality_1_5 import PACK as INEQUALITY_15
 from app.topics.runtime import get_active_pack
 
-DEFAULT_TOPIC_ID = "1.5"
+__all__ = [
+    "DEFAULT_TOPIC_ID",
+    "get_pack",
+    "known_topic_ids",
+    "list_packs",
+    "resolve_pack",
+]
 
 _PACKS: dict[str, TopicPack] = {
     INEQUALITY_15.id: INEQUALITY_15,
     ABS_INEQUALITY_2.id: ABS_INEQUALITY_2,
 }
-
-
-def register_pack(pack: TopicPack) -> None:
-    """Register or replace a pack (used by tests / late-loaded packs)."""
-    _PACKS[pack.id] = pack
 
 
 def list_packs() -> list[TopicPack]:

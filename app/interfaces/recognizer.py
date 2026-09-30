@@ -5,6 +5,11 @@ from app.models.recognition import PageRecognition
 
 
 class VisionRecognizer(ABC):
+    @property
+    def output_dir(self) -> Path | None:
+        """Where recognition JSON is written; ``None`` if the adapter does not persist."""
+        return None
+
     @abstractmethod
     def recognize_page(self, image_path: Path, page_number: int) -> PageRecognition:
         """Recognize handwritten math content on a single page image."""

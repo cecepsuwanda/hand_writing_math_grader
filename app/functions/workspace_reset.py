@@ -1,4 +1,4 @@
-"""Workspace cleaner for pipeline output reset (filesystem I/O)."""
+"""Empty one run folder (and overridden artifact dirs) before a new run (filesystem I/O)."""
 
 from __future__ import annotations
 

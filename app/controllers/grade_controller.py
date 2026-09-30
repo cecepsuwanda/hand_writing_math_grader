@@ -7,14 +7,14 @@ from pathlib import Path
 
 from app.exceptions import QuestionsNotFoundError
 from app.functions.question_names import grading_filename, question_artifact_filename
+from app.interfaces.grader import QuestionGrader
 from app.models.grading import GradeResult
-from app.services.grading.step_grader import StepGrader
 
 logger = logging.getLogger(__name__)
 
 
 class GradeController:
-    def __init__(self, grader: StepGrader, standard_dir: Path) -> None:
+    def __init__(self, grader: QuestionGrader, standard_dir: Path) -> None:
         self._grader = grader
         self._standard_dir = Path(standard_dir)
 

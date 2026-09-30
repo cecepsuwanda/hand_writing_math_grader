@@ -3,7 +3,8 @@ setlocal
 cd /d "%~dp0"
 set PYTHONIOENCODING=utf-8
 
-REM Default: interactive main menu (ingest kunci / process PDF / exit)
+REM Default: interactive main menu (topic / ingest kunci / crop / recrop /
+REM   label questions / reload labels / grade from crops / exit)
 REM Examples:
 REM   run.bat
 REM   run.bat menu

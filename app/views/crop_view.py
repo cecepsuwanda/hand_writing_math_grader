@@ -2,24 +2,17 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
+from app.models.crop import PageCropSummary
+from app.views.prompt_view import InputFn, ask_yes_no, wait_for_edit
 
-def print_crop_summary(
-    *,
-    page_number: int,
-    json_path: Path,
-    crop_paths: list[Path],
-) -> None:
-    print(f"Page {page_number}: {len(crop_paths)} crop(s)")
-    print(f"  regions JSON: {json_path}")
-    for path in crop_paths:
+
+def print_crop_summary(summary: PageCropSummary) -> None:
+    print(f"Page {summary.page_number}: {len(summary.crop_paths)} crop(s)")
+    print(f"  regions JSON: {summary.json_path}")
+    for path in summary.crop_paths:
         print(f"  - {path}")
-
-
-def print_no_regions_json(crops_dir: Path) -> None:
-    print(f"No regions JSON found under {crops_dir}; cannot recrop.")
 
 
 def print_crops_ready(crops_dir: Path) -> None:
@@ -30,27 +23,14 @@ def print_recrop_result(*, page_count: int, crops_dir: Path) -> None:
     print(f"Recropped {page_count} page(s) under {crops_dir}")
 
 
-def ask_crops_ok(*, input_fn=input) -> bool:
+def ask_crops_ok(*, input_fn: InputFn | None = None) -> bool:
     """Return True if user accepts crops. Empty / y / yes → True."""
-    raw = input_fn("Crop OK? [y/n]: ").strip().lower()
-    if raw in {"", "y", "yes"}:
-        return True
-    if raw in {"n", "no"}:
-        return False
-    print("Please answer y or n.")
-    return ask_crops_ok(input_fn=input_fn)
+    return ask_yes_no("Crop OK? [y/n]: ", input_fn=input_fn)
 
 
-def wait_for_json_edit(*, json_hint: str, input_fn=input) -> None:
-    print(
+def wait_for_json_edit(*, json_hint: str, input_fn: InputFn | None = None) -> None:
+    wait_for_edit(
         "Edit the region boxes in the JSON (x, y, width, height), save the file,"
-        f"\nthen press Enter to recrop.\n  {json_hint}"
+        f"\nthen press Enter to recrop.\n  {json_hint}",
+        input_fn=input_fn,
     )
-    input_fn("")
-
-
-def should_prompt_interactively(*, force_yes: bool) -> bool:
-    """Skip prompts when ``--yes`` or stdin is not a TTY."""
-    if force_yes:
-        return False
-    return bool(getattr(sys.stdin, "isatty", lambda: False)())

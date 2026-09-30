@@ -48,14 +48,6 @@ _CAPABILITIES: dict[str, Capability] = {
 ALL_CAPABILITY_IDS: tuple[str, ...] = tuple(_CAPABILITIES.keys())
 
 
-def get_capability(capability_id: str) -> Capability | None:
-    return _CAPABILITIES.get(capability_id)
-
-
-def list_capabilities() -> list[Capability]:
-    return [_CAPABILITIES[cid] for cid in ALL_CAPABILITY_IDS]
-
-
 def apply_capabilities(text: str, capability_ids: Sequence[str]) -> str:
     """Run normalize adapters in ``capability_ids`` order (skip unknown ids)."""
     cleaned = text

@@ -7,8 +7,6 @@ from pathlib import Path
 from app.config import AppConfig
 from app.functions.ink_layout import InkLayoutParams
 from app.functions.kunci_ingest import load_exam_schema, load_question_stems_from_kunci
-from app.interfaces.llm_client import LlmClient
-from app.models.exam_schema import ExamSchema
 from app.services.vision.ink_region_proposer import InkRegionProposer
 from app.services.vision.ollama_client import OllamaClient
 from app.services.vision.recognizer import OllamaVisionRecognizer
@@ -31,19 +29,21 @@ def build_vision_recognizer(
     config: AppConfig,
     recognition_dir: Path,
     *,
-    client: LlmClient | None = None,
-    exam_schema: ExamSchema | None = None,
-    load_schema_from_standard: bool = True,
+    crops_dir: Path | None = None,
+    standard_dir: Path | None = None,
 ) -> OllamaVisionRecognizer:
-    """Build ``OllamaVisionRecognizer`` with ink proposer + optional exam schema."""
-    ollama = client or OllamaClient(
+    """Build ``OllamaVisionRecognizer`` with ink proposer + optional exam schema.
+
+    The schema comes only from ``standard_dir`` (default: config), so an
+    overridden standards folder never silently falls back to the default one.
+    """
+    ollama = OllamaClient(
         base_url=config.ollama.base_url,
         timeout_seconds=config.ollama.timeout_seconds,
         max_retries=config.ollama.max_retries,
     )
-    schema = exam_schema
-    if schema is None and load_schema_from_standard:
-        schema = load_exam_schema(config.grading.standard_dir)
+    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    schema = load_exam_schema(standard)
     expected = (
         None
         if schema is not None
@@ -53,7 +53,7 @@ def build_vision_recognizer(
         client=ollama,
         model=config.ollama.vision_model,
         output_dir=recognition_dir,
-        crops_dir=config.recognition.crops_dir,
+        crops_dir=crops_dir,
         proposer=InkRegionProposer(ink_params_from_config(config)),
         exam_schema=schema,
         expected_questions=expected,

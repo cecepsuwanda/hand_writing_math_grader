@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from app.config import AppConfig
@@ -11,21 +12,35 @@ from app.controllers.grade_controller import GradeController
 from app.controllers.ingest_kunci_controller import IngestKunciController
 from app.controllers.latex_controller import LatexController
 from app.controllers.process_controller import ProcessController
+from app.controllers.question_label_controller import QuestionLabelController
 from app.controllers.recognize_controller import RecognizeController
 from app.controllers.render_controller import RenderController
 from app.controllers.report_controller import ReportController
 from app.controllers.validate_controller import ValidateController
+from app.exceptions import ExamSchemaMissingError
 from app.functions.kunci_ingest import load_exam_schema
+from app.functions.run_layout import (
+    CROPS_SUBDIR,
+    FALLBACK_RUN_NAME,
+    RunLayout,
+    build_run_layout,
+)
+from app.functions.workspace_reset import prepare_pipeline_workspace
 from app.interfaces.llm_client import LlmClient
 from app.interfaces.topic_pack import TopicPack
 from app.interfaces.validator import StepValidator
+from app.models.recognition import RecognizeResult
+from app.models.report import PromptVersions
 from app.services.grading.feedback_annotator import FeedbackAnnotator
+from app.services.grading.feedback_annotator import PROMPT_VERSION as GRADING_PROMPT_VERSION
+from app.services.grading.latex_report import LatexReportWriter
 from app.services.grading.report import JsonCsvHtmlReporter
 from app.services.grading.rubric import RubricLoader
 from app.services.grading.standard_comparer import StandardFinalComparer
 from app.services.grading.step_grader import StepGrader
 from app.services.latex.builder import LatexBuilder
 from app.services.math.hybrid_validator import HybridStepValidator
+from app.services.math.llm_judge import PROMPT_VERSION as VALIDATION_PROMPT_VERSION
 from app.services.math.llm_judge import LlmStepJudge
 from app.services.math.sympy_validator import SymPyStepValidator
 from app.services.pdf.renderer import PyMuPdfRenderer
@@ -33,7 +48,8 @@ from app.services.questions.extractor import QuestionExtractor
 from app.services.standards.kunci_ingester import KunciIngester
 from app.services.vision.factory import build_vision_recognizer
 from app.services.vision.ollama_client import OllamaClient
-from app.services.workspace.cleaner import prepare_pipeline_workspace
+from app.services.vision.question_labeler import OllamaQuestionLabeler
+from app.services.vision.recognizer import PROMPT_VERSION as RECOGNITION_PROMPT_VERSION
 from app.topics.runtime import set_active_pack
 
 
@@ -65,28 +81,35 @@ def build_ollama_client(config: AppConfig) -> LlmClient:
     )
 
 
+def default_run_layout(config: AppConfig) -> RunLayout:
+    """Layout used only when a caller wires controllers without a PDF/run."""
+    return build_run_layout(config.output.root_dir, FALLBACK_RUN_NAME)
+
+
 def prepare_run_workspace(
-    config: AppConfig,
+    layout: RunLayout,
     *,
-    workspace_root: Path | None = None,
     pages_dir: Path | None = None,
     recognition_dir: Path | None = None,
     questions_dir: Path | None = None,
-    crops_dir: Path | None = None,
+    preserve_crops: bool = False,
 ) -> list[str]:
-    """Clear pipeline output dirs for a new crop/process run (composition helper)."""
+    """Clear only ``layout.root`` (plus overridden dirs outside it) for a new run.
+
+    ``preserve_crops`` keeps ``crops/`` (regions JSON + question_crops) so
+    ``--use-existing-crops`` can reuse them.
+    """
     return prepare_pipeline_workspace(
-        workspace_root if workspace_root is not None else config.report.output_dir,
-        pages_dir=pages_dir if pages_dir is not None else config.pdf.output_dir,
+        layout.root,
+        pages_dir=pages_dir if pages_dir is not None else layout.pages_dir,
         recognition_dir=(
-            recognition_dir
-            if recognition_dir is not None
-            else config.recognition.output_dir
+            recognition_dir if recognition_dir is not None else layout.recognition_dir
         ),
         questions_dir=(
-            questions_dir if questions_dir is not None else config.questions.output_dir
+            questions_dir if questions_dir is not None else layout.questions_dir
         ),
-        crops_dir=crops_dir if crops_dir is not None else config.recognition.crops_dir,
+        crops_dir=layout.crops_dir,
+        preserve=frozenset({CROPS_SUBDIR}) if preserve_crops else frozenset(),
     )
 
 
@@ -101,6 +124,19 @@ def build_validator(config: AppConfig) -> StepValidator:
             ),
         )
     return validator
+
+
+def build_validate_controller(
+    config: AppConfig,
+    standard_dir: Path | None = None,
+    *,
+    topic_id: str | None = None,
+) -> ValidateController:
+    """Standalone ``validate`` must normalize with the same pack as ``process``."""
+    set_active_pack(
+        resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard_dir)
+    )
+    return ValidateController(build_validator(config))
 
 
 def build_grade_controller(
@@ -138,35 +174,70 @@ def build_report_controller(
         standard_dir=standard,
         vision_model=config.ollama.vision_model,
         reasoning_model=config.ollama.reasoning_model,
+        prompt_versions=current_prompt_versions(),
+        latex_reporter=LatexReportWriter(),
     )
+
+
+def current_prompt_versions() -> PromptVersions:
+    return PromptVersions(
+        recognition=RECOGNITION_PROMPT_VERSION,
+        validation=VALIDATION_PROMPT_VERSION,
+        grading=GRADING_PROMPT_VERSION,
+    )
+
+
+def _recognition_dir_or_default(config: AppConfig, recognition_dir: Path | None) -> Path:
+    if recognition_dir is not None:
+        return Path(recognition_dir)
+    return default_run_layout(config).recognition_dir
 
 
 def build_recognize_controller(
-    config: AppConfig, recognition_dir: Path | None = None
+    config: AppConfig,
+    recognition_dir: Path | None = None,
+    *,
+    crops_dir: Path | None = None,
 ) -> RecognizeController:
-    recognition = (
-        Path(recognition_dir)
-        if recognition_dir is not None
-        else config.recognition.output_dir
-    )
+    recognition = _recognition_dir_or_default(config, recognition_dir)
     return RecognizeController(
         renderer=PyMuPdfRenderer(),
-        recognizer=build_vision_recognizer(config, recognition),
+        recognizer=build_vision_recognizer(config, recognition, crops_dir=crops_dir),
     )
+
+
+def build_render_controller() -> RenderController:
+    return RenderController(PyMuPdfRenderer())
+
+
+def build_extract_controller(
+    config: AppConfig,
+    standard_dir: Path | None = None,
+    *,
+    recognize_runner: Callable[[], RecognizeResult] | None = None,
+) -> ExtractController:
+    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    return ExtractController(
+        extractor=QuestionExtractor(exam_schema=load_exam_schema(standard)),
+        recognize_runner=recognize_runner,
+    )
+
+
+def build_latex_controller() -> LatexController:
+    return LatexController(LatexBuilder())
 
 
 def build_crop_controller(
-    config: AppConfig, recognition_dir: Path | None = None
+    config: AppConfig,
+    recognition_dir: Path | None = None,
+    *,
+    crops_dir: Path | None = None,
 ) -> CropController:
-    recognition = (
-        Path(recognition_dir)
-        if recognition_dir is not None
-        else config.recognition.output_dir
-    )
-    recognizer = build_vision_recognizer(config, recognition)
+    recognition = _recognition_dir_or_default(config, recognition_dir)
+    recognizer = build_vision_recognizer(config, recognition, crops_dir=crops_dir)
     return CropController(
         renderer=PyMuPdfRenderer(),
-        recognizer=recognizer,
+        workspace=recognizer,
     )
 
 
@@ -192,36 +263,60 @@ def build_process_controller(
     config: AppConfig,
     *,
     recognition_dir: Path | None = None,
+    crops_dir: Path | None = None,
     standard_dir: Path | None = None,
     topic_id: str | None = None,
     on_progress=None,
+    on_question_crops_missing=None,
 ) -> ProcessController:
     """Wire MVC controllers for end-to-end ``process`` (CLI and API)."""
-    recognition = (
-        Path(recognition_dir)
-        if recognition_dir is not None
-        else config.recognition.output_dir
-    )
+    recognition = _recognition_dir_or_default(config, recognition_dir)
     standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
     pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)
     set_active_pack(pack)
     schema = load_exam_schema(standard)
-    recognizer = build_vision_recognizer(config, recognition, exam_schema=schema)
+    recognizer = build_vision_recognizer(
+        config, recognition, crops_dir=crops_dir, standard_dir=standard
+    )
     renderer = PyMuPdfRenderer()
     return ProcessController(
         render_controller=RenderController(renderer),
         recognize_controller=RecognizeController(
             renderer=renderer, recognizer=recognizer
         ),
-        crop_controller=CropController(renderer=renderer, recognizer=recognizer),
+        crop_controller=CropController(renderer=renderer, workspace=recognizer),
         extract_controller=ExtractController(
             extractor=QuestionExtractor(exam_schema=schema)
         ),
-        latex_controller=LatexController(LatexBuilder()),
+        latex_controller=build_latex_controller(),
         validate_controller=ValidateController(build_validator(config)),
         grade_controller=build_grade_controller(
             config, standard, topic_id=topic_id
         ),
         report_controller=build_report_controller(config, standard),
         on_progress=on_progress,
+        question_numbers=[q.number for q in schema.questions] if schema else [],
+        on_question_crops_missing=on_question_crops_missing,
+    )
+
+
+def build_question_label_controller(
+    config: AppConfig,
+    crops_dir: Path,
+    standard_dir: Path | None = None,
+) -> QuestionLabelController:
+    """Question-number labeling needs the kunci schema; vision labeler is optional."""
+    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    schema = load_exam_schema(standard)
+    if schema is None or not schema.questions:
+        raise ExamSchemaMissingError(standard)
+    labeler = None
+    if config.ollama.vision_model.strip():
+        labeler = OllamaQuestionLabeler(
+            client=build_ollama_client(config),
+            model=config.ollama.vision_model,
+            exam_schema=schema,
+        )
+    return QuestionLabelController(
+        crops_dir=crops_dir, exam_schema=schema, labeler=labeler
     )

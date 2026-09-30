@@ -46,7 +46,8 @@ class DetectedRegion(BaseModel):
 class RecognizedStep(BaseModel):
     step_number: int
     raw_text: str
-    # Deprecated: new pipeline leaves this empty; LaTeX lives only in .tex artifacts.
+    # Legacy fallback only: new recognition leaves it empty (LaTeX lives in .tex
+    # artifacts); readers still use it when symbolic is missing.
     latex: str = ""
     symbolic: SymbolicPayload | None = None
     role: StepRole | None = None

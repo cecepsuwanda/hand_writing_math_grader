@@ -5,7 +5,6 @@ from app.topics.registry import (
     get_pack,
     known_topic_ids,
     list_packs,
-    register_pack,
     resolve_pack,
 )
 
@@ -14,6 +13,5 @@ __all__ = [
     "get_pack",
     "known_topic_ids",
     "list_packs",
-    "register_pack",
     "resolve_pack",
 ]

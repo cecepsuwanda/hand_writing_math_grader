@@ -5,15 +5,18 @@ CLI remains the required entry point. This module does not own grading logic.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.config import load_config
+from app.exceptions import MathGraderError
+from app.functions.grading_artifact import load_question_grade
 from app.functions.paths import resolve_jawaban_pdf
-from app.functions.question_names import grading_filename, question_dir_name
+from app.functions.question_names import grading_filename, parse_question_ref
+from app.functions.run_layout import build_run_layout, layout_for_pdf, resolve_run_name
+from app.models.defaults import DEFAULT_STUDENT_ID
 from app.services.pipeline_factory import build_process_controller
 
 try:
@@ -31,7 +34,7 @@ app = FastAPI(
 
 class ProcessRequest(BaseModel):
     pdf: str = Field(description="PDF path or name under jawaban_dir")
-    student_id: str = "student_001"
+    student_id: str = DEFAULT_STUDENT_ID
 
 
 class HealthResponse(BaseModel):
@@ -48,25 +51,36 @@ def api_process(body: ProcessRequest) -> dict[str, Any]:
     config = load_config()
     try:
         pdf_path = resolve_jawaban_pdf(Path(body.pdf), config.input.jawaban_dir)
-    except Exception as exc:
+    except (MathGraderError, ValueError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not pdf_path.is_file():
         raise HTTPException(status_code=404, detail=f"PDF not found: {pdf_path}")
 
-    controller = build_process_controller(config)
-    result = controller.process(
-        pdf_path,
-        pages_dir=config.pdf.output_dir,
-        recognition_dir=config.recognition.output_dir,
-        questions_dir=config.questions.output_dir,
-        output_dir=config.report.output_dir,
-        dpi=config.pdf.dpi,
-        student_id=body.student_id,
-        workspace_root=config.report.output_dir,
-        reset_workspace=True,
-        crops_dir=config.recognition.crops_dir,
+    layout = layout_for_pdf(config.output.root_dir, pdf_path)
+    controller = build_process_controller(
+        config,
+        recognition_dir=layout.recognition_dir,
+        crops_dir=layout.crops_dir,
     )
+    try:
+        result = controller.process(
+            pdf_path,
+            pages_dir=layout.pages_dir,
+            recognition_dir=layout.recognition_dir,
+            questions_dir=layout.questions_dir,
+            output_dir=layout.report_dir,
+            dpi=config.pdf.dpi,
+            student_id=body.student_id,
+            workspace_root=layout.root,
+            reset_workspace=True,
+            crops_dir=layout.crops_dir,
+            # HTTP has no stdin: never block on the crop confirm prompt.
+            force_yes=True,
+        )
+    except MathGraderError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
+        "run": layout.name,
         "student_id": result.student_id,
         "total_score": result.total_score,
         "maximum_total": result.maximum_total,
@@ -81,13 +95,15 @@ def api_process(body: ProcessRequest) -> dict[str, Any]:
 
 
 @app.get("/api/results/{question_id}")
-def api_results(question_id: str) -> dict[str, Any]:
+def api_results(question_id: str, run: str) -> dict[str, Any]:
     config = load_config()
-    qdir = config.questions.output_dir / question_id
+    questions_dir = build_run_layout(
+        config.output.root_dir, resolve_run_name(run)
+    ).questions_dir
+    qdir = questions_dir / question_id
     if not qdir.is_dir():
         try:
-            number = int(question_id.replace("question_", ""))
-            qdir = config.questions.output_dir / question_dir_name(number)
+            qdir = questions_dir / parse_question_ref(question_id)
         except ValueError:
             pass
     grading_path = qdir / grading_filename()
@@ -97,16 +113,13 @@ def api_results(question_id: str) -> dict[str, Any]:
             detail=f"grading artifact not found for {question_id}",
         )
     try:
-        grading = json.loads(grading_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"invalid grading JSON for {question_id}: {exc}",
-        ) from exc
+        grading = load_question_grade(grading_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {
         "question_id": qdir.name,
         "grading_path": str(grading_path),
-        "grading": grading,
+        "grading": grading.model_dump(mode="json"),
     }
 
 

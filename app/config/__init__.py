@@ -8,12 +8,19 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
+from app.exceptions import OllamaModelNotConfiguredError
+from app.models.defaults import DEFAULT_TOPIC_ID
+
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
 
 
 class PdfConfig(BaseModel):
     dpi: int = 200
-    output_dir: Path = Path("data/output/pages")
+
+
+class OutputConfig(BaseModel):
+    # Each processed PDF gets <root_dir>/<pdf stem>/{pages,crops,recognition,questions}.
+    root_dir: Path = Path("data/output")
 
 
 class InputConfig(BaseModel):
@@ -41,32 +48,27 @@ class InkLayoutConfig(BaseModel):
 
 
 class RecognitionConfig(BaseModel):
-    output_dir: Path = Path("data/output/recognition")
-    crops_dir: Path = Path("data/output/crops")
     ink: InkLayoutConfig = Field(default_factory=InkLayoutConfig)
-
-
-class QuestionsConfig(BaseModel):
-    output_dir: Path = Path("data/output/questions")
 
 
 class GradingConfig(BaseModel):
     standard_dir: Path = Path("data/output/standards/exam_001")
-    topic_id: str = "1.5"
-
-
-class ReportConfig(BaseModel):
-    output_dir: Path = Path("data/output")
+    topic_id: str = DEFAULT_TOPIC_ID
 
 
 class AppConfig(BaseModel):
     pdf: PdfConfig = Field(default_factory=PdfConfig)
     input: InputConfig = Field(default_factory=InputConfig)
+    output: OutputConfig = Field(default_factory=OutputConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     recognition: RecognitionConfig = Field(default_factory=RecognitionConfig)
-    questions: QuestionsConfig = Field(default_factory=QuestionsConfig)
     grading: GradingConfig = Field(default_factory=GradingConfig)
-    report: ReportConfig = Field(default_factory=ReportConfig)
+
+
+def require_vision_model(config: AppConfig) -> None:
+    """Raise before any stage that sends images to Ollama."""
+    if not config.ollama.vision_model.strip():
+        raise OllamaModelNotConfiguredError()
 
 
 def load_config(path: Path | None = None) -> AppConfig:

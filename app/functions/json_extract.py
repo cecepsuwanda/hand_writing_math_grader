@@ -324,3 +324,16 @@ def extract_json_object(text: str) -> dict[str, Any]:
     if last_error is not None:
         raise ValueError(f"{last_error}; response_preview={preview!r}") from last_error
     raise ValueError(f"no JSON object found in model response; response_preview={preview!r}")
+
+
+def coerce_confidence(value: object) -> float | None:
+    """Keep model confidence in ``[0, 1]``; drop values the schema would reject."""
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if number < 0.0 or number > 1.0:
+        return None
+    return number

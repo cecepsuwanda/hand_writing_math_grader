@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.models.defaults import DEFAULT_TOPIC_ID
 from app.models.recognition import SymbolicPayload
 
 # Free-form strings validated against the active TopicPack vocabulary.
@@ -68,5 +69,5 @@ class ExamQuestion(BaseModel):
 
 class ExamSchema(BaseModel):
     source: str = ""
-    topic_id: str = "1.5"
+    topic_id: str = DEFAULT_TOPIC_ID
     questions: list[ExamQuestion] = Field(default_factory=list)

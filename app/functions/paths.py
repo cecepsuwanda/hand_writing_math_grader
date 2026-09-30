@@ -3,17 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
-
-
-MainMenuChoice = Literal[
-    "select_topic",
-    "ingest",
-    "propose_crops",
-    "recrop",
-    "finish",
-    "exit",
-]
 
 
 def list_jawaban_pdfs(jawaban_dir: Path) -> list[Path]:
@@ -38,28 +27,35 @@ def list_kunci_tex(kunci_dir: Path) -> list[Path]:
     )
 
 
-def resolve_jawaban_pdf(pdf: Path, jawaban_dir: Path) -> Path:
-    """Resolve a student answer PDF, preferring ``jawaban_dir`` when needed.
+def resolve_input_path(path: Path, base_dir: Path) -> Path:
+    """Resolve an input file, preferring ``base_dir`` when needed.
 
     Search order:
-    1. ``pdf`` as given (cwd-relative or absolute)
-    2. ``jawaban_dir / pdf`` (relative path under jawaban)
-    3. ``jawaban_dir / pdf.name`` (bare filename under jawaban)
+    1. ``path`` as given (cwd-relative or absolute)
+    2. ``base_dir / path`` (relative path under base_dir)
+    3. ``base_dir / path.name`` (bare filename under base_dir)
+
+    Returns ``path`` unchanged when no candidate exists.
     """
-    pdf = Path(pdf)
-    jawaban_dir = Path(jawaban_dir)
-    candidates = [pdf]
-    if not pdf.is_absolute():
-        under_dir = jawaban_dir / pdf
+    path = Path(path)
+    base_dir = Path(base_dir)
+    candidates = [path]
+    if not path.is_absolute():
+        under_dir = base_dir / path
         if under_dir not in candidates:
             candidates.append(under_dir)
-        by_name = jawaban_dir / pdf.name
+        by_name = base_dir / path.name
         if by_name not in candidates:
             candidates.append(by_name)
     for candidate in candidates:
         if candidate.is_file():
             return candidate
-    return pdf
+    return path
+
+
+def resolve_jawaban_pdf(pdf: Path, jawaban_dir: Path) -> Path:
+    """Resolve a student answer PDF under ``jawaban_dir`` (see ``resolve_input_path``)."""
+    return resolve_input_path(pdf, jawaban_dir)
 
 
 def parse_path_choice(
@@ -107,43 +103,6 @@ def parse_kunci_choice(tex_files: list[Path], raw: str) -> Path:
     return parse_path_choice(tex_files, raw, kind="kunci", default_suffix=".tex")
 
 
-def parse_main_menu_choice(raw: str) -> MainMenuChoice:
-    """Parse main menu into select_topic / ingest / crops / finish / exit.
-
-    Raises:
-        ValueError: if the choice is empty or unknown.
-    """
-    choice = raw.strip().lower()
-    if not choice:
-        raise ValueError("empty selection")
-    if choice in {"1", "topic", "topik", "t", "select_topic", "select-topic"}:
-        return "select_topic"
-    if choice in {"2", "ingest", "kunci", "i"}:
-        return "ingest"
-    if choice in {"3", "propose-crops", "propose_crops", "propose", "crop", "c", "pdf"}:
-        return "propose_crops"
-    if choice in {"4", "recrop", "re-crop", "r"}:
-        return "recrop"
-    if choice in {"5", "finish", "lanjut", "grade", "proses", "process", "p"}:
-        return "finish"
-    if choice in {"6", "exit", "keluar", "q"}:
-        return "exit"
-    raise ValueError(f"unknown menu choice: {raw.strip()}")
-
-
-def parse_topic_choice(raw: str, known_ids: list[str]) -> str:
-    """Map menu choice (1-based index or pack id) to a topic id.
-
-    Raises:
-        ValueError: if empty or unknown.
-    """
-    choice = raw.strip()
-    if not choice:
-        raise ValueError("empty selection")
-    if choice in known_ids:
-        return choice
-    if choice.isdigit():
-        index = int(choice)
-        if 1 <= index <= len(known_ids):
-            return known_ids[index - 1]
-    raise ValueError(f"unknown topic: {choice}")
+def parse_run_choice(run_dirs: list[Path], raw: str) -> Path:
+    """Map a menu choice (folder name or 1-based index) to a run directory."""
+    return parse_path_choice(run_dirs, raw, kind="run")

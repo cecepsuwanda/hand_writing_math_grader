@@ -6,7 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from app.models.grading import ReviewStatus
+from app.models.grading import QuestionGrade, ReviewStatus
+from app.models.question import Question
 
 
 class PromptVersions(BaseModel):
@@ -43,9 +44,20 @@ class ExamReport(BaseModel):
     overall_status: ReviewStatus = ReviewStatus.AUTO_ACCEPT
 
 
+class QuestionReportDetail(BaseModel):
+    """Per-question inputs for the LaTeX report: OCR, grade, and crop images."""
+
+    question: Question
+    grade: QuestionGrade | None = None
+    stem: str = ""
+    crop_images: list[Path] = Field(default_factory=list)
+    missing_crops: list[str] = Field(default_factory=list)
+
+
 class ReportResult(BaseModel):
     exam_report: ExamReport
     output_dir: Path
     report_json_path: Path
     summary_csv_path: Path
     report_html_path: Path
+    report_tex_path: Path | None = None

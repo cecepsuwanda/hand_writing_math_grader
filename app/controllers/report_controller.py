@@ -6,22 +6,22 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from app.exceptions import GradingNotFoundError, ReportWriteError
+from app.functions.artifact_guard import changed_files, snapshot_files
+from app.functions.grading_artifact import grading_artifact_paths, load_question_grades
 from app.functions.question_names import (
-    grading_filename,
     report_html_filename,
     report_json_filename,
     summary_csv_filename,
 )
 from app.functions.report_aggregate import aggregate_exam_report
-from app.interfaces.reporter import GradeReporter
+from app.functions.report_details import load_question_report_details
+from app.functions.run_layout import CROPS_SUBDIR
+from app.functions.validation_artifact import question_artifact_paths
+from app.interfaces.reporter import DetailedReporter, GradeReporter
+from app.models.defaults import DEFAULT_STUDENT_ID
 from app.models.grading import QuestionGrade
-from app.models.report import PromptVersions, ReportMetadata, ReportResult
-from app.services.grading.feedback_annotator import PROMPT_VERSION as GRADING_PROMPT
-from app.services.math.llm_judge import PROMPT_VERSION as VALIDATION_PROMPT
-from app.services.vision.recognizer import PROMPT_VERSION as RECOGNITION_PROMPT
+from app.models.report import ExamReport, PromptVersions, ReportMetadata, ReportResult
 
 logger = logging.getLogger(__name__)
 
@@ -34,58 +34,45 @@ class ReportController:
         standard_dir: Path,
         vision_model: str = "",
         reasoning_model: str = "",
+        prompt_versions: PromptVersions | None = None,
+        latex_reporter: DetailedReporter | None = None,
     ) -> None:
         self._reporter = reporter
         self._standard_dir = Path(standard_dir)
         self._vision_model = vision_model
         self._reasoning_model = reasoning_model
+        self._prompt_versions = prompt_versions or PromptVersions()
+        self._latex_reporter = latex_reporter
 
     def report(
         self,
         questions_dir: Path,
         output_dir: Path,
         *,
-        student_id: str = "student_001",
+        student_id: str = DEFAULT_STUDENT_ID,
+        crops_dir: Path | None = None,
     ) -> ReportResult:
         questions_dir = Path(questions_dir)
         output_dir = Path(output_dir)
-        paths = sorted(questions_dir.glob(f"*/{grading_filename()}"))
-        if not paths:
+        grading_paths = grading_artifact_paths(questions_dir)
+        if not grading_paths:
             raise GradingNotFoundError(questions_dir)
+        grades = self._load_grades(grading_paths)
 
-        grades: list[QuestionGrade] = []
-        for path in paths:
-            try:
-                grades.append(
-                    QuestionGrade.model_validate_json(path.read_text(encoding="utf-8"))
-                )
-            except (OSError, ValidationError, ValueError) as exc:
-                raise ReportWriteError(f"invalid grading artifact {path}: {exc}") from exc
-
-        # Snapshot source bytes to detect mutation after write
-        source_snapshots = {p: p.read_bytes() for p in paths}
-
-        metadata = ReportMetadata(
-            generated_at=datetime.now(timezone.utc).isoformat(),
-            standard_dir=self._standard_dir,
-            questions_dir=questions_dir,
-            student_id=student_id,
-            vision_model=self._vision_model,
-            reasoning_model=self._reasoning_model,
-            prompt_versions=PromptVersions(
-                recognition=RECOGNITION_PROMPT,
-                validation=VALIDATION_PROMPT,
-                grading=GRADING_PROMPT,
-            ),
-        )
-        exam = aggregate_exam_report(grades, metadata)
+        snapshot = snapshot_files(grading_paths + question_artifact_paths(questions_dir))
+        exam = aggregate_exam_report(grades, self._metadata(questions_dir, student_id))
         written = self._reporter.write(exam, output_dir)
-
-        for path, original in source_snapshots.items():
-            if path.read_bytes() != original:
-                raise ReportWriteError(
-                    f"grading artifact was modified during report: {path}"
-                )
+        tex_path = self._write_latex(
+            exam,
+            questions_dir,
+            output_dir,
+            crops_dir if crops_dir is not None else questions_dir.parent / CROPS_SUBDIR,
+        )
+        modified = changed_files(snapshot)
+        if modified:
+            raise ReportWriteError(
+                f"source artifact was modified during report: {modified[0]}"
+            )
 
         by_name = {p.name: p for p in written}
         result = ReportResult(
@@ -100,6 +87,7 @@ class ReportController:
             report_html_path=by_name.get(
                 report_html_filename(), output_dir / report_html_filename()
             ),
+            report_tex_path=tex_path,
         )
         logger.info(
             "Reported %s question(s) for %s -> %s",
@@ -108,3 +96,36 @@ class ReportController:
             output_dir,
         )
         return result
+
+    @staticmethod
+    def _load_grades(paths: list[Path]) -> list[QuestionGrade]:
+        try:
+            return load_question_grades(paths)
+        except ValueError as exc:
+            raise ReportWriteError(str(exc)) from exc
+
+    def _metadata(self, questions_dir: Path, student_id: str) -> ReportMetadata:
+        return ReportMetadata(
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            standard_dir=self._standard_dir,
+            questions_dir=questions_dir,
+            student_id=student_id,
+            vision_model=self._vision_model,
+            reasoning_model=self._reasoning_model,
+            prompt_versions=self._prompt_versions,
+        )
+
+    def _write_latex(
+        self,
+        exam: ExamReport,
+        questions_dir: Path,
+        output_dir: Path,
+        crops_dir: Path,
+    ) -> Path | None:
+        if self._latex_reporter is None:
+            return None
+        try:
+            details = load_question_report_details(questions_dir, crops_dir)
+        except ValueError as exc:
+            raise ReportWriteError(str(exc)) from exc
+        return self._latex_reporter.write(exam, details, output_dir)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from pydantic import ValidationError
 
@@ -21,6 +21,7 @@ from app.functions.question_names import (
     question_dir_name,
 )
 from app.functions.question_split import split_questions_by_exam_schema
+from app.functions.recognition_artifact import PAGE_RECOGNITION_GLOB
 from app.models.exam_schema import ExamSchema
 from app.models.question import ExtractResult, Question
 from app.models.recognition import PageRecognition
@@ -98,12 +99,12 @@ class QuestionExtractor:
         if latex_body.strip():
             parts.append(latex_body.strip())
         for fig in question.figure_refs:
-            caption = (fig.caption or "").replace("\n", " ")
-            # Path may be absolute; use as-is for local compile audit.
+            caption = " ".join((fig.caption or "").split())
             parts.append(f"% figure: {caption}")
             if fig.symbolic is not None and (fig.symbolic.repr or "").strip():
-                parts.append(f"% number_line: {fig.symbolic.repr.strip()}")
-            parts.append(rf"\includegraphics{{{fig.path}}}")
+                parts.append(f"% number_line: {' '.join(fig.symbolic.repr.split())}")
+            # POSIX slashes: LaTeX reads Windows ``\output`` as a macro.
+            parts.append(rf"\includegraphics{{{PureWindowsPath(fig.path).as_posix()}}}")
         if not parts:
             return
         path.write_text("\n".join(parts) + "\n", encoding="utf-8")
@@ -123,7 +124,7 @@ def load_page_recognitions(recognition_dir: Path) -> list[PageRecognition]:
     if not recognition_dir.is_dir():
         raise RecognitionNotFoundError(recognition_dir)
 
-    paths = sorted(recognition_dir.glob("page_*_recognition.json"))
+    paths = sorted(recognition_dir.glob(PAGE_RECOGNITION_GLOB))
     if not paths:
         raise RecognitionNotFoundError(recognition_dir)
 
@@ -140,10 +141,3 @@ def load_page_recognitions(recognition_dir: Path) -> list[PageRecognition]:
 
     pages.sort(key=lambda page: page.page_number)
     return pages
-
-
-def has_recognition_artifacts(recognition_dir: Path) -> bool:
-    recognition_dir = Path(recognition_dir)
-    return recognition_dir.is_dir() and any(
-        recognition_dir.glob("page_*_recognition.json")
-    )

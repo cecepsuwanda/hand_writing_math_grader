@@ -14,6 +14,20 @@ from app.controllers.recognize_controller import RecognizeController
 from app.controllers.render_controller import RenderController
 from app.controllers.report_controller import ReportController
 from app.controllers.validate_controller import ValidateController
+from app.exceptions import CropsRegionsMissingError, QuestionCropsInvalidError
+from app.functions.pages_artifact import crops_regions_present, load_pages_from_dir
+from app.functions.question_crops import (
+    list_crops_in_reading_order,
+    load_question_crops,
+    validate_question_crops,
+)
+from app.functions.workspace_reset import (
+    clear_directory_contents,
+    prepare_pipeline_workspace,
+)
+from app.models.defaults import DEFAULT_STUDENT_ID
+from app.models.grading import GradeResult
+from app.models.page import Page
 from app.models.process import (
     PROCESS_STAGES,
     ProcessProgress,
@@ -21,15 +35,13 @@ from app.models.process import (
     ProcessStage,
     QuestionScoreSummary,
 )
-from app.services.workspace.cleaner import (
-    clear_directory_contents,
-    prepare_pipeline_workspace,
-)
+from app.models.report import ReportResult
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[ProcessProgress], None]
 ClearedCallback = Callable[[Path, list[str]], None]
+QuestionCropsMissingCallback = Callable[[Path], None]
 
 
 class ProcessController:
@@ -46,6 +58,8 @@ class ProcessController:
         crop_controller: CropController | None = None,
         on_progress: ProgressCallback | None = None,
         on_output_cleared: ClearedCallback | None = None,
+        question_numbers: list[int] | None = None,
+        on_question_crops_missing: QuestionCropsMissingCallback | None = None,
     ) -> None:
         self._render = render_controller
         self._recognize = recognize_controller
@@ -57,6 +71,8 @@ class ProcessController:
         self._crop = crop_controller
         self._on_progress = on_progress
         self._on_output_cleared = on_output_cleared
+        self._question_numbers = list(question_numbers or [])
+        self._on_question_crops_missing = on_question_crops_missing
 
     def process(
         self,
@@ -67,7 +83,7 @@ class ProcessController:
         questions_dir: Path,
         output_dir: Path,
         dpi: int,
-        student_id: str = "student_001",
+        student_id: str = DEFAULT_STUDENT_ID,
         workspace_root: Path | None = None,
         reset_workspace: bool = True,
         crops_dir: Path | None = None,
@@ -93,7 +109,7 @@ class ProcessController:
                 self._on_output_cleared(root, removed)
 
         render_result = self._render.render(pdf_path, pages_dir, dpi)
-        self._emit(ProcessStage.RENDER, 1)
+        self._emit(ProcessStage.RENDER)
 
         from_crops = False
         if self._crop is not None:
@@ -104,72 +120,19 @@ class ProcessController:
                 force_yes=force_yes,
             )
             from_crops = True
-
-        self._recognize.recognize_pages(
-            render_result.pages,
-            pages_dir,
-            recognition_dir,
-            from_crops=from_crops,
-        )
-        self._emit(ProcessStage.RECOGNIZE, 2)
-
-        self._extract.extract(
-            recognition_dir=recognition_dir,
-            output_dir=questions_dir,
-            force_recognize=False,
-        )
-        self._emit(ProcessStage.EXTRACT, 3)
-
-        self._latex.build(questions_dir)
-        self._emit(ProcessStage.LATEX, 4)
-
-        self._validate.validate(questions_dir)
-        self._emit(ProcessStage.VALIDATE, 5)
-
-        grade_result = self._grade.grade(questions_dir)
-        self._emit(ProcessStage.GRADE, 6)
-
-        report_result = self._report.report(
-            questions_dir,
-            output_dir,
-            student_id=student_id,
-        )
-        self._emit(ProcessStage.REPORT, 7)
-
-        questions = [
-            QuestionScoreSummary(
-                question_id=g.question_id,
-                question_number=g.question_number,
-                score=g.score,
-                maximum_score=g.maximum_score,
-                review_status=g.review_status,
+            self._check_question_crops(
+                Path(crops_dir) if crops_dir is not None else self._crop.crops_dir
             )
-            for g in grade_result.grades
-        ]
-        total = report_result.exam_report.total_score
-        maximum = report_result.exam_report.maximum_total
-        overall = report_result.exam_report.overall_status
 
-        logger.info(
-            "Process complete for %s: %s/%s %s",
-            student_id,
-            total,
-            maximum,
-            overall.value,
-        )
-        return ProcessResult(
-            student_id=student_id,
-            questions=questions,
-            total_score=total,
-            maximum_total=maximum,
-            overall_status=overall,
-            output_dir=output_dir,
-            report_json_path=report_result.report_json_path,
-            summary_csv_path=report_result.summary_csv_path,
-            report_html_path=report_result.report_html_path,
-            questions_dir=questions_dir,
+        return self._run_from_recognition(
+            render_result.pages,
             pages_dir=pages_dir,
             recognition_dir=recognition_dir,
+            questions_dir=questions_dir,
+            output_dir=output_dir,
+            student_id=student_id,
+            crops_dir=crops_dir,
+            from_crops=from_crops,
         )
 
     def process_from_crops(
@@ -179,105 +142,165 @@ class ProcessController:
         recognition_dir: Path,
         questions_dir: Path,
         output_dir: Path,
-        student_id: str = "student_001",
+        student_id: str = DEFAULT_STUDENT_ID,
         crops_dir: Path | None = None,
     ) -> ProcessResult:
         """Continue pipeline from existing page images + regions crops (no re-ink)."""
-        from app.functions.pages_artifact import crops_regions_present, load_pages_from_dir
-        from app.exceptions import MathGraderError
-
         pages_dir = Path(pages_dir)
         recognition_dir = Path(recognition_dir)
         questions_dir = Path(questions_dir)
-        output_dir = Path(output_dir)
         crops = Path(crops_dir) if crops_dir is not None else None
 
-        if crops is not None and not crops_regions_present(crops):
-            raise MathGraderError(
-                f"No page_*_regions.json under {crops}. "
-                "Run menu 2 (crop ink) or 3 (recrop) first."
-            )
+        if crops is not None:
+            if not crops_regions_present(crops):
+                raise CropsRegionsMissingError(crops)
+            self._check_question_crops(crops)
+
+        # Load pages first so a broken pages/ does not cost the prior artifacts.
+        pages = load_pages_from_dir(pages_dir)
 
         # Drop prior recognition/questions so a shorter rerun cannot grade leftovers.
         # Pages, crops, and standards stay.
         clear_directory_contents(recognition_dir)
         clear_directory_contents(questions_dir)
 
-        pages = load_pages_from_dir(pages_dir)
-        self._recognize.recognize_pages(
+        return self._run_from_recognition(
             pages,
-            pages_dir,
-            recognition_dir,
+            pages_dir=pages_dir,
+            recognition_dir=recognition_dir,
+            questions_dir=questions_dir,
+            output_dir=Path(output_dir),
+            student_id=student_id,
+            crops_dir=crops,
             from_crops=True,
         )
-        self._emit(ProcessStage.RECOGNIZE, 2)
+
+    def _run_from_recognition(
+        self,
+        pages: list[Page],
+        *,
+        pages_dir: Path,
+        recognition_dir: Path,
+        questions_dir: Path,
+        output_dir: Path,
+        student_id: str,
+        crops_dir: Path | None,
+        from_crops: bool,
+    ) -> ProcessResult:
+        """Recognize → extract → LaTeX → validate → grade → report."""
+        self._recognize.recognize_pages(
+            pages, pages_dir, recognition_dir, from_crops=from_crops
+        )
+        self._emit(ProcessStage.RECOGNIZE)
 
         self._extract.extract(
             recognition_dir=recognition_dir,
             output_dir=questions_dir,
             force_recognize=False,
         )
-        self._emit(ProcessStage.EXTRACT, 3)
+        self._emit(ProcessStage.EXTRACT)
 
         self._latex.build(questions_dir)
-        self._emit(ProcessStage.LATEX, 4)
+        self._emit(ProcessStage.LATEX)
 
         self._validate.validate(questions_dir)
-        self._emit(ProcessStage.VALIDATE, 5)
+        self._emit(ProcessStage.VALIDATE)
 
         grade_result = self._grade.grade(questions_dir)
-        self._emit(ProcessStage.GRADE, 6)
+        self._emit(ProcessStage.GRADE)
 
         report_result = self._report.report(
             questions_dir,
             output_dir,
             student_id=student_id,
+            crops_dir=self._report_crops_dir(crops_dir),
         )
-        self._emit(ProcessStage.REPORT, 7)
+        self._emit(ProcessStage.REPORT)
 
-        questions = [
-            QuestionScoreSummary(
-                question_id=g.question_id,
-                question_number=g.question_number,
-                score=g.score,
-                maximum_score=g.maximum_score,
-                review_status=g.review_status,
-            )
-            for g in grade_result.grades
-        ]
-        total = report_result.exam_report.total_score
-        maximum = report_result.exam_report.maximum_total
-        overall = report_result.exam_report.overall_status
-
+        result = self._build_result(
+            grade_result,
+            report_result,
+            student_id=student_id,
+            output_dir=output_dir,
+            questions_dir=questions_dir,
+            pages_dir=pages_dir,
+            recognition_dir=recognition_dir,
+        )
         logger.info(
-            "Process-from-crops complete for %s: %s/%s %s",
+            "Process complete for %s: %s/%s %s",
             student_id,
-            total,
-            maximum,
-            overall.value,
+            result.total_score,
+            result.maximum_total,
+            result.overall_status.value,
         )
+        return result
+
+    @staticmethod
+    def _build_result(
+        grade_result: GradeResult,
+        report_result: ReportResult,
+        *,
+        student_id: str,
+        output_dir: Path,
+        questions_dir: Path,
+        pages_dir: Path,
+        recognition_dir: Path,
+    ) -> ProcessResult:
+        exam = report_result.exam_report
         return ProcessResult(
             student_id=student_id,
-            questions=questions,
-            total_score=total,
-            maximum_total=maximum,
-            overall_status=overall,
+            questions=[
+                QuestionScoreSummary(
+                    question_id=g.question_id,
+                    question_number=g.question_number,
+                    score=g.score,
+                    maximum_score=g.maximum_score,
+                    review_status=g.review_status,
+                )
+                for g in grade_result.grades
+            ],
+            total_score=exam.total_score,
+            maximum_total=exam.maximum_total,
+            overall_status=exam.overall_status,
             output_dir=output_dir,
             report_json_path=report_result.report_json_path,
             summary_csv_path=report_result.summary_csv_path,
             report_html_path=report_result.report_html_path,
+            report_tex_path=report_result.report_tex_path,
             questions_dir=questions_dir,
             pages_dir=pages_dir,
             recognition_dir=recognition_dir,
         )
 
-    def _emit(self, stage: ProcessStage, completed: int) -> None:
+    def _report_crops_dir(self, crops_dir: Path | None) -> Path | None:
+        if crops_dir is not None:
+            return Path(crops_dir)
+        if self._crop is not None:
+            return self._crop.crops_dir
+        return None
+
+    def _check_question_crops(self, crops_dir: Path) -> None:
+        """Validate user question_crops, or warn that the model will guess numbers."""
+        try:
+            mapping = load_question_crops(crops_dir)
+        except ValueError as exc:
+            raise QuestionCropsInvalidError([str(exc)]) from exc
+        if mapping is None:
+            if self._on_question_crops_missing is not None:
+                self._on_question_crops_missing(crops_dir)
+            return
+        known = [crop.name for crop in list_crops_in_reading_order(crops_dir)]
+        report = validate_question_crops(mapping, self._question_numbers, known)
+        if not report.ok:
+            raise QuestionCropsInvalidError(report.errors)
+
+    def _emit(self, stage: ProcessStage) -> None:
         if self._on_progress is None:
             return
         self._on_progress(
             ProcessProgress(
                 stage=stage,
-                completed=completed,
+                completed=PROCESS_STAGES.index(stage) + 1,
                 total=len(PROCESS_STAGES),
             )
         )

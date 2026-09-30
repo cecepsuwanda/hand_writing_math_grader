@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from app.functions.question_names import latex_source_filename
 from app.models.question import Question, StudentStep
@@ -137,11 +137,12 @@ def build_student_latex(
         lines.append("% (no steps)")
 
     for fig in question.figure_refs:
-        caption = escape_latex_text(fig.caption or "")
+        # Collapse newlines so the text stays inside the ``%`` comment.
+        caption = escape_latex_text(" ".join((fig.caption or "").split()))
         lines.append(f"% figure: {caption}")
         if fig.symbolic is not None and (fig.symbolic.repr or "").strip():
-            lines.append(f"% number_line: {fig.symbolic.repr.strip()}")
-        lines.append(rf"\includegraphics{{{fig.path}}}")
+            lines.append(f"% number_line: {' '.join(fig.symbolic.repr.split())}")
+        lines.append(rf"\includegraphics{{{PureWindowsPath(fig.path).as_posix()}}}")
 
     final = ""
     if question.student_final_symbolic is not None:

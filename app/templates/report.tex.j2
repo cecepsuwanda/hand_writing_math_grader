@@ -1,0 +1,113 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{cancel}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\title{Laporan Penilaian}
+\author{}
+\date{\VAR{report.generated_at}}
+
+\begin{document}
+\maketitle
+
+\textbf{Mahasiswa:} \VAR{report.student_id}
+
+\section*{Ringkasan}
+\begin{tabular}{|c|r|r|l|}
+\hline
+Soal & Skor & Maks & Status \\ \hline
+\BLOCK{for row in report.summary}
+\VAR{row.number} & \VAR{row.score} & \VAR{row.maximum} & \VAR{row.status} \\ \hline
+\BLOCK{endfor}
+\textbf{Total} & \textbf{\VAR{report.total}} & \textbf{\VAR{report.maximum}} & \VAR{report.overall_status} \\ \hline
+\end{tabular}
+
+\BLOCK{for q in report.questions}
+\clearpage
+\section*{\VAR{q.title}}
+\BLOCK{if q.stem}
+\textbf{Soal:} \VAR{q.stem}
+\BLOCK{endif}
+
+\subsection*{Gambar jawaban (hasil crop)}
+\BLOCK{for img in q.images}
+\begin{center}
+\includegraphics[width=\linewidth,height=0.45\textheight,keepaspectratio]{\VAR{img}}
+\end{center}
+\BLOCK{endfor}
+\BLOCK{for name in q.missing_images}
+\fbox{crop tidak ditemukan: \VAR{name}}\par
+\BLOCK{endfor}
+\BLOCK{if not q.images and not q.missing_images}
+\emph{Tidak ada gambar crop untuk soal ini.}
+\BLOCK{endif}
+
+\subsection*{Hasil bacaan OCR dan komentar penilaian}
+\BLOCK{if q.steps}
+\begin{longtable}{|c|L{0.27\linewidth}|L{0.09\linewidth}|L{0.09\linewidth}|r|L{0.22\linewidth}|}
+\hline
+No & Bacaan OCR & Peran & Validasi & Skor & Komentar \\ \hline
+\endhead
+\BLOCK{for s in q.steps}
+\VAR{s.number} & \VAR{s.ocr} & \VAR{s.role} & \textcolor{\VAR{s.status_color}}{\VAR{s.status}} & \VAR{s.score} & \VAR{s.comment} \\ \hline
+\BLOCK{endfor}
+\end{longtable}
+\BLOCK{else}
+\emph{Tidak ada langkah yang terbaca.}
+\BLOCK{endif}
+
+\BLOCK{if q.final}
+\paragraph{Jawaban akhir.} \VAR{q.final.ocr}
+
+Validasi: \textcolor{\VAR{q.final.status_color}}{\VAR{q.final.status}} \quad Skor: \VAR{q.final.score}
+
+Komentar: \VAR{q.final.comment}
+\BLOCK{endif}
+
+\BLOCK{if q.parts}
+\paragraph{Komponen penilaian.}
+\begin{longtable}{|L{0.18\linewidth}|L{0.10\linewidth}|r|L{0.48\linewidth}|}
+\hline
+Komponen & Validasi & Skor & Komentar \\ \hline
+\endhead
+\BLOCK{for p in q.parts}
+\VAR{p.number} & \textcolor{\VAR{p.status_color}}{\VAR{p.status}} & \VAR{p.score} & \VAR{p.comment} \\ \hline
+\BLOCK{endfor}
+\end{longtable}
+\BLOCK{endif}
+
+\BLOCK{if q.figures}
+\paragraph{Gambar / garis bilangan (OCR).}
+\begin{itemize}
+\BLOCK{for f in q.figures}
+\item{} \VAR{f.caption} \VAR{f.symbolic}
+\BLOCK{endfor}
+\end{itemize}
+\BLOCK{endif}
+
+\BLOCK{if q.graded}
+\paragraph{Skor soal.} \VAR{q.score} / \VAR{q.maximum} --- \VAR{q.review_status}
+\BLOCK{else}
+\paragraph{Skor soal.} \emph{Belum dinilai (grading.json tidak ada).}
+\BLOCK{endif}
+
+\BLOCK{endfor}
+\clearpage
+\section*{Metadata}
+\begin{tabular}{lL{0.7\linewidth}}
+Dibuat & \VAR{report.generated_at} \\
+Model vision & \VAR{report.vision_model} \\
+Model reasoning & \VAR{report.reasoning_model} \\
+Versi prompt & \VAR{report.prompt_versions} \\
+\end{tabular}
+
+\end{document}

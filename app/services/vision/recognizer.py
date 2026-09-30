@@ -15,16 +15,19 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.exceptions import (
+    EmptyRegionsError,
     InvalidRecognitionJsonError,
     OllamaModelNotConfiguredError,
+    RegionsArtifactMissingError,
 )
 from app.functions.image_crop import crop_region, union_regions
-from app.functions.json_extract import extract_json_object
+from app.functions.json_extract import coerce_confidence, extract_json_object
 from app.functions.kunci_ingest import (
     format_recognition_question_block,
     format_recognition_stems_block,
 )
 from app.functions.page_names import page_recognition_filename
+from app.functions.question_crops import crop_to_questions, load_question_crops
 from app.functions.regions_artifact import (
     crop_filename,
     load_regions_artifact,
@@ -71,19 +74,6 @@ def _coerce_step_number(value: object, fallback: int) -> int:
         return fallback
     if number < 1:
         return fallback
-    return number
-
-
-def _coerce_confidence(value: object) -> float | None:
-    """Keep confidence in ``[0, 1]``; drop values the schema would reject."""
-    if value is None or value == "":
-        return None
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    if number < 0.0 or number > 1.0:
-        return None
     return number
 
 
@@ -165,7 +155,7 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
             regions=regions,
             source=region_source,
         )
-        self._crop_regions_to_disk(image_path, page_dir, regions)
+        self._crop_regions_to_disk(image_path, page_dir, page_number, regions)
         logger.info(
             "proposed crops page=%s regions=%s source=%s json=%s",
             page_number,
@@ -183,15 +173,15 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
         page_dir = self.page_crop_dir(page_number)
         json_path = regions_json_path(page_dir, page_number)
         if not json_path.is_file():
-            raise FileNotFoundError(f"regions JSON not found: {json_path}")
+            raise RegionsArtifactMissingError(json_path)
         _page, source, regions = load_regions_artifact(json_path)
         if not regions:
-            raise ValueError(f"no regions in {json_path}")
+            raise EmptyRegionsError(json_path)
         # Refresh crop_path fields / keep source after edit
         write_regions_artifact(
             page_dir, page_number, regions=regions, source=source
         )
-        self._crop_regions_to_disk(image_path, page_dir, regions)
+        self._crop_regions_to_disk(image_path, page_dir, page_number, regions)
         logger.info(
             "recropped page=%s regions=%s from %s",
             page_number,
@@ -228,24 +218,29 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
         questions: list[RecognizedQuestion] = []
         seen_numbers: set[int] = set()
         page_review = region_source == "fallback"
+        question_map = self._load_question_map()
 
         for index, det in enumerate(regions):
-            crop_path = page_dir / crop_filename(index)
+            crop_path = page_dir / crop_filename(page_number, index)
+            assigned = (question_map or {}).get(crop_path.name, [])
 
             for recognized in self._transcribe_math(
                 crop_path=crop_path,
                 page_number=page_number,
                 detected=det,
+                assigned_numbers=assigned,
             ):
+                notes = [f"region_source={region_source}", recognized.reconcile_note]
                 recognized = recognized.model_copy(
                     update={
                         "source": region_source,
-                        "reconcile_note": f"region_source={region_source}",
+                        "reconcile_note": "; ".join(n for n in notes if n),
                     }
                 )
 
                 qnum = recognized.question_number
-                if qnum > 0 and qnum in seen_numbers:
+                # User-assigned numbers may legitimately span several crops.
+                if qnum > 0 and qnum in seen_numbers and qnum not in assigned:
                     logger.warning(
                         "page=%s duplicate question_number=%s from crop %s; "
                         "keeping with question_number=0 for audit",
@@ -293,18 +288,21 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
         self,
         image_path: Path,
         page_dir: Path,
+        page_number: int,
         regions: list[DetectedRegion],
     ) -> list[Path]:
         paths: list[Path] = []
         keep: set[str] = set()
         for index, det in enumerate(regions):
-            out = page_dir / crop_filename(index)
+            out = page_dir / crop_filename(page_number, index)
             result = crop_region(image_path, det.region, out)
             paths.append(result.path)
             keep.add(out.name)
-        for stale in page_dir.glob("region_*_solution.png"):
-            if stale.name not in keep:
-                stale.unlink(missing_ok=True)
+        # Legacy ``region_*`` names predate the page prefix; drop them too.
+        for pattern in ("page_*_region_*_solution.png", "region_*_solution.png"):
+            for stale in page_dir.glob(pattern):
+                if stale.name not in keep:
+                    stale.unlink(missing_ok=True)
         return paths
 
     def _image_size(self, image_path: Path) -> tuple[int, int]:
@@ -375,25 +373,39 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
             return detected_number if detected_number > 0 else 0
         return llm_number or detected_number
 
+    def _load_question_map(self) -> dict[str, list[int]] | None:
+        """Crop name → user-confirmed question numbers; ``None`` if not labeled yet."""
+        mapping = load_question_crops(self._crops_dir)
+        return crop_to_questions(mapping) if mapping is not None else None
+
+    def _prompt_for_crop(self, assigned_numbers: list[int]) -> str:
+        if len(assigned_numbers) < 2:
+            return self._math_prompt
+        listed = ", ".join(str(n) for n in assigned_numbers)
+        return (
+            f"{self._math_prompt}\n\nThis crop contains exam questions {listed}. "
+            'Return {"questions": [...]} with one object per question, and use only '
+            f"these question_number values: {listed}."
+        )
+
     def _transcribe_math(
         self,
         *,
         crop_path: Path,
         page_number: int,
         detected: DetectedRegion,
+        assigned_numbers: list[int] | None = None,
     ) -> list[RecognizedQuestion]:
+        assigned = list(assigned_numbers or [])
+        prompt = self._prompt_for_crop(assigned)
         max_attempts = 3
-        last_error: Exception | None = None
         raw = ""
         for attempt in range(1, max_attempts + 1):
-            raw = self._client.generate_with_image(
-                self._math_prompt, crop_path, self._model
-            )
+            raw = self._client.generate_with_image(prompt, crop_path, self._model)
             try:
                 payload = extract_json_object(raw)
                 break
             except ValueError as exc:
-                last_error = exc
                 logger.warning(
                     "page=%s crop_math JSON parse failed attempt=%s/%s: %s",
                     page_number,
@@ -404,11 +416,6 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
                 if attempt >= max_attempts:
                     self._write_raw_response(crop_path, raw, suffix="crop_math_failed")
                     raise InvalidRecognitionJsonError(page_number, str(exc)) from exc
-        else:
-            self._write_raw_response(crop_path, raw, suffix="crop_math_failed")
-            raise InvalidRecognitionJsonError(
-                page_number, str(last_error or "unknown JSON parse failure")
-            )
 
         items = self._question_payloads(payload)
         return [
@@ -416,6 +423,7 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
                 item,
                 crop_path=crop_path,
                 detected=detected,
+                assigned_numbers=assigned,
             )
             for item in items
         ]
@@ -442,7 +450,9 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
         *,
         crop_path: Path,
         detected: DetectedRegion,
+        assigned_numbers: list[int] | None = None,
     ) -> RecognizedQuestion:
+        assigned = list(assigned_numbers or [])
         llm_qnum = 0
         raw_qnum = payload.get("question_number")
         if raw_qnum is not None and raw_qnum != "":
@@ -454,7 +464,20 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
                     raw_qnum,
                 )
                 llm_qnum = 0
-        qnum = self._resolve_question_number(llm_qnum, detected.question_number)
+        review_required = False
+        reconcile_note = ""
+        if len(assigned) == 1:
+            qnum = assigned[0]
+        elif assigned:
+            qnum = llm_qnum if llm_qnum in assigned else 0
+            if qnum == 0:
+                review_required = True
+                reconcile_note = (
+                    f"question_number={llm_qnum} not in assigned "
+                    f"{','.join(str(n) for n in assigned)}"
+                )
+        else:
+            qnum = self._resolve_question_number(llm_qnum, detected.question_number)
         steps_raw = payload.get("steps") or []
         steps: list[RecognizedStep] = []
         for item in steps_raw:
@@ -479,7 +502,7 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
                     latex="",
                     symbolic=sym,
                     role=role,
-                    confidence=_coerce_confidence(item.get("confidence")),
+                    confidence=coerce_confidence(item.get("confidence")),
                 )
             )
 
@@ -503,7 +526,9 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
             final_answer=final_answer,
             final_answer_symbolic=final_sym,
             latex_document=str(payload.get("latex_document") or ""),
-            confidence=_coerce_confidence(payload.get("confidence")),
+            confidence=coerce_confidence(payload.get("confidence")),
+            review_required=review_required,
+            reconcile_note=reconcile_note,
         )
 
     def _write_artifact(self, recognition: PageRecognition) -> Path:

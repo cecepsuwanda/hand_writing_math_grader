@@ -2,10 +2,10 @@
 name: review-math-grader-compliance
 description: >-
   Reviews Math Grader code or diffs for MVC, SOLID/DI, clean code, OOP+FP,
-  recognition fidelity, SymPy-before-LLM validation, audit artifacts, and
-  CLI-only MVP. Use when reviewing PRs, checking architecture compliance,
-  auditing a phase implementation, or when the user asks for a compliance or
-  architecture review.
+  topic-pack boundaries, recognition fidelity, SymPy-before-LLM validation,
+  per-run artifacts, and CLI-first product rules. Use when reviewing PRs,
+  checking architecture compliance, auditing an extension, or when the user
+  asks for a compliance or architecture review.
 ---
 
 # Review Math Grader Compliance
@@ -22,35 +22,47 @@ description: >-
 
 ### MVC, SOLID, clean code, OOP+FP
 
-- [ ] View tidak memanggil Ollama/SymPy/filesystem business persist
-- [ ] Controller tipis (tidak berisi prompt/math grading)
-- [ ] Service bergantung interface / DI, bukan konkret library tersebar (SOLID)
-- [ ] Pure transforms di `functions/` (FP); bukan static util class kosong
-- [ ] Service/client ber-state memakai OOP di `services/`
-- [ ] Clean code: nama bermakna, fungsi fokus, type hints, error eksplisit
+- [ ] View tidak memanggil Ollama/SymPy/persist artefak
+- [ ] View tidak import `app.controllers` / `app.services`; error/peringatan ke stderr (`print_error` / `print_warning` di `error_view`)
+- [ ] Tidak ada `input()` di controller atau `cli.py`; input interaktif hanya lewat `views/prompt_view.py`
+- [ ] Controller tipis (orkestrasi + view; tidak berisi prompt/rumus grading)
+- [ ] Controller tidak import konstanta/implementasi dari `app/services` (di-inject `pipeline_factory`); tidak glob/parse artefak sendiri (pakai `functions/*_artifact.py`)
+- [ ] Semua `*Result` = model Pydantic di `app/models/` (tanpa dataclass hasil di controller); default bersama dari `models/defaults.py`
+- [ ] `cli.py` tipis: parser, `_HANDLERS`, helper alur bersama, adapter `_CliMenuActions`; state menu di `MenuController` / `MenuSession`
+- [ ] Service bergantung interface / DI lewat `pipeline_factory`, bukan konkret library tersebar
+- [ ] `functions/` deterministik; I/O hanya di modul artefak yang diizinkan (`*_artifact.py`, `question_crops.py`, `image_crop.py`, `report_details.py`, `workspace_reset.py`, `load_exam_schema`); tanpa network/model
+- [ ] Service/client ber-state memakai OOP di `services/`; tidak ada static util class
+- [ ] Error domain = subclass `MathGraderError`; tidak menelan exception
+- [ ] Clean code: nama bermakna, fungsi fokus, type hints
 - [ ] Tidak ada god-interface / god-class
+
+### Topic pack
+
+- [ ] Logika khusus bab ada di `app/topics/<id>/` / capability, bukan di controller atau service inti
+- [ ] Pack baru terdaftar di `_PACKS`; capability baru di `app/capabilities/registry.py` + `rewrite_*` pure
+- [ ] Tidak mengklaim support bab yang belum punya pack + tes (`docs/math-topics.md`)
 
 ### Recognition & grading
 
 - [ ] Recognition tidak mengoreksi atau mengarang langkah mahasiswa
+- [ ] Konteks vision hanya stem + `expects_figure` (tanpa steps/HP)
+- [ ] `question_crops/` divalidasi: file tidak valid → `QuestionCropsInvalidError`; folder hilang → peringatan
 - [ ] `raw_text` / gambar asli dipertahankan
-- [ ] SymPy dicoba sebelum LLM untuk klaim simbolik
-- [ ] Output LLM divalidasi schema; `uncertain` diizinkan
-- [ ] Grading berbasis rubric + partial credit; audit fields ada
+- [ ] SymPy dicoba sebelum LLM; output LLM divalidasi schema; `uncertain` diizinkan
+- [ ] Skor langkah = konsistensi; `final_answer` = min(konsistensi, standar); partial credit; audit fields ada
 
-### Produk & proses
+### Produk & artefak
 
-- [ ] Entry tetap CLI; tidak ada FastAPI/Streamlit sebagai pengganti MVP
-- [ ] Domain sesuai roadmap `docs/topik.md` / `docs/math-topics.md`; tidak mengklaim support bab di luar scope saat ini
-- [ ] Nama model dari config, bukan hard-coded
-- [ ] Artefak intermediate tidak dihapus
-- [ ] Ada/diperbarui tests untuk perubahan phase (tanpa `tests/test_*.py` baru; OOP `class Test*` di file inventaris — lihat `docs/testing.md`)
-- [ ] Type hints + penanganan error eksplisit
+- [ ] Entry tetap CLI; API hanya adapter opsional
+- [ ] Nama model dari config/env, bukan hard-coded
+- [ ] Pengosongan output hanya `data/output/<nama_pdf>/` (per-run); `standards/` dan run lain aman
+- [ ] Artefak intermediate tidak dihapus bila tahap berikut gagal
+- [ ] Dokumen kanonik diperbarui bila kontrak/CLI/pack berubah
 
 ### Testing
 
-- [ ] Tidak menambah file `test_*.py` / kasus uji di `conftest.py`
-- [ ] Kasus baru = method di `class Test*` (bukan free-function di level modul)- [ ] Fake/double sebagai class; tidak memanggil Ollama live di pytest
+- [ ] Sesuai rule `.cursor/rules/testing.mdc` (tanpa file `test_*.py` baru, OOP `class Test*`, setup dari `tests/support/`, tanpa Ollama live)
+- [ ] Perubahan perilaku disertai tes baru/diperbarui
 
 ## Format laporan
 
@@ -58,7 +70,7 @@ description: >-
 ## Compliance review
 
 **Scope:** …
-**Phase terkait:** …
+**Area terkait:** …
 
 ### Wajib diperbaiki
 - …
@@ -73,7 +85,5 @@ description: >-
 ## Referensi
 
 - `docs/architecture.md`, `docs/conventions.md`, `docs/math-topics.md`, `docs/testing.md`
-- `docs/topik.md`
 - `.cursor/rules/mvc-architecture.mdc`, `math-grader-core.mdc`, `recognition-and-grading.mdc`, `testing.mdc`
-- `.cursor/skills/write-math-grader-tests`
-- `docs/plan_ai_math_grader_ollama.md` §2, §23, §31, §32, §33
+- Skills: `.cursor/skills/extend-math-grader`, `.cursor/skills/write-math-grader-tests`

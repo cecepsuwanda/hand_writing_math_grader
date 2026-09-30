@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from app.exceptions import QuestionsNotFoundError, ValidationWriteError
-from app.functions.question_names import question_artifact_filename, validation_filename
+from app.functions.artifact_guard import changed_files, snapshot_files
+from app.functions.validation_artifact import (
+    load_question_artifact,
+    question_artifact_paths,
+    write_validation_artifact,
+)
 from app.interfaces.validator import StepValidator
 from app.models.question import Question
 from app.models.validation import QuestionValidation, ValidateResult
@@ -22,7 +25,7 @@ class ValidateController:
 
     def validate(self, questions_dir: Path) -> ValidateResult:
         questions_dir = Path(questions_dir)
-        question_paths = sorted(questions_dir.glob(f"*/{question_artifact_filename()}"))
+        question_paths = question_artifact_paths(questions_dir)
         if not question_paths:
             raise QuestionsNotFoundError(questions_dir)
 
@@ -30,11 +33,10 @@ class ValidateController:
         artifact_paths: list[Path] = []
         for path in question_paths:
             question = self._load_question(path)
-            original = path.read_text(encoding="utf-8")
+            snapshot = snapshot_files([path])
             validation = self._validator.validate_question(question)
             artifact = self._write_validation(path.parent, validation)
-            after = path.read_text(encoding="utf-8")
-            if after != original:
+            if changed_files(snapshot):
                 raise ValidationWriteError(
                     question.question_id,
                     "question.json was modified while writing validation.json",
@@ -53,20 +55,16 @@ class ValidateController:
             artifact_paths=artifact_paths,
         )
 
-    def _load_question(self, path: Path) -> Question:
+    @staticmethod
+    def _load_question(path: Path) -> Question:
         try:
-            return Question.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError, ValueError) as exc:
+            return load_question_artifact(path)
+        except ValueError as exc:
             raise ValidationWriteError(path.parent.name, str(exc)) from exc
 
-    def _write_validation(
-        self,
-        question_dir: Path,
-        validation: QuestionValidation,
-    ) -> Path:
-        path = question_dir / validation_filename()
+    @staticmethod
+    def _write_validation(question_dir: Path, validation: QuestionValidation) -> Path:
         try:
-            path.write_text(validation.model_dump_json(indent=2), encoding="utf-8")
+            return write_validation_artifact(question_dir, validation)
         except OSError as exc:
             raise ValidationWriteError(validation.question_id, str(exc)) from exc
-        return path

@@ -6,24 +6,23 @@ alwaysApply: false
 
 # MVC Architecture
 
-Arah ketergantungan: View → Controller → Services/Models → Infrastructure.
+Arah ketergantungan: View → Controller → Services/Models → Infrastructure. Tabel lapisan + peta folder: `docs/architecture.md`.
 
-Proyek ini wajib mengikuti **MVC**, **SOLID**, **clean code**, serta **OOP** berdampingan dengan **functional programming**.
+Kebijakan nyata yang sering salah dibaca:
 
-| Layer | Lakukan | Jangan |
-|-------|---------|--------|
-| `views/` | Progress, summary, error, path | Ollama, SymPy, persist file |
-| `controllers/` | Orkestrasi + map error | Prompt LLM, rumus grading |
-| `services/` | Use-case + adapter (DI) | Print ke stdout (kecuali logger) |
-| `functions/` | Pure transform | I/O / network / mutasi input |
-| `interfaces/` | ABC/Protocol sempit | Implementasi library konkret |
+- **Controller boleh memanggil view** (progress, error, prompt konfirmasi crop/label). Controller tidak berisi prompt LLM atau rumus grading, tidak memanggil `input()` (pakai `views/prompt_view.py`), dan tidak meng-import konstanta dari `app/services/` (inject lewat konstruktor, mis. `PromptVersions`).
+- **View** tidak meng-import `app.controllers` / `app.services`; semua `*Result` ada di `app/models/` (Pydantic). Error/peringatan ke stderr (`error_view.print_error` / `print_warning`).
+- **`cli.py` tipis**: argparse + `_HANDLERS` + flow bersama menu/subcommand. State menu ada di `MenuController`/`MenuSession`; langkah ber-efek samping lewat port `MenuActions`.
+- **`app/functions/`** = transformasi deterministik. Boleh baca/tulis **artefak run** hanya di `*_artifact.py`, `question_crops.py`, `image_crop.py`, `report_details.py`, `workspace_reset.py`, `load_exam_schema`. Tidak boleh network / model / mutasi input.
+- **Services** tidak mencetak ke stdout (pakai `logging`). Error domain = subclass `MathGraderError`.
+- Wiring (DI) terpusat di `app/services/pipeline_factory.py`, dipakai CLI dan API.
 
 ## SOLID, clean code, OOP + FP
 
-- **SOLID**: bergantung pada `interfaces/`; injeksi dependency lewat konstruktor; interface sempit; satu alasan berubah per modul.
-- **Clean code**: fungsi kecil dan fokus; konfigurasi terpusat (`app/config/`); type hints; error handling eksplisit; komentar hanya untuk “mengapa”.
+- **SOLID**: bergantung pada `interfaces/`; injeksi lewat konstruktor; interface sempit; satu alasan berubah per modul.
+- **Clean code**: fungsi kecil; konfigurasi terpusat (`app/config/`); type hints; error eksplisit; komentar hanya untuk "mengapa".
 - **OOP**: encapsulation di `services/` / client ber-state; polymorphism lewat ABC/Protocol; domain model Pydantic.
-- **FP**: transformasi deterministik di `app/functions/` tanpa side effect; jangan buat util class berisi static method saja.
+- **FP**: jangan buat util class berisi static method saja; composition over inheritance.
 
 ```python
 # ❌ BAD — controller memanggil Ollama langsung
@@ -31,10 +30,9 @@ def process(pdf):
     return httpx.post("http://localhost:11434/...", ...)
 
 # ✅ GOOD — controller memanggil abstraksi yang diinjeksi
-def process(self, pdf: Path) -> GradeReport:
-    pages = self.renderer.render(pdf)
-    recognition = self.recognizer.recognize_pages(pages)
-    return self.grader.grade(recognition)
+render_result = self._render.render(pdf_path, pages_dir, dpi)
+self._recognize.recognize_pages(render_result.pages, pages_dir, recognition_dir)
+grade_result = self._grade.grade(questions_dir)
 ```
 
-Injection lewat konstruktor terhadap `interfaces/`. Composition over inheritance. Detail: `docs/conventions.md`.
+Detail: `docs/conventions.md`.

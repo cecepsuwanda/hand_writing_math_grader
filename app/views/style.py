@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import Sequence
 
 _VT_ENABLED = False
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def configure_console_streams() -> None:
+    """Never crash on box/✓ glyphs when stdout/stderr use a legacy code page."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (ValueError, OSError):  # detached / closed stream
+            continue
 
 
 def _stdout_is_tty() -> bool:
@@ -83,14 +97,26 @@ def rule(title: str = "", width: int = 42) -> str:
     return dim("─" * left) + bold(label) + dim("─" * right)
 
 
+def bar(fraction: float, width: int = 10) -> str:
+    filled = int(round(max(0.0, min(1.0, fraction)) * width))
+    return "█" * filled + "░" * (width - filled)
+
+
+def visible_len(text: str) -> int:
+    """Printable width of ``text`` (ANSI escape sequences take no columns)."""
+    return len(_ANSI_ESCAPE.sub("", text))
+
+
 def box(lines: Sequence[str], *, width: int | None = None) -> str:
     content = [str(line) for line in lines]
     if width is None:
-        width = max((len(line) for line in content), default=0)
+        width = max((visible_len(line) for line in content), default=0)
     width = max(width, 0)
     top = "┌" + "─" * (width + 2) + "┐"
     bottom = "└" + "─" * (width + 2) + "┘"
-    body = [f"│ {line.ljust(width)} │" for line in content]
+    body = [
+        f"│ {line}{' ' * max(width - visible_len(line), 0)} │" for line in content
+    ]
     return "\n".join([top, *body, bottom])
 
 

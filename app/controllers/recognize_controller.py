@@ -1,3 +1,7 @@
+"""Run vision recognition per page (full page or approved crops)."""
+
+from __future__ import annotations
+
 from pathlib import Path
 
 from app.exceptions import RecognitionPathMismatchError
@@ -23,13 +27,9 @@ class RecognizeController:
         pages_dir: Path,
         recognition_dir: Path,
         dpi: int,
-        *,
-        from_crops: bool = False,
     ) -> RecognizeResult:
         pages = self._renderer.render(pdf_path, pages_dir, dpi)
-        return self.recognize_pages(
-            pages, pages_dir, recognition_dir, from_crops=from_crops
-        )
+        return self.recognize_pages(pages, pages_dir, recognition_dir)
 
     def recognize_pages(
         self,
@@ -39,6 +39,7 @@ class RecognizeController:
         *,
         from_crops: bool = False,
     ) -> RecognizeResult:
+        pages_dir = Path(pages_dir)
         recognition_dir = Path(recognition_dir)
         self._assert_output_dir(recognition_dir)
 
@@ -65,7 +66,7 @@ class RecognizeController:
         )
 
     def _assert_output_dir(self, recognition_dir: Path) -> None:
-        recognizer_dir = getattr(self._recognizer, "output_dir", None)
+        recognizer_dir = self._recognizer.output_dir
         if recognizer_dir is None:
             return
         if Path(recognizer_dir).resolve() != recognition_dir.resolve():

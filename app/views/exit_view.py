@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import sys
-from typing import Literal
 
+from app.functions.menu_choices import ContinueOrExit, parse_continue_or_exit
+from app.views.prompt_view import read_line
 from app.views.style import bold, box, cyan, dim
-
-ContinueOrExit = Literal["continue", "exit"]
 
 # Set by CLI after an interactive process session already dismissed the user.
 _skip_wait_for_exit = False
@@ -29,10 +28,7 @@ def wait_for_exit() -> None:
         return
     if not sys.stdin.isatty():
         return
-    try:
-        input(dim("\nTekan Enter untuk keluar..."))
-    except (EOFError, KeyboardInterrupt):
-        print()
+    read_line(dim("\nTekan Enter untuk keluar..."))
 
 
 def prompt_continue_or_exit() -> ContinueOrExit:
@@ -49,13 +45,10 @@ def prompt_continue_or_exit() -> ContinueOrExit:
     print(cyan(box(lines)))
 
     while True:
+        raw = read_line("Pilihan [1/2]: ")
+        if raw is None:
+            return "exit"
         try:
-            raw = input("Pilihan [1/2]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return "exit"
-        if raw in {"1", "lanjut", "continue", "c", "y", "ya"}:
-            return "continue"
-        if raw in {"2", "keluar", "exit", "q", "n", "tidak"}:
-            return "exit"
-        print(dim("Masukkan 1 (proses PDF lain) atau 2 (keluar)."))
+            return parse_continue_or_exit(raw)
+        except ValueError:
+            print(dim("Masukkan 1 (proses PDF lain) atau 2 (keluar)."))

@@ -1,38 +1,52 @@
-"""CLI prompts for selecting inputs (main menu, kunci, PDFs, topics)."""
+"""CLI prompts for selecting inputs (main menu, kunci, PDFs, runs, topics)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from app.functions.menu_choices import MAIN_MENU, MAIN_MENU_PROMPT
 from app.interfaces.topic_pack import TopicPack
+from app.views.prompt_view import InputFn, read_line
 from app.views.style import bold, box, cyan, dim, green, yellow
 
 
-def print_main_menu(*, active_topic_label: str = "", active_topic_id: str = "") -> None:
-    topic_line = ""
-    if active_topic_id or active_topic_label:
-        shown = active_topic_label or active_topic_id
-        topic_line = dim(f"Topik aktif: {shown} [{active_topic_id}]")
-    lines = [
-        bold("Math Grader"),
-        "",
-    ]
-    if topic_line:
-        lines.extend([topic_line, ""])
-    lines.extend(
-        [
-            "  1. Pilih topik grader",
-            "  2. Ingest kunci jawaban (.tex)",
-            "  3. Pilih PDF → render halaman → crop ink (konfirmasi)",
-            "  4. Crop ulang dari page_*_regions.json",
-            "  5. Lanjutkan grading (recognize → report) dari crops",
-            "  6. Keluar",
-            "",
-            dim("Pilih nomor, lalu Enter."),
-        ]
-    )
+def _print_menu_box(lines: list[str]) -> None:
     print(cyan(box(lines)))
     print()
+
+
+def _print_path_menu(title: str, folder: Path, paths: list[Path], hint: str) -> None:
+    lines = [bold(title), dim(str(folder)), ""]
+    lines.extend(f"  {index}. {path.name}" for index, path in enumerate(paths, start=1))
+    lines.extend(["", dim(hint)])
+    _print_menu_box(lines)
+
+
+def _print_selected(headline: str, detail: str) -> None:
+    print(green(bold(headline)))
+    print(dim(f"  {detail}"))
+    print()
+
+
+def print_main_menu(*, active_topic_label: str = "", active_topic_id: str = "") -> None:
+    lines = [bold("Math Grader"), ""]
+    if active_topic_id or active_topic_label:
+        shown = active_topic_label or active_topic_id
+        lines.extend([dim(f"Topik aktif: {shown} [{active_topic_id}]"), ""])
+    lines.extend(
+        f"  {index}. {entry.label}" for index, entry in enumerate(MAIN_MENU, start=1)
+    )
+    lines.extend(["", dim("Pilih nomor, lalu Enter.")])
+    _print_menu_box(lines)
+
+
+def prompt_main_menu_choice(*, input_fn: InputFn | None = None) -> str | None:
+    """Raw main-menu answer, or ``None`` on EOF / Ctrl+C."""
+    return read_line(MAIN_MENU_PROMPT, input_fn=input_fn)
+
+
+def prompt_topic_choice(*, input_fn: InputFn | None = None) -> str | None:
+    return read_line("Pilihan topik: ", input_fn=input_fn)
 
 
 def print_topic_menu(packs: list[TopicPack], *, active_topic_id: str = "") -> None:
@@ -40,56 +54,53 @@ def print_topic_menu(packs: list[TopicPack], *, active_topic_id: str = "") -> No
     for index, pack in enumerate(packs, start=1):
         marker = " *" if pack.id == active_topic_id else ""
         lines.append(f"  {index}. {pack.label} [{pack.id}]{marker}")
-    lines.append("")
-    lines.append(dim("Pilih nomor atau id pack, lalu Enter."))
-    print(cyan(box(lines)))
-    print()
+    lines.extend(["", dim("Pilih nomor atau id pack, lalu Enter.")])
+    _print_menu_box(lines)
 
 
 def print_selected_topic(pack: TopicPack) -> None:
-    print(green(bold(f"Topik aktif: {pack.label}")))
-    print(dim(f"  id={pack.id}"))
-    print()
+    _print_selected(f"Topik aktif: {pack.label}", f"id={pack.id}")
 
 
 def print_kunci_menu(tex_files: list[Path], kunci_dir: Path) -> None:
-    lines = [bold("Kunci tersedia"), dim(str(kunci_dir)), ""]
-    for index, path in enumerate(tex_files, start=1):
-        lines.append(f"  {index}. {path.name}")
-    lines.append("")
-    lines.append(dim("Pilih nomor (atau nama file), lalu Enter."))
-    print(cyan(box(lines)))
-    print()
+    _print_path_menu(
+        "Kunci tersedia", kunci_dir, tex_files, "Pilih nomor (atau nama file), lalu Enter."
+    )
 
 
 def print_selected_kunci(path: Path) -> None:
-    print(green(bold(f"Ingest kunci: {path.name}")))
-    print(dim(f"  {path}"))
-    print()
+    _print_selected(f"Ingest kunci: {path.name}", str(path))
 
 
 def print_jawaban_menu(pdfs: list[Path], jawaban_dir: Path) -> None:
-    lines = [bold("PDF tersedia"), dim(str(jawaban_dir)), ""]
-    for index, pdf in enumerate(pdfs, start=1):
-        lines.append(f"  {index}. {pdf.name}")
-    lines.append("")
-    lines.append(dim("Pilih nomor (atau nama file), lalu Enter."))
-    print(cyan(box(lines)))
-    print()
+    _print_path_menu(
+        "PDF tersedia", jawaban_dir, pdfs, "Pilih nomor (atau nama file), lalu Enter."
+    )
 
 
-def print_output_cleared(output_root: Path, removed_names: list[str]) -> None:
+def print_selected_pdf(pdf: Path) -> None:
+    _print_selected(f"Memproses: {pdf.name}", str(pdf))
+
+
+def print_run_menu(run_dirs: list[Path], output_root: Path) -> None:
+    _print_path_menu(
+        "Folder hasil (per PDF)",
+        output_root,
+        run_dirs,
+        "Pilih nomor (atau nama folder), lalu Enter.",
+    )
+
+
+def print_selected_run(run_root: Path) -> None:
+    _print_selected(f"Folder hasil: {run_root.name}", str(run_root))
+
+
+def print_output_cleared(run_root: Path, removed_names: list[str]) -> None:
     print(yellow(bold("Membersihkan workspace")))
-    print(dim(f"  {output_root} (kecuali standards/)"))
+    print(dim(f"  {run_root}"))
     if not removed_names:
         print(dim("  (sudah kosong)"))
     else:
         for name in removed_names:
             print(f"  - removed {name}")
-    print()
-
-
-def print_selected_pdf(pdf: Path) -> None:
-    print(green(bold(f"Memproses: {pdf.name}")))
-    print(dim(f"  {pdf}"))
     print()

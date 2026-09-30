@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from app.models.process import ProcessProgress, ProcessResult
-from app.views.style import banner, bold, box, cyan, dim, green, rule
+from app.views.result_view import print_report_paths
+from app.views.style import banner, bar, bold, box, cyan, dim, green, rule
 
 
 def print_models(*, vision_model: str, reasoning_model: str) -> None:
@@ -20,17 +21,12 @@ def print_models(*, vision_model: str, reasoning_model: str) -> None:
     print(rule())
 
 
-def _bar(fraction: float, width: int = 10) -> str:
-    filled = int(round(max(0.0, min(1.0, fraction)) * width))
-    return "█" * filled + "░" * (width - filled)
-
-
 def print_progress(progress: ProcessProgress) -> None:
     overall = progress.completed / progress.total if progress.total else 0.0
     stage = progress.stage.value
     print(
-        f"  {green('✓')} {stage:<20} {_bar(1.0)} 100%  "
-        f"(overall {_bar(overall)} {int(round(overall * 100)):3d}%)"
+        f"  {green('✓')} {stage:<20} {bar(1.0)} 100%  "
+        f"(overall {bar(overall)} {int(round(overall * 100)):3d}%)"
     )
 
 
@@ -53,10 +49,5 @@ def print_process_summary(result: ProcessResult) -> None:
     print()
     print(bold("Artifacts"))
     print(dim(f"  dir:  {result.output_dir}"))
-    if result.report_json_path:
-        print(f"  JSON: {result.report_json_path}")
-    if result.summary_csv_path:
-        print(f"  CSV:  {result.summary_csv_path}")
-    if result.report_html_path:
-        print(f"  HTML: {result.report_html_path}")
+    print_report_paths(result)
     print()

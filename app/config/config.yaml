@@ -1,11 +1,14 @@
 pdf:
   dpi: 200
-  output_dir: data/output/pages
 
 input:
   jawaban_dir: data/input/jawaban
   # Source TeX for CLI ingest-kunci → standards/.../solutions (enumerate+align+HP slice).
   kunci_jawaban_dir: data/input/kunci_jawaban
+
+output:
+  # Per PDF: <root_dir>/<nama_pdf>/{pages,crops,recognition,questions,report.*,summary.csv}
+  root_dir: data/output
 
 ollama:
   base_url: "http://localhost:11434"
@@ -16,8 +19,6 @@ ollama:
   max_retries: 2
 
 recognition:
-  output_dir: data/output/recognition
-  crops_dir: data/output/crops
   ink:
     threshold: 200
     merge_gap_ratio: 0.018
@@ -27,12 +28,6 @@ recognition:
     column_valley_ratio: 0.15
     margin_ratio: 0.02
 
-questions:
-  output_dir: data/output/questions
-
 grading:
   standard_dir: data/output/standards/exam_001
   topic_id: "1.5"
-
-report:
-  output_dir: data/output

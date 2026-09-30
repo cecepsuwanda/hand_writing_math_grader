@@ -10,7 +10,11 @@ from typing import Any
 
 import httpx
 
-from app.exceptions import OllamaTimeoutError, OllamaUnavailableError
+from app.exceptions import (
+    OllamaRequestError,
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +96,13 @@ class OllamaClient:
                         f"server error {response.status_code}: {response.text[:200]}"
                     )
                 if response.status_code >= 400:
+                    raise OllamaRequestError(response.status_code, response.text[:200])
+                try:
+                    data = response.json()
+                except ValueError as exc:
                     raise OllamaUnavailableError(
-                        f"request failed {response.status_code}: {response.text[:200]}"
-                    )
-                data = response.json()
+                        f"invalid JSON from Ollama: {exc}"
+                    ) from exc
                 content = self._message_text(data)
                 if not content.strip():
                     done_reason = data.get("done_reason")
@@ -125,6 +132,9 @@ class OllamaClient:
                 )
                 if attempt >= attempts:
                     raise last_error from exc
+            except OllamaRequestError:
+                # 4xx (e.g. unknown model) will not fix itself on retry.
+                raise
             except OllamaUnavailableError as exc:
                 last_error = exc
                 if attempt >= attempts:

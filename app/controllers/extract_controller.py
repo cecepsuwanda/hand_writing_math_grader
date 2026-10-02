@@ -28,6 +28,12 @@ class ExtractController:
         *,
         force_recognize: bool = False,
     ) -> ExtractResult:
+        """Raises:
+        ValueError: ``force_recognize`` without a ``recognize_runner`` (wiring bug).
+        RecognitionNotFoundError: no recognition JSON and no runner to make it.
+        """
+        if force_recognize and self._recognize_runner is None:
+            raise ValueError("force_recognize requires a recognize_runner")
         if force_recognize or not has_recognition_artifacts(recognition_dir):
             if self._recognize_runner is None:
                 raise RecognitionNotFoundError(recognition_dir)

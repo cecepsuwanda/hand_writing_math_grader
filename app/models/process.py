@@ -56,6 +56,7 @@ class ProcessResult(BaseModel):
     summary_csv_path: Path | None = None
     report_html_path: Path | None = None
     report_tex_path: Path | None = None
+    report_pdf_path: Path | None = None
     questions_dir: Path
     pages_dir: Path
     recognition_dir: Path

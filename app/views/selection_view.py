@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.functions.menu_choices import MAIN_MENU, MAIN_MENU_PROMPT
+from app.functions.standards_layout import standards_folder_name
 from app.interfaces.topic_pack import TopicPack
 from app.views.prompt_view import InputFn, read_line
 from app.views.style import bold, box, cyan, dim, green, yellow
@@ -28,11 +29,19 @@ def _print_selected(headline: str, detail: str) -> None:
     print()
 
 
-def print_main_menu(*, active_topic_label: str = "", active_topic_id: str = "") -> None:
+def print_main_menu(
+    *,
+    active_topic_label: str = "",
+    active_topic_id: str = "",
+    standard_dir: Path | None = None,
+) -> None:
     lines = [bold("Math Grader"), ""]
     if active_topic_id or active_topic_label:
         shown = active_topic_label or active_topic_id
-        lines.extend([dim(f"Topik aktif: {shown} [{active_topic_id}]"), ""])
+        lines.append(dim(f"Topik aktif: {shown} [{active_topic_id}]"))
+        if standard_dir is not None:
+            lines.append(dim(f"Standar: {standard_dir}"))
+        lines.append("")
     lines.extend(
         f"  {index}. {entry.label}" for index, entry in enumerate(MAIN_MENU, start=1)
     )
@@ -53,8 +62,9 @@ def print_topic_menu(packs: list[TopicPack], *, active_topic_id: str = "") -> No
     lines = [bold("Topik grader"), ""]
     for index, pack in enumerate(packs, start=1):
         marker = " *" if pack.id == active_topic_id else ""
-        lines.append(f"  {index}. {pack.label} [{pack.id}]{marker}")
-    lines.extend(["", dim("Pilih nomor atau id pack, lalu Enter.")])
+        folder = standards_folder_name(pack.id)
+        lines.append(f"  {index}. {pack.label} [{pack.id}] → {folder}{marker}")
+    lines.extend(["", dim("Pilih nomor, id pack, atau topik_<bab>, lalu Enter.")])
     _print_menu_box(lines)
 
 

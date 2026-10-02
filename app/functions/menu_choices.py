@@ -5,6 +5,8 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal, NamedTuple
 
+from app.functions.standards_layout import STANDARDS_FOLDER_PREFIX, standards_folder_name
+
 
 class MenuChoice(StrEnum):
     SELECT_TOPIC = "select_topic"
@@ -14,6 +16,7 @@ class MenuChoice(StrEnum):
     LABEL_QUESTIONS = "label_questions"
     RELABEL_QUESTIONS = "relabel_questions"
     FINISH = "finish"
+    FINISH_QUESTIONS = "finish_questions"
     EXIT = "exit"
 
 
@@ -60,6 +63,19 @@ MAIN_MENU: tuple[MenuEntry, ...] = (
         frozenset({"finish", "lanjut", "grade", "proses", "process", "p"}),
     ),
     MenuEntry(
+        MenuChoice.FINISH_QUESTIONS,
+        "Lanjutkan grading (LaTeX → report) dari question.json yang sudah diedit",
+        frozenset(
+            {
+                "questions",
+                "lanjut-soal",
+                "finish-questions",
+                "finish_questions",
+                "soal",
+            }
+        ),
+    ),
+    MenuEntry(
         MenuChoice.EXIT,
         "Keluar",
         frozenset({"exit", "keluar", "q"}),
@@ -92,20 +108,33 @@ def parse_main_menu_choice(raw: str) -> MenuChoice:
 
 
 def parse_topic_choice(raw: str, known_ids: list[str]) -> str:
-    """Map menu choice (1-based index or pack id) to a topic id.
+    """Map menu choice (1-based index, pack id, or ``topik_<bab>`` folder) to a topic id.
 
     Raises:
-        ValueError: if empty or unknown.
+        ValueError: if empty, unknown, or a number that is both an id and the
+            index of a different pack.
     """
     choice = raw.strip()
     if not choice:
         raise ValueError("empty selection")
+    lowered = choice.lower()
+    if lowered.startswith(STANDARDS_FOLDER_PREFIX):
+        for topic_id in known_ids:
+            if standards_folder_name(topic_id) == lowered:
+                return topic_id
+        raise ValueError(f"unknown topic: {choice}")
+    by_index: str | None = None
+    if choice.isdigit() and 1 <= int(choice) <= len(known_ids):
+        by_index = known_ids[int(choice) - 1]
     if choice in known_ids:
+        if by_index is not None and by_index != choice:
+            raise ValueError(
+                f"ambiguous topic choice {choice}: id {choice} or number {choice} "
+                f"({by_index}); type topik_<bab> instead"
+            )
         return choice
-    if choice.isdigit():
-        index = int(choice)
-        if 1 <= index <= len(known_ids):
-            return known_ids[index - 1]
+    if by_index is not None:
+        return by_index
     raise ValueError(f"unknown topic: {choice}")
 
 

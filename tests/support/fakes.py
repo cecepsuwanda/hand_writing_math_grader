@@ -1,6 +1,7 @@
 """Doubles for ports shared across test files (no live Ollama)."""
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -8,6 +9,37 @@ from app.functions.run_layout import RunLayout
 from app.models.process import ProcessProgress, ProcessResult
 from app.models.recognition import DetectedRegion, Region
 from app.models.validation import StepValidation, ValidationMethod, ValidationStatus
+
+
+class FakeLatexRunner:
+    """``subprocess.run`` double for pdflatex: writes ``<jobname>.pdf/.log/.aux`` in ``cwd``.
+
+    ``returncode != 0`` writes only the log (``log_text``); ``raises`` is thrown instead.
+    """
+
+    def __init__(
+        self,
+        *,
+        returncode: int = 0,
+        log_text: str = "This is pdfTeX\nOutput written.\n",
+        raises: BaseException | None = None,
+    ) -> None:
+        self.returncode = returncode
+        self.log_text = log_text
+        self.raises = raises
+        self.calls: list[tuple[list[str], Path]] = []
+
+    def __call__(self, command: list[str], *, cwd: Path, **_kwargs) -> subprocess.CompletedProcess:
+        self.calls.append((list(command), Path(cwd)))
+        if self.raises is not None:
+            raise self.raises
+        jobname = next(arg for arg in command if arg.startswith("-jobname=")).split("=", 1)[1]
+        folder = Path(cwd)
+        (folder / f"{jobname}.log").write_text(self.log_text, encoding="latin-1")
+        if self.returncode == 0:
+            (folder / f"{jobname}.pdf").write_bytes(b"%PDF-1.5 fake")
+            (folder / f"{jobname}.aux").write_text("\\relax", encoding="utf-8")
+        return subprocess.CompletedProcess(command, self.returncode)
 
 
 class FakeProposer:
@@ -108,7 +140,7 @@ class RecordingMenuActions:
         *,
         run_root: Path,
         pdf: Path | None = None,
-        topic_id: str = "2",
+        topic_id: str | None = "2",
         errors: dict[str, Exception] | None = None,
     ) -> None:
         self.run_root = run_root
@@ -126,7 +158,7 @@ class RecordingMenuActions:
         if name in self.errors:
             raise self.errors[name]
 
-    def select_topic(self, active_topic_id: str) -> str:
+    def select_topic(self, active_topic_id: str) -> str | None:
         self._record("select_topic", active_topic_id)
         return self.topic_id
 
@@ -153,11 +185,15 @@ class RecordingMenuActions:
     def finish(self, config, layout: RunLayout, topic_id: str | None) -> None:
         self._record("finish", layout, topic_id)
 
+    def finish_questions(self, config, layout: RunLayout, topic_id: str | None) -> None:
+        self._record("finish_questions", layout, topic_id)
+
 
 class RecordingProcessController:
     """Stands in for ``build_process_controller`` and the controller it returns.
 
-    Patch ``app.cli.build_process_controller`` with :meth:`build`; every builder
+    Patch ``app.services.pipeline_factory.build_process_controller`` with
+    :meth:`build`; every builder
     call lands in ``builder_kwargs`` and every run in ``calls`` as
     ``(method, pdf_path | None, kwargs)``.
     """
@@ -191,6 +227,10 @@ class RecordingProcessController:
 
     def process_from_crops(self, **kwargs) -> ProcessResult:
         self.calls.append(("process_from_crops", None, kwargs))
+        return self._finish(kwargs)
+
+    def process_from_questions(self, **kwargs) -> ProcessResult:
+        self.calls.append(("process_from_questions", None, kwargs))
         return self._finish(kwargs)
 
     def _finish(self, kwargs: dict) -> ProcessResult:

@@ -19,6 +19,8 @@ ollama:
   max_retries: 2
 
 recognition:
+  # Steps below this confidence are flagged in the question.json review prompt.
+  review_min_confidence: 0.8
   ink:
     threshold: 200
     merge_gap_ratio: 0.018
@@ -29,5 +31,15 @@ recognition:
     margin_ratio: 0.02
 
 grading:
-  standard_dir: data/output/standards/exam_001
+  # Ingest + grading per topic: <standards_root>/topik_<bab> (1.5 → topik_1, 2 → topik_2).
+  standards_root: data/output/standards
   topic_id: "1.5"
+
+report:
+  # report.tex → report.pdf right after grading (failure only warns).
+  pdf:
+    enabled: true
+    # Empty = auto-detect (PATH, then standard MiKTeX / TeX Live); env PDFLATEX_PATH overrides.
+    pdflatex_path: ""
+    passes: 2
+    timeout_seconds: 120

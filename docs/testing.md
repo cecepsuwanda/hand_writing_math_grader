@@ -35,7 +35,7 @@ Setiap lapisan punya satu tanggung jawab; test cukup merangkai ketiganya lalu me
 | Modul | Lapisan | Isi utama |
 |-------|---------|-----------|
 | `builders.py` | Model | Factory objek domain & fixture file: `make_question`, `make_step`, `make_figure`, `symbolic`, `make_validation`, `make_step_validation`, `make_step_grade`, `sample_rubric`, `make_process_result`, `make_process_question_grade`, `make_report_question_grade`, `make_report_metadata`, `make_report_result`, `make_page`; `write_pdf`, `write_png`, `write_fake_png_bytes`, `write_config`, `write_crop_workspace`, `write_recognition`, `write_report_workspace`, `single_question_json`; konstanta `MINI_KUNCI`, `Q1_KUNCI` |
-| `fakes.py` | Double port | `FakeClient` (Ollama vision/text), `FakeProposer` (ink), `RecordingJudge` (LLM judge), `RecordingMenuActions` (port `MenuActions` untuk `MenuController`), `RecordingProcessController` (pengganti `build_process_controller`) |
+| `fakes.py` | Double port | `FakeClient` (Ollama vision/text), `FakeProposer` (ink), `RecordingJudge` (LLM judge), `RecordingMenuActions` (port `MenuActions` untuk `MenuController`), `RecordingProcessController` (pengganti `build_process_controller`), `FakeLatexRunner` (pengganti `subprocess.run` untuk `PdfLatexCompiler`) |
 | `harness.py` | Controller | `CliHarness` (config temp + patch `app.cli.build_*` + `main()`), `ProcessHarness` (`ProcessController` dengan 7 stage `MagicMock`; `progress` = stage, `progress_events` = `ProcessProgress` lengkap), `GradingWorkspace` (standar + folder questions → `GradeController`), `q1_standard`, `make_recognizer`, `make_ollama_client`, `make_llm_judge`, `patch_tty` (patch `sys.stdin.isatty`), `patch_inputs` (patch `builtins.input`) |
 | `asserts.py` | View | `assert_all_valid`, `assert_step_statuses`, `assert_contains` (teks CLI) |
 
@@ -78,10 +78,10 @@ Variasi input/ekspektasi pada perilaku yang sama → `@pytest.mark.parametrize` 
 | Config, paths, menu choices, run layout, workspace, style/exit/prompt view | `test_suite.py` | `TestConfig`, `TestPaths`, `TestMenuChoices`, `TestRunLayout`, `TestOutputReset`, `TestStyleView`, `TestExitView`, `TestPromptView` |
 | PDF render | `test_suite.py` | `TestPdfRenderer` |
 | JSON extract, recognition schema, Ollama client, vision | `test_suite.py` | `TestJsonExtract`, `TestRecognitionSchema`, `TestOllamaClient`, `TestVisionRecognizer` |
-| Question merge/split, LaTeX | `test_suite.py` | `TestQuestionMergeExtract`, `TestQuestionSchemaSplit`, `TestLatex` |
+| Question merge/split, review question.json, LaTeX | `test_suite.py` | `TestQuestionMergeExtract`, `TestQuestionReview`, `TestQuestionSchemaSplit`, `TestLatex` |
 | SymPy / inequality, LLM hybrid (+ `validation_artifact`) | `test_suite.py` | `TestMathInequality`, `TestLlmHybrid` |
 | Grading (skor, grader, standar, soft-align) | `test_suite.py` | `TestScoreAggregate`, `TestStepGrader`, `TestStandardExtract`, `TestStandardComparer`, `TestStepAlign` |
-| Kunci ingest, report (+ `grading_artifact`, `artifact_guard`), CLI process + `ProcessController` | `test_suite.py` | `TestKunciIngest`, `TestReport`, `TestCliProcess` |
+| Kunci ingest, report (+ `grading_artifact`, `artifact_guard`), CLI process / finish-questions + `ProcessController` | `test_suite.py` | `TestKunciIngest`, `TestReport`, `TestCliProcess` |
 | Menu interaktif (`MenuController`, dispatch, `_ensure_layout`, exit code, EOF) | `test_suite.py` | `TestMenuController` |
 | Topic pack / capability registry | `test_suite.py` | `TestTopicRegistry`, `TestTopicPackBehavior`, `TestCapabilityDispatch` |
 | Crop symbolic / ink / recognizer crops | `test_crop_symbolic.py` | `TestCropHelpers`, `TestSymbolicMerge`, `TestTwoPassRecognizer`, `TestInkLayout`, `TestRecognitionStems` |

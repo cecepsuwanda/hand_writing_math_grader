@@ -13,6 +13,7 @@ from app.controllers.ingest_kunci_controller import IngestKunciController
 from app.controllers.latex_controller import LatexController
 from app.controllers.process_controller import ProcessController
 from app.controllers.question_label_controller import QuestionLabelController
+from app.controllers.question_review_controller import QuestionReviewController
 from app.controllers.recognize_controller import RecognizeController
 from app.controllers.render_controller import RenderController
 from app.controllers.report_controller import ReportController
@@ -25,7 +26,8 @@ from app.functions.run_layout import (
     RunLayout,
     build_run_layout,
 )
-from app.functions.workspace_reset import prepare_pipeline_workspace
+from app.functions.workspace_reset import DEFAULT_PRESERVE, prepare_pipeline_workspace
+from app.interfaces.latex_compiler import LatexCompiler
 from app.interfaces.llm_client import LlmClient
 from app.interfaces.topic_pack import TopicPack
 from app.interfaces.validator import StepValidator
@@ -39,6 +41,7 @@ from app.services.grading.rubric import RubricLoader
 from app.services.grading.standard_comparer import StandardFinalComparer
 from app.services.grading.step_grader import StepGrader
 from app.services.latex.builder import LatexBuilder
+from app.services.latex.pdflatex_compiler import PdfLatexCompiler, resolve_pdflatex
 from app.services.math.hybrid_validator import HybridStepValidator
 from app.services.math.llm_judge import PROMPT_VERSION as VALIDATION_PROMPT_VERSION
 from app.services.math.llm_judge import LlmStepJudge
@@ -46,6 +49,7 @@ from app.services.math.sympy_validator import SymPyStepValidator
 from app.services.pdf.renderer import PyMuPdfRenderer
 from app.services.questions.extractor import QuestionExtractor
 from app.services.standards.kunci_ingester import KunciIngester
+from app.services.standards.standard_dir import resolve_standard_dir
 from app.services.vision.factory import build_vision_recognizer
 from app.services.vision.ollama_client import OllamaClient
 from app.services.vision.question_labeler import OllamaQuestionLabeler
@@ -63,7 +67,7 @@ def resolve_topic_pack(
     """Resolve pack from CLI topic, exam_schema, then config.grading.topic_id."""
     from app.topics.registry import get_pack
 
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     if topic_id is not None and str(topic_id).strip():
         return get_pack(topic_id)
     if prefer_schema:
@@ -109,19 +113,23 @@ def prepare_run_workspace(
             questions_dir if questions_dir is not None else layout.questions_dir
         ),
         crops_dir=layout.crops_dir,
-        preserve=frozenset({CROPS_SUBDIR}) if preserve_crops else frozenset(),
+        preserve=DEFAULT_PRESERVE | {CROPS_SUBDIR} if preserve_crops else DEFAULT_PRESERVE,
+        keep_crops=preserve_crops,
     )
 
 
-def build_validator(config: AppConfig) -> StepValidator:
-    validator: StepValidator = SymPyStepValidator()
+def build_validator(config: AppConfig, pack: TopicPack | None = None) -> StepValidator:
+    """SymPy validator (+ LLM fallback) using the pack's role → check mapping."""
+    step_checks = pack.step_checks if pack is not None else None
+    validator: StepValidator = SymPyStepValidator(step_checks=step_checks)
     if config.ollama.reasoning_model.strip():
         validator = HybridStepValidator(
-            sympy_validator=SymPyStepValidator(),
+            sympy_validator=validator,
             llm_judge=LlmStepJudge(
                 client=build_ollama_client(config),
                 model=config.ollama.reasoning_model,
             ),
+            step_checks=step_checks,
         )
     return validator
 
@@ -133,10 +141,9 @@ def build_validate_controller(
     topic_id: str | None = None,
 ) -> ValidateController:
     """Standalone ``validate`` must normalize with the same pack as ``process``."""
-    set_active_pack(
-        resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard_dir)
-    )
-    return ValidateController(build_validator(config))
+    pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard_dir)
+    set_active_pack(pack)
+    return ValidateController(build_validator(config, pack))
 
 
 def build_grade_controller(
@@ -145,7 +152,7 @@ def build_grade_controller(
     *,
     topic_id: str | None = None,
 ) -> GradeController:
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)
     set_active_pack(pack)
     annotator = None
@@ -166,9 +173,12 @@ def build_grade_controller(
 
 
 def build_report_controller(
-    config: AppConfig, standard_dir: Path | None = None
+    config: AppConfig,
+    standard_dir: Path | None = None,
+    *,
+    topic_id: str | None = None,
 ) -> ReportController:
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     return ReportController(
         reporter=JsonCsvHtmlReporter(),
         standard_dir=standard,
@@ -176,6 +186,19 @@ def build_report_controller(
         reasoning_model=config.ollama.reasoning_model,
         prompt_versions=current_prompt_versions(),
         latex_reporter=LatexReportWriter(),
+        pdf_compiler=build_pdf_compiler(config),
+    )
+
+
+def build_pdf_compiler(config: AppConfig) -> LatexCompiler | None:
+    """``report.tex`` → ``report.pdf`` after grading; ``None`` when disabled in config."""
+    pdf = config.report.pdf
+    if not pdf.enabled:
+        return None
+    return PdfLatexCompiler(
+        resolve_pdflatex(pdf.pdflatex_path),
+        passes=pdf.passes,
+        timeout_seconds=pdf.timeout_seconds,
     )
 
 
@@ -193,16 +216,30 @@ def _recognition_dir_or_default(config: AppConfig, recognition_dir: Path | None)
     return default_run_layout(config).recognition_dir
 
 
+def _activate_pack(
+    config: AppConfig, *, topic_id: str | None, standard_dir: Path | None
+) -> Path:
+    """Resolve the topic standards folder and make its pack active; return the folder."""
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
+    set_active_pack(resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard))
+    return standard
+
+
 def build_recognize_controller(
     config: AppConfig,
     recognition_dir: Path | None = None,
     *,
     crops_dir: Path | None = None,
+    standard_dir: Path | None = None,
+    topic_id: str | None = None,
 ) -> RecognizeController:
     recognition = _recognition_dir_or_default(config, recognition_dir)
+    standard = _activate_pack(config, topic_id=topic_id, standard_dir=standard_dir)
     return RecognizeController(
         renderer=PyMuPdfRenderer(),
-        recognizer=build_vision_recognizer(config, recognition, crops_dir=crops_dir),
+        recognizer=build_vision_recognizer(
+            config, recognition, crops_dir=crops_dir, standard_dir=standard
+        ),
     )
 
 
@@ -214,9 +251,10 @@ def build_extract_controller(
     config: AppConfig,
     standard_dir: Path | None = None,
     *,
+    topic_id: str | None = None,
     recognize_runner: Callable[[], RecognizeResult] | None = None,
 ) -> ExtractController:
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = _activate_pack(config, topic_id=topic_id, standard_dir=standard_dir)
     return ExtractController(
         extractor=QuestionExtractor(exam_schema=load_exam_schema(standard)),
         recognize_runner=recognize_runner,
@@ -232,9 +270,18 @@ def build_crop_controller(
     recognition_dir: Path | None = None,
     *,
     crops_dir: Path | None = None,
+    standard_dir: Path | None = None,
+    topic_id: str | None = None,
 ) -> CropController:
     recognition = _recognition_dir_or_default(config, recognition_dir)
-    recognizer = build_vision_recognizer(config, recognition, crops_dir=crops_dir)
+    recognizer = build_vision_recognizer(
+        config,
+        recognition,
+        crops_dir=crops_dir,
+        standard_dir=resolve_standard_dir(
+            config, topic_id=topic_id, standard_dir=standard_dir
+        ),
+    )
     return CropController(
         renderer=PyMuPdfRenderer(),
         workspace=recognizer,
@@ -247,7 +294,7 @@ def build_ingest_kunci_controller(
     *,
     topic_id: str | None = None,
 ) -> IngestKunciController:
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     # Fresh ingest ignores stale schema.topic_id; uses CLI/config topic.
     pack = resolve_topic_pack(
         config,
@@ -271,7 +318,7 @@ def build_process_controller(
 ) -> ProcessController:
     """Wire MVC controllers for end-to-end ``process`` (CLI and API)."""
     recognition = _recognition_dir_or_default(config, recognition_dir)
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)
     set_active_pack(pack)
     schema = load_exam_schema(standard)
@@ -289,7 +336,7 @@ def build_process_controller(
             extractor=QuestionExtractor(exam_schema=schema)
         ),
         latex_controller=build_latex_controller(),
-        validate_controller=ValidateController(build_validator(config)),
+        validate_controller=ValidateController(build_validator(config, pack)),
         grade_controller=build_grade_controller(
             config, standard, topic_id=topic_id
         ),
@@ -297,16 +344,23 @@ def build_process_controller(
         on_progress=on_progress,
         question_numbers=[q.number for q in schema.questions] if schema else [],
         on_question_crops_missing=on_question_crops_missing,
+        question_review=build_question_review_controller(config),
     )
+
+
+def build_question_review_controller(config: AppConfig) -> QuestionReviewController:
+    return QuestionReviewController(min_confidence=config.recognition.review_min_confidence)
 
 
 def build_question_label_controller(
     config: AppConfig,
     crops_dir: Path,
     standard_dir: Path | None = None,
+    *,
+    topic_id: str | None = None,
 ) -> QuestionLabelController:
     """Question-number labeling needs the kunci schema; vision labeler is optional."""
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     schema = load_exam_schema(standard)
     if schema is None or not schema.questions:
         raise ExamSchemaMissingError(standard)

@@ -7,6 +7,7 @@ from pathlib import Path
 from app.config import AppConfig
 from app.functions.ink_layout import InkLayoutParams
 from app.functions.kunci_ingest import load_exam_schema, load_question_stems_from_kunci
+from app.services.standards.standard_dir import resolve_standard_dir
 from app.services.vision.ink_region_proposer import InkRegionProposer
 from app.services.vision.ollama_client import OllamaClient
 from app.services.vision.recognizer import OllamaVisionRecognizer
@@ -31,18 +32,20 @@ def build_vision_recognizer(
     *,
     crops_dir: Path | None = None,
     standard_dir: Path | None = None,
+    topic_id: str | None = None,
 ) -> OllamaVisionRecognizer:
     """Build ``OllamaVisionRecognizer`` with ink proposer + optional exam schema.
 
-    The schema comes only from ``standard_dir`` (default: config), so an
-    overridden standards folder never silently falls back to the default one.
+    The schema comes only from ``standard_dir`` (default: the topic's
+    ``topik_<bab>`` folder), so an overridden standards folder never silently
+    falls back to the default one.
     """
     ollama = OllamaClient(
         base_url=config.ollama.base_url,
         timeout_seconds=config.ollama.timeout_seconds,
         max_retries=config.ollama.max_retries,
     )
-    standard = Path(standard_dir) if standard_dir is not None else config.grading.standard_dir
+    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     schema = load_exam_schema(standard)
     expected = (
         None

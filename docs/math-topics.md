@@ -86,13 +86,15 @@ Katalog resmi domain + status implementasi. Kembangkan mengikuti urutan bab; **s
 
 Pack = implementasi `TopicPack` di `app/topics/<id>/` + entri di `_PACKS` (`app/topics/registry.py`).
 
-| Pack id | Bab | Status |
-|---------|-----|--------|
-| `1.5` | 1.5 Pertidaksamaan | **MVP, default** — ingest, roles, rubric, grading, tes |
-| `2` | 2 Pertidaksamaan nilai mutlak | **Registered** — delegasi roles/rubric/role instructions ke `1.5`; tes masih minimal |
-| — | 3–11 | Belum ada pack. Tambah `app/topics/<id>/` + entri `_PACKS` saat acceptance grading bab itu siap |
+| Pack id | Bab | Folder standar | Status |
+|---------|-----|----------------|--------|
+| `1.5` | 1.5 Pertidaksamaan | `standards/topik_1` | **MVP, default** — ingest, roles, `step_checks`, rubric, grading, tes |
+| `2` | 2 Pertidaksamaan nilai mutlak | `standards/topik_2` | **Registered** — delegasi roles/`step_checks`/rubric/role instructions ke `1.5`; tes masih minimal |
+| — | 3–11 | `standards/topik_<bab>` | Belum ada pack. Tambah `app/topics/<id>/` + entri `_PACKS` saat acceptance grading bab itu siap |
 
-Pemilihan pack: menu CLI **Pilih topik**, `grading.topic_id` di `config.yaml`, `--topic` pada `process` / `validate` / `grade` / `ingest-kunci` / `menu`, atau `topic_id` di `exam_schema.json`.
+Pemilihan pack: menu CLI **Pilih topik** (nomor, id, atau `topik_<bab>`), `grading.topic_id` di `config.yaml`, `--topic` pada `process` / `recognize` / `extract` / `validate` / `grade` / `report` / `label-questions` / `ingest-kunci` / `menu`, atau `topic_id` di `exam_schema.json` (hanya bersama `--standard`).
+
+**Folder standar per bab.** Hasil ingest setiap pack disimpan di `<grading.standards_root>/topik_<bab>`, dengan bab = bagian id sebelum titik. Karena itu maksimal **satu pack per bab**: registry menolak dua pack yang memetakan ke folder yang sama (misalnya `1.3` dan `1.5` sama-sama `topik_1`).
 
 ## Capabilities
 
@@ -101,7 +103,7 @@ Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recogni
 | Capability id | Bab terkait |
 |---------------|-------------|
 | `abs` | 2 |
-| `interval` | 1.3, 3.2 |
+| `interval` (selang, `\cup` / `∪` / ASCII `U`) | 1.3, 3.2 |
 | `limit` | 4, 5 |
 | `derivative` | 6 |
 | `integral` | 7 |

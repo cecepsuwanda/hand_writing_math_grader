@@ -10,6 +10,7 @@ import httpx
 from app.cli import main
 from app.controllers.grade_controller import GradeController
 from app.controllers.process_controller import ProcessController
+from app.functions.standards_layout import topic_standard_dir
 from app.models.grading import GradeResult, Rubric
 from app.models.latex import LatexResult
 from app.models.page import RenderResult
@@ -59,10 +60,10 @@ def patch_inputs(monkeypatch, *answers: str) -> list[str]:
 
 
 def q1_standard(tmp_path: Path) -> Path:
-    """Ingest :data:`Q1_KUNCI` into ``tmp_path/standards/exam_001``."""
+    """Ingest :data:`Q1_KUNCI` (topic 1.5) into ``tmp_path/standards/topik_1``."""
     kunci = tmp_path / "kunci_q1.tex"
     kunci.write_text(Q1_KUNCI, encoding="utf-8")
-    standard = tmp_path / "standards" / "exam_001"
+    standard = topic_standard_dir(tmp_path / "standards", "1.5")
     KunciIngester(standard).ingest_file(kunci)
     return standard
 
@@ -109,7 +110,7 @@ def make_recognizer(
 
 
 class CliHarness:
-    """Temp ``config.yaml`` + patched ``app.cli`` collaborators, then ``main()``."""
+    """Temp ``config.yaml`` + patched ``pipeline_factory`` builders, then ``main()``."""
 
     def __init__(self, tmp_path: Path, monkeypatch, **config) -> None:
         self.tmp_path = tmp_path
@@ -129,7 +130,9 @@ class CliHarness:
 
     def controller(self, **kwargs) -> RecordingProcessController:
         self.fake = RecordingProcessController(**kwargs)
-        self._monkeypatch.setattr("app.cli.build_process_controller", self.fake.build)
+        self._monkeypatch.setattr(
+            "app.services.pipeline_factory.build_process_controller", self.fake.build
+        )
         return self.fake
 
     def inputs(self, *answers: str) -> list[str]:
@@ -253,12 +256,23 @@ class ProcessHarness:
         kwargs.update(overrides)
         return self.controller().process_from_crops(**kwargs)
 
+    def process_from_questions(self, **overrides) -> ProcessResult:
+        kwargs = {
+            "questions_dir": self.questions_dir,
+            "output_dir": self.output_dir,
+            "pages_dir": self.pages_dir,
+            "recognition_dir": self.recognition_dir,
+            "crops_dir": self.crops_dir,
+        }
+        kwargs.update(overrides)
+        return self.controller().process_from_questions(**kwargs)
+
 
 class GradingWorkspace:
     """Temp standard (rubric, optional solution) + questions tree for the grade stage."""
 
     def __init__(self, tmp_path: Path, rubric: Rubric | None = None) -> None:
-        self.standard = tmp_path / "standards" / "exam_001"
+        self.standard = topic_standard_dir(tmp_path / "standards", "1.5")
         self.questions_dir = tmp_path / "questions"
         self.add_rubric(rubric or sample_rubric())
 

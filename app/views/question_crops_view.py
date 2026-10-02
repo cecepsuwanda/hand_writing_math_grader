@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+from app.functions.question_crops import question_crops_dir
 from app.functions.regions_artifact import crop_display_name
 from app.models.question_crops import QuestionCropsReport
 from app.views.error_view import print_warning
@@ -41,8 +42,9 @@ def ask_question_crops_ok(*, input_fn: InputFn | None = None) -> bool:
 
 def wait_for_question_crops_edit(
     *, json_dir: Path, input_fn: InputFn | None = None
-) -> None:
-    wait_for_edit(
+) -> bool:
+    """False when input ended (EOF) instead of Enter."""
+    return wait_for_edit(
         "Edit daftar \"crops\" di question_*.json (satu crop boleh di beberapa soal),"
         f"\nsimpan, lalu tekan Enter untuk memuat ulang.\n  {json_dir}",
         input_fn=input_fn,
@@ -52,7 +54,7 @@ def wait_for_question_crops_edit(
 def print_question_crops_missing(crops_dir: Path) -> None:
     print_warning(
         bold("Peringatan: nomor soal belum ditetapkan")
-        + f" ({crops_dir}/question_crops tidak ada)."
+        + f" ({question_crops_dir(crops_dir)} tidak ada)."
     )
     print_warning(
         dim(

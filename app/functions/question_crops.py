@@ -47,6 +47,8 @@ def list_crops_in_reading_order(crops_dir: Path) -> list[CropRef]:
             page_number = int(page_dir.name.split("_", 1)[1])
         except (IndexError, ValueError):
             continue
+        if page_number < 1:
+            continue
         json_path = regions_json_path(page_dir, page_number)
         if not json_path.is_file():
             continue

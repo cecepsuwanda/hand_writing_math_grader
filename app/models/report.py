@@ -61,3 +61,4 @@ class ReportResult(BaseModel):
     summary_csv_path: Path
     report_html_path: Path
     report_tex_path: Path | None = None
+    report_pdf_path: Path | None = None

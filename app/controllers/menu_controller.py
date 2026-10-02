@@ -11,6 +11,7 @@ from app.config import AppConfig, require_vision_model
 from app.exceptions import InvalidMenuSelectionError, MathGraderError
 from app.functions.menu_choices import MenuChoice, parse_main_menu_choice
 from app.functions.run_layout import RunLayout, layout_for_pdf
+from app.functions.standards_layout import topic_standard_dir
 from app.interfaces.menu_actions import MenuActions
 from app.models.question_crops import LabelMode
 from app.topics.registry import get_pack
@@ -61,6 +62,7 @@ class MenuController:
             MenuChoice.LABEL_QUESTIONS: self._label(LabelMode.LABEL),
             MenuChoice.RELABEL_QUESTIONS: self._label(LabelMode.RELABEL),
             MenuChoice.FINISH: self._finish,
+            MenuChoice.FINISH_QUESTIONS: self._finish_questions,
         }
 
     @property
@@ -70,6 +72,8 @@ class MenuController:
     def start_session(self) -> MenuSession:
         """Validate the starting topic (raises :class:`UnknownTopicError`)."""
         pack = get_pack(self._requested_topic_id or self._config.grading.topic_id)
+        # Steps that read config (label, finish) must use the same topik_<bab> folder.
+        self._set_config_topic(pack.id)
         return MenuSession(
             topic_id=pack.id,
             explicit_topic_id=pack.id if self._requested_topic_id else None,
@@ -79,7 +83,13 @@ class MenuController:
         session = self.start_session()
         while True:
             pack = get_pack(session.topic_id)
-            print_main_menu(active_topic_label=pack.label, active_topic_id=pack.id)
+            print_main_menu(
+                active_topic_label=pack.label,
+                active_topic_id=pack.id,
+                standard_dir=topic_standard_dir(
+                    self._config.grading.standards_root, pack.id
+                ),
+            )
             raw = prompt_main_menu_choice(input_fn=self._input_fn)
             if raw is None:
                 break
@@ -115,9 +125,15 @@ class MenuController:
         return session.layout
 
     def _select_topic(self, session: MenuSession) -> None:
-        session.topic_id = self._actions.select_topic(session.topic_id)
-        session.explicit_topic_id = session.topic_id
-        grading = self._config.grading.model_copy(update={"topic_id": session.topic_id})
+        chosen = self._actions.select_topic(session.topic_id)
+        if chosen is None:
+            return
+        session.topic_id = chosen
+        session.explicit_topic_id = chosen
+        self._set_config_topic(chosen)
+
+    def _set_config_topic(self, topic_id: str) -> None:
+        grading = self._config.grading.model_copy(update={"topic_id": topic_id})
         self._config = self._config.model_copy(update={"grading": grading})
 
     def _ingest(self, session: MenuSession) -> None:
@@ -140,5 +156,10 @@ class MenuController:
     def _finish(self, session: MenuSession) -> None:
         require_vision_model(self._config)
         self._actions.finish(
+            self._config, self._ensure_layout(session), session.explicit_topic_id
+        )
+
+    def _finish_questions(self, session: MenuSession) -> None:
+        self._actions.finish_questions(
             self._config, self._ensure_layout(session), session.explicit_topic_id
         )

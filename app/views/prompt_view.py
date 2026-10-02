@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable, Sequence
 from typing import TypeVar
 
-from app.exceptions import MathGraderError
+from app.exceptions import MathGraderError, OperationCancelledError
 from app.functions.menu_choices import parse_yes_no
 from app.views.error_view import print_error
 
@@ -36,10 +36,22 @@ def read_line(prompt: str, *, input_fn: InputFn | None = None) -> str | None:
         return None
 
 
+def _read_or_cancel(prompt: str, input_fn: InputFn | None) -> str | None:
+    """One line, ``None`` on EOF; Ctrl+C raises :class:`OperationCancelledError`."""
+    try:
+        return _resolve(input_fn)(prompt)
+    except EOFError:
+        print()
+        return None
+    except KeyboardInterrupt as exc:
+        print()
+        raise OperationCancelledError(prompt.strip()) from exc
+
+
 def ask_yes_no(prompt: str, *, input_fn: InputFn | None = None) -> bool:
-    """Ask until y/n. Empty answer and EOF both count as yes (the default)."""
+    """Ask until y/n. Empty answer and EOF count as yes; Ctrl+C cancels."""
     while True:
-        raw = read_line(prompt, input_fn=input_fn)
+        raw = _read_or_cancel(prompt, input_fn)
         if raw is None:
             return True
         try:
@@ -48,10 +60,13 @@ def ask_yes_no(prompt: str, *, input_fn: InputFn | None = None) -> bool:
             print("Please answer y or n.")
 
 
-def wait_for_edit(message: str, *, input_fn: InputFn | None = None) -> None:
-    """Show ``message`` then block until Enter (EOF also continues)."""
+def wait_for_edit(message: str, *, input_fn: InputFn | None = None) -> bool:
+    """Show ``message`` then block until Enter.
+
+    Returns False on EOF (no more input will come); Ctrl+C cancels.
+    """
     print(message)
-    read_line("", input_fn=input_fn)
+    return _read_or_cancel("", input_fn) is not None
 
 
 def prompt_choice(
@@ -69,6 +84,9 @@ def prompt_choice(
             raw = _resolve(input_fn)(prompt)
         except EOFError as exc:
             raise error_cls("no input received") from exc
+        except KeyboardInterrupt as exc:
+            print()
+            raise error_cls("cancelled") from exc
         try:
             selected = parse(items, raw)
         except ValueError as exc:

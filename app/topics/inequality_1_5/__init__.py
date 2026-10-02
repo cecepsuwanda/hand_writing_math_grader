@@ -3,15 +3,27 @@
 from __future__ import annotations
 
 import re
+from types import MappingProxyType
 
 from app.models.exam_schema import ExamPart
 from app.models.grading import Rubric, RubricCriterion
 from app.models.recognition import SymbolicPayload
+from app.models.validation import StepCheck
 
 _RUBRIC_TOTAL = 10.0
 
 _VALID_ROLES: frozenset[str] = frozenset(
     {"algebra", "critical_points", "sign_chart", "figure", "hp"}
+)
+
+_STEP_CHECKS = MappingProxyType(
+    {
+        "algebra": StepCheck.TRANSITION,
+        "critical_points": StepCheck.ZERO_MAKERS,
+        "sign_chart": StepCheck.NUMERIC_EVAL,
+        "hp": StepCheck.SOLUTION_SET,
+        "figure": StepCheck.NOT_SYMBOLIC,
+    }
 )
 
 _HP_RE = re.compile(
@@ -128,6 +140,7 @@ class Inequality15Pack:
     topik_refs = ("1.5",)
     part_kinds = ("algebra", "critical_points", "sign_chart", "figure", "hp")
     roles = ("algebra", "critical_points", "sign_chart", "figure", "hp")
+    step_checks = _STEP_CHECKS
     figure_kinds = ("number_line",)
     capability_ids = _CAPABILITY_IDS
     recognition_role_instructions = _ROLE_INSTRUCTIONS

@@ -24,11 +24,11 @@ description: >-
 
 - [ ] View tidak memanggil Ollama/SymPy/persist artefak
 - [ ] View tidak import `app.controllers` / `app.services`; error/peringatan ke stderr (`print_error` / `print_warning` di `error_view`)
-- [ ] Tidak ada `input()` di controller atau `cli.py`; input interaktif hanya lewat `views/prompt_view.py`
+- [ ] Tidak ada `input()` di controller, `cli.py`, atau `app/commands/`; input interaktif hanya lewat `views/prompt_view.py`
 - [ ] Controller tipis (orkestrasi + view; tidak berisi prompt/rumus grading)
 - [ ] Controller tidak import konstanta/implementasi dari `app/services` (di-inject `pipeline_factory`); tidak glob/parse artefak sendiri (pakai `functions/*_artifact.py`)
 - [ ] Semua `*Result` = model Pydantic di `app/models/` (tanpa dataclass hasil di controller); default bersama dari `models/defaults.py`
-- [ ] `cli.py` tipis: parser, `_HANDLERS`, helper alur bersama, adapter `_CliMenuActions`; state menu di `MenuController` / `MenuSession`
+- [ ] `cli.py` tipis (`build_parser` + `main` atas `COMMANDS`); subcommand = class `Command` di `app/commands/`, alur bersama di `flows.py`, adapter `CliMenuActions`; state menu di `MenuController` / `MenuSession`
 - [ ] Service bergantung interface / DI lewat `pipeline_factory`, bukan konkret library tersebar
 - [ ] `functions/` deterministik; I/O hanya di modul artefak yang diizinkan (`*_artifact.py`, `question_crops.py`, `image_crop.py`, `report_details.py`, `workspace_reset.py`, `load_exam_schema`); tanpa network/model
 - [ ] Service/client ber-state memakai OOP di `services/`; tidak ada static util class

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import sys
-
 from app.functions.menu_choices import ContinueOrExit, parse_continue_or_exit
-from app.views.prompt_view import read_line
+from app.views.prompt_view import is_interactive, read_line
 from app.views.style import bold, box, cyan, dim
 
 # Set by CLI after an interactive process session already dismissed the user.
@@ -26,14 +24,14 @@ def wait_for_exit() -> None:
     """Block until Enter when stdin is an interactive terminal."""
     if _skip_wait_for_exit:
         return
-    if not sys.stdin.isatty():
+    if not is_interactive():
         return
     read_line(dim("\nTekan Enter untuk keluar..."))
 
 
 def prompt_continue_or_exit() -> ContinueOrExit:
     """Ask whether to process another PDF or exit. Non-TTY → exit."""
-    if not sys.stdin.isatty():
+    if not is_interactive():
         return "exit"
 
     lines = [

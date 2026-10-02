@@ -5,16 +5,21 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from app.exceptions import AmbiguousKunciDirError, NoKunciTexError
 from app.functions.kunci_ingest import (
     build_exam_schema,
     ingest_kunci_tex,
 )
+from app.functions.paths import list_kunci_tex
 from app.functions.standard_extract import exam_schema_path, standard_solution_path
 from app.interfaces.topic_pack import TopicPack
 from app.models.exam_schema import ExamSchema
 from app.topics.registry import DEFAULT_TOPIC_ID, get_pack
 
 logger = logging.getLogger(__name__)
+
+SOLUTIONS_DIRNAME = "solutions"
+RUBRICS_DIRNAME = "rubrics"
 
 
 class KunciIngester:
@@ -42,7 +47,8 @@ class KunciIngester:
         kunci_path = Path(kunci_path)
         tex = kunci_path.read_text(encoding="utf-8")
         pairs = ingest_kunci_tex(tex, source_note=kunci_path.name)
-        solutions_dir = self._standard_dir / "solutions"
+        self._clear_previous_ingest()
+        solutions_dir = self._standard_dir / SOLUTIONS_DIRNAME
         solutions_dir.mkdir(parents=True, exist_ok=True)
 
         written: list[Path] = []
@@ -63,24 +69,33 @@ class KunciIngester:
         return written
 
     def ingest_dir(self, kunci_dir: Path) -> list[Path]:
+        """Ingest the single ``.tex`` under ``kunci_dir``.
+
+        Raises:
+            NoKunciTexError: if the folder has no ``.tex``.
+            AmbiguousKunciDirError: if it has more than one (schema/rubrics
+                come from one kunci, so merging files would mix exams).
+        """
         kunci_dir = Path(kunci_dir)
-        written: list[Path] = []
-        tex_files = sorted(kunci_dir.glob("*.tex"))
+        tex_files = list_kunci_tex(kunci_dir)
         if not tex_files:
-            return written
-        for index, path in enumerate(tex_files):
-            if index == 0:
-                written.extend(self.ingest_file(path))
-            else:
-                tex = path.read_text(encoding="utf-8")
-                pairs = ingest_kunci_tex(tex, source_note=path.name)
-                for number, content in pairs:
-                    out = standard_solution_path(self._standard_dir, number)
-                    out.parent.mkdir(parents=True, exist_ok=True)
-                    out.write_text(content, encoding="utf-8")
-                    written.append(out)
-                    logger.info("Wrote standard solution %s", out)
-        return written
+            raise NoKunciTexError(kunci_dir)
+        if len(tex_files) > 1:
+            raise AmbiguousKunciDirError(kunci_dir, [path.name for path in tex_files])
+        return self.ingest_file(tex_files[0])
+
+    def _clear_previous_ingest(self) -> None:
+        """Drop solutions/rubrics of an earlier kunci so no stale question survives."""
+        for dirname, pattern in (
+            (SOLUTIONS_DIRNAME, "question_*.tex"),
+            (RUBRICS_DIRNAME, "question_*.json"),
+        ):
+            folder = self._standard_dir / dirname
+            if not folder.is_dir():
+                continue
+            for stale in folder.glob(pattern):
+                if stale.is_file():
+                    stale.unlink()
 
     def _write_exam_schema(self, schema: ExamSchema) -> Path:
         self._standard_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +110,7 @@ class KunciIngester:
         return path
 
     def _write_rubrics(self, schema: ExamSchema) -> list[Path]:
-        rubrics_dir = self._standard_dir / "rubrics"
+        rubrics_dir = self._standard_dir / RUBRICS_DIRNAME
         rubrics_dir.mkdir(parents=True, exist_ok=True)
         written: list[Path] = []
         for question in schema.questions:

@@ -53,17 +53,34 @@ Nama file tanpa path dicari di `data/input/jawaban/` (kunci: `data/input/kunci_j
 | 5 | Kenali nomor soal → `question_crops/question_*.json` | `label-questions` |
 | 6 | Muat ulang nomor soal dari JSON yang sudah diedit | `relabel-questions` |
 | 7 | Lanjutkan grading (recognize → report) dari crops | `process --use-existing-crops` |
-| 8 | Keluar | — |
+| 8 | Lanjutkan grading (LaTeX → report) dari `question.json` yang sudah diedit | `finish-questions` |
+| 9 | Keluar | — |
 
 ### Flag penting
 
 | Flag | Keterangan |
 |------|------------|
 | `--config <path>` | Config lain (default `app/config/config.yaml`); letakkan **sebelum** subcommand |
-| `--topic <id>` | Topic pack (`1.5` default, `2`); lihat [docs/math-topics.md](docs/math-topics.md) |
+| `--topic <id>` | Topic pack (`1.5` default, `2`); sekaligus memilih folder standar `standards/topik_<bab>`. Lihat [docs/math-topics.md](docs/math-topics.md) |
+| `--standard <dir>` | Override folder standar (kunci/rubric/schema) untuk `process`, `ingest-kunci`, `recognize`, `extract`, `validate`, `grade`, `report` |
 | `--run <nama_pdf>` | Pilih folder hasil untuk subcommand tanpa argumen PDF |
-| `--yes` | Lewati konfirmasi crop / label (non-interaktif) |
-| `--use-existing-crops` | `process` / `recognize`: pakai `page_*_regions.json` + crops yang ada, tanpa propose ulang |
+| `--yes` | Lewati konfirmasi crop / label / transkripsi (non-interaktif) |
+| `--use-existing-crops` | `process` / `recognize` / `extract`: pakai `page_*_regions.json` + crops yang ada, tanpa propose ulang |
+
+### Kunci jawaban per topik
+
+Setiap topik punya folder standar sendiri di `data/output/standards/`, dinamai menurut nomor bab: pack `1.5` ke `topik_1`, pack `2` ke `topik_2`, dan seterusnya. Ingest (menu 2 atau `ingest-kunci`) menulis ke folder topik aktif; grading (`process`, menu 7, menu 8, `label-questions`, dan stage lain) membaca dari folder yang sama. Jadi kunci topik 1 dan topik 2 tidak saling menimpa. Header menu utama menampilkan folder standar yang sedang aktif.
+
+```bash
+python -m app.cli ingest-kunci jawaban_tugas_1.tex --topic 1.5   # → standards/topik_1
+python -m app.cli ingest-kunci jawaban_tugas_2.tex --topic 2     # → standards/topik_2
+python -m app.cli process jawaban.pdf --topic 2                  # pakai standards/topik_2
+```
+
+- Satu ingest = satu file kunci. Tanpa argumen file, `ingest-kunci` memakai satu-satunya `.tex` di `data/input/kunci_jawaban/`. Kalau ada beberapa, terminal interaktif menampilkan pilihan, sedangkan non-interaktif gagal dan meminta nama file.
+- Ingest ulang mengganti `solutions/` dan `rubrics/` di folder topik itu, jadi soal dari kunci lama tidak tersisa.
+- Lokasi induk diatur `grading.standards_root` di `config.yaml` (default `data/output/standards`). Key lama `grading.standard_dir` diabaikan dengan peringatan. Pakai `--standard <dir>` untuk folder lain.
+- **Migrasi:** folder lama `standards/exam_001` tidak dipakai lagi. Jalankan `ingest-kunci --topic 1.5` (atau menu 2) sekali untuk mengisi `topik_1`, lalu `exam_001` boleh dihapus.
 
 Model dan endpoint Ollama diambil dari `app/config/config.yaml`; override lewat env `OLLAMA_BASE_URL`, `OLLAMA_VISION_MODEL`, `OLLAMA_REASONING_MODEL`, `OLLAMA_TIMEOUT_SECONDS`, `OLLAMA_MAX_RETRIES`.
 
@@ -83,26 +100,36 @@ Satu soal boleh punya beberapa crop (lintas halaman), dan satu crop boleh muncul
 
 Saat grading (menu 7 / `process`): kalau `question_crops/` ada, nomor soal diambil dari file tersebut, dan file yang tidak valid (soal di luar kunci atau nama crop tidak dikenal) menghentikan run. Kalau folder itu belum ada, run tetap jalan dengan **peringatan** dan nomor soal ditebak model per crop.
 
+### Tinjau transkripsi (`question.json`)
+
+Setelah tulisan tangan dikenali dan digabung per soal (menu 7 / `process`), run berhenti dan menampilkan tiap langkah: `role`, `raw_text`, dan `symbolic.repr`. Langkah yang perlu dicek diberi tanda: `low_confidence` (di bawah `recognition.review_min_confidence`, default 0.8), `uncertain_mark` (`[uncertain]` di `raw_text`), atau `missing_symbolic` (`repr` kosong). Jawab `y` untuk lanjut ke LaTeX → validasi → grading → report. Jawab `n`, lalu edit `data/output/<nama_pdf>/questions/question_*/question.json`, simpan, dan tekan Enter untuk memuat ulang.
+
+SymPy membaca **`symbolic.repr`**; `raw_text` hanya untuk tampilan dan laporan, jadi koreksi isi matematika di `repr`. Untuk soal yang diedit, `latex_source.tex` dihapus agar `student.tex` dibangun ulang dari langkah yang sudah diperbaiki. `--yes` (dan API) melewati pertanyaan ini, tetapi `question.json` yang rusak tetap menghentikan run. `question.json` juga ditolak bila `question_number` tidak cocok dengan nama folder atau ada `step_number` ganda.
+
+Di semua pertanyaan konfirmasi (crop, nomor soal, transkripsi), **Ctrl+C membatalkan** langkah itu dan menu kembali ke menu utama; Enter kosong tetap berarti "ya". Kalau berkas masih tidak valid dan input berakhir (EOF), run berhenti dengan error alih-alih menunggu terus.
+
+Kalau Anda mengedit `question.json` di luar run (misalnya setelah run selesai), jangan pakai menu 7: menu itu mengosongkan `questions/` dan mengenali ulang tulisan tangan. Pakai **menu 8** (`finish-questions [--run <nama_pdf>] [--yes]`). Menu ini tidak menjalankan recognize/extract dan tidak menulis `question.json`; ia menampilkan tinjauan yang sama, lalu lanjut ke LaTeX → validasi → grading → report. `latex_source.tex` yang lebih lama dari `question.json` dihapus otomatis agar `student.tex` mengikuti editan Anda. Model vision tidak dibutuhkan untuk menu ini.
+
 ### Artefak
 
 Setiap PDF yang diproses mendapat folder sendiri di `data/output/` sesuai nama file (tanpa `.pdf`):
 
 ```text
 data/output/
-  standards/exam_001/          # kunci/rubric, dipakai bersama
+  standards/
+    topik_1/  topik_2/  ...    # kunci/rubric/schema per topik, dipakai bersama
   <nama_pdf>/
     pages/  crops/  recognition/  questions/
-    report.json  summary.csv  report.html  report.tex
+    report.json  summary.csv  report.html  report.tex  report.pdf  report.log
 ```
 
-`report.tex` adalah laporan satu file per mahasiswa: untuk tiap soal berisi gambar crop jawaban (dari `crops/question_crops/`, atau `image_regions` bila peta belum ada), hasil bacaan OCR per langkah, dan komentar penilaian (skor, status validasi, feedback, komponen, jawaban akhir). Path gambar relatif terhadap folder run, jadi kompilasi dilakukan manual dari folder tersebut:
+`report.tex` adalah laporan satu file per mahasiswa: untuk tiap soal berisi gambar crop jawaban (dari `crops/question_crops/`, atau `image_regions` bila peta belum ada), hasil bacaan OCR per langkah, dan komentar penilaian (skor, status validasi, feedback, komponen, jawaban akhir).
 
-```bash
-cd "data/output/<nama_pdf>"
-pdflatex report.tex
-```
+**`report.pdf` otomatis.** Begitu `report.tex` ditulis (tepat setelah grading, di `process`, menu 7, menu 8, dan subcommand `report`), sistem menjalankan `pdflatex` dua kali di folder run. Hasilnya `report.pdf` dan `report.log`; file sisa (`.aux`, dll.) dihapus. Kalau gagal (pdflatex tidak ditemukan, error LaTeX, atau `report.pdf` sedang dibuka viewer), hanya muncul **peringatan**: run tetap sukses dan `report.tex` tetap ada. Setelah masalahnya diatasi, kompilasi ulang lewat menu 8 atau `report --run <nama_pdf>`.
 
-**Pengosongan output:** hanya folder `data/output/<nama_pdf>/` milik PDF tersebut yang dikosongkan, di awal `process`, `propose-crops`, dan menu 3. Dengan `process --use-existing-crops`, folder `crops/` dipertahankan. Menu 7 tidak mengosongkan folder run; ia hanya mengosongkan `recognition/` dan `questions/` sebelum menulis ulang. `recognize` / `extract` hanya mengosongkan folder output-nya sendiri. `standards/` dan hasil PDF lain tidak pernah disentuh.
+Pengaturan ada di `config.yaml` bagian `report.pdf`: `enabled`, `pdflatex_path` (kosong = cari di PATH, lalu lokasi standar MiKTeX / TeX Live; bisa juga lewat env `PDFLATEX_PATH`), `passes`, dan `timeout_seconds`.
+
+**Pengosongan output:** hanya folder `data/output/<nama_pdf>/` milik PDF tersebut yang dikosongkan, di awal `process`, `propose-crops`, dan menu 3. Dengan `process --use-existing-crops`, folder `crops/` dipertahankan. Menu 7 tidak mengosongkan folder run; ia hanya mengosongkan `recognition/` dan `questions/` sebelum menulis ulang. `recognize` / `extract` hanya mengosongkan folder output-nya sendiri. `extract --force-recognize` melewati konfirmasi crop yang sama dengan `recognize`. `standards/` dan hasil PDF lain tidak pernah disentuh oleh run; hanya ingest yang menulis ke `standards/topik_<bab>`.
 
 **Pemilihan run:** subcommand tanpa argumen PDF (`recrop`, `label-questions`, `relabel-questions`, `latex`, `validate`, `grade`, `report`) memakai `--run <nama_pdf>`. Tanpa `--run`: jika hanya ada satu folder hasil, folder itu dipakai; jika lebih dari satu, terminal interaktif menampilkan pilihan, sedangkan non-interaktif gagal dan meminta `--run`.
 

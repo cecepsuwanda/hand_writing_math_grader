@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 from app.functions.page_names import PAGES_METADATA_FILENAME, page_image_filename
+from app.functions.regions_artifact import page_has_regions_artifact
 from app.models.page import Page
 
 
@@ -50,3 +52,13 @@ def crops_regions_present(crops_dir: Path) -> bool:
     if not crops_dir.is_dir():
         return False
     return any(crops_dir.glob("page_*/page_*_regions.json"))
+
+
+def pages_missing_regions(crops_dir: Path, page_numbers: Iterable[int]) -> list[int]:
+    """Page numbers without ``page_NNN/page_NNN_regions.json`` under ``crops_dir``."""
+    crops_dir = Path(crops_dir)
+    return [
+        number
+        for number in page_numbers
+        if not page_has_regions_artifact(crops_dir / f"page_{number:03d}", number)
+    ]

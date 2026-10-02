@@ -9,7 +9,9 @@ _INTERVAL_ATOM = (
     r"[\[(]\s*[^,]+?\s*,\s*[^)\]]+?\s*[\])]"
 )
 
-_UNION_SEP = r"(?:\\cup|\\bigcup|∪)"
+# ASCII ``U`` is the crop_math symbolic.repr union; case-sensitive so a
+# lowercase ``u`` inside an interval bound is never read as a separator.
+_UNION_SEP = r"(?:\\cup|\\bigcup|∪|(?-i:U))"
 _INTERSECT_SEP = r"(?:\\cap|\\bigcap|∩)"
 
 # x \in I1 \cup I2 \cup ...   (also \cap)

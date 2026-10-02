@@ -12,7 +12,7 @@ Kebijakan nyata yang sering salah dibaca:
 
 - **Controller boleh memanggil view** (progress, error, prompt konfirmasi crop/label). Controller tidak berisi prompt LLM atau rumus grading, tidak memanggil `input()` (pakai `views/prompt_view.py`), dan tidak meng-import konstanta dari `app/services/` (inject lewat konstruktor, mis. `PromptVersions`).
 - **View** tidak meng-import `app.controllers` / `app.services`; semua `*Result` ada di `app/models/` (Pydantic). Error/peringatan ke stderr (`error_view.print_error` / `print_warning`).
-- **`cli.py` tipis**: argparse + `_HANDLERS` + flow bersama menu/subcommand. State menu ada di `MenuController`/`MenuSession`; langkah ber-efek samping lewat port `MenuActions`.
+- **`cli.py` tipis**: hanya `build_parser` + `main` atas `COMMANDS`. Satu class `Command` per subcommand di `app/commands/` (`configure` + `run`); flow bersama menu/subcommand di `app/commands/flows.py`. State menu ada di `MenuController`/`MenuSession`; langkah ber-efek samping lewat port `MenuActions` (`CliMenuActions`).
 - **`app/functions/`** = transformasi deterministik. Boleh baca/tulis **artefak run** hanya di `*_artifact.py`, `question_crops.py`, `image_crop.py`, `report_details.py`, `workspace_reset.py`, `load_exam_schema`. Tidak boleh network / model / mutasi input.
 - **Services** tidak mencetak ke stdout (pakai `logging`). Error domain = subclass `MathGraderError`.
 - Wiring (DI) terpusat di `app/services/pipeline_factory.py`, dipakai CLI dan API.

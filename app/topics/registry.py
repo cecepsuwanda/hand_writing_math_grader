@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.exceptions import UnknownTopicError
+from app.functions.standards_layout import standards_folder_name
 from app.interfaces.topic_pack import TopicPack
 from app.models.defaults import DEFAULT_TOPIC_ID
 from app.models.exam_schema import ExamSchema
@@ -12,6 +13,7 @@ from app.topics.runtime import get_active_pack
 
 __all__ = [
     "DEFAULT_TOPIC_ID",
+    "assert_unique_standards_folders",
     "get_pack",
     "known_topic_ids",
     "list_packs",
@@ -22,6 +24,25 @@ _PACKS: dict[str, TopicPack] = {
     INEQUALITY_15.id: INEQUALITY_15,
     ABS_INEQUALITY_2.id: ABS_INEQUALITY_2,
 }
+
+
+def assert_unique_standards_folders(pack_ids: list[str]) -> None:
+    """Two packs sharing ``topik_<bab>`` would overwrite each other's ingest.
+
+    Raises:
+        ValueError: on a folder collision.
+    """
+    seen: dict[str, str] = {}
+    for pack_id in pack_ids:
+        folder = standards_folder_name(pack_id)
+        if folder in seen:
+            raise ValueError(
+                f"topic packs {seen[folder]!r} and {pack_id!r} share standards folder {folder}"
+            )
+        seen[folder] = pack_id
+
+
+assert_unique_standards_folders(list(_PACKS))
 
 
 def list_packs() -> list[TopicPack]:

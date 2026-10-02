@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from app.models.exam_schema import ExamPart
 from app.models.grading import Rubric
 from app.models.recognition import SymbolicPayload
+from app.models.validation import StepCheck
 
 
 @runtime_checkable
@@ -32,6 +34,10 @@ class TopicPack(Protocol):
     @property
     def roles(self) -> tuple[str, ...]:
         """Allowed step / milestone roles."""
+
+    @property
+    def step_checks(self) -> Mapping[str, StepCheck]:
+        """Step role → validation check; unmapped roles use ``TRANSITION``."""
 
     @property
     def figure_kinds(self) -> tuple[str, ...]:

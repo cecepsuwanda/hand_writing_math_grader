@@ -5,12 +5,16 @@ from pathlib import Path
 
 import pytest
 
+from app.config import AppConfig, GradingConfig
 from app.controllers.crop_controller import CropController
 from app.controllers.menu_controller import exit_code_for
 from app.controllers.question_label_controller import QuestionLabelController
 from app.exceptions import (
     EmptyRegionsError,
+    ExamSchemaMissingError,
     NoRegionsForLabelingError,
+    OperationCancelledError,
+    PageImageMissingError,
     QuestionCropsInvalidError,
     RegionsArtifactMissingError,
 )
@@ -40,10 +44,11 @@ from app.models.page import Page
 from app.models.question_crops import LabelSource
 from app.models.recognition import DetectedRegion, Region
 from app.functions.run_layout import build_run_layout
+from app.services.pipeline_factory import build_question_label_controller
 from app.services.vision.question_labeler import OllamaQuestionLabeler
 from tests.support.builders import single_question_json, write_png
 from tests.support.fakes import FakeClient, FakeProposer
-from tests.support.harness import CliHarness, make_recognizer
+from tests.support.harness import CliHarness, make_recognizer, q1_standard
 
 
 def _schema(count: int) -> ExamSchema:
@@ -232,22 +237,53 @@ class TestCropConfirm:
             input_fn=lambda _prompt="": next(answers),
         )
 
-    def test_confirm_loop_reprompts_when_recrop_page_missing(self, tmp_path: Path, capsys) -> None:
+    class _NoRender:
+        def render(self, pdf_path, pages_dir, dpi):
+            raise AssertionError("render should not run")
+
+    def test_confirm_loop_waits_for_fix_after_failed_recrop(self, tmp_path: Path, capsys) -> None:
+        pages = tmp_path / "pages"
+        pages.mkdir()
+        _write_regions(tmp_path / "crops", 1, 1)
+        controller = CropController(renderer=self._NoRender(), workspace=make_recognizer(tmp_path))
+        prompts: list[str] = []
+
+        def input_fn(prompt: str = "") -> str:
+            prompts.append(prompt)
+            if len(prompts) == 3:
+                # Second edit round: the user restores the page image before Enter.
+                write_png(pages / "page_001.png", (30, 30), (255, 255, 255))
+            return {1: "n"}.get(len(prompts), "")
+
+        controller.confirm_loop(pages, input_fn=input_fn)
+        assert "Page image missing" in capsys.readouterr().err
+        # OK?, edit (recrop fails), edit again without OK?, then OK? after a good recrop.
+        assert [p.startswith("Crop OK?") for p in prompts] == [True, False, False, True]
+
+    def test_confirm_loop_eof_after_failed_recrop_raises(self, tmp_path: Path) -> None:
         (tmp_path / "pages").mkdir()
         _write_regions(tmp_path / "crops", 1, 1)
+        controller = CropController(renderer=self._NoRender(), workspace=make_recognizer(tmp_path))
+        answers = iter(["n", ""])
 
-        class _FakeRenderer:
-            def render(self, pdf_path, pages_dir, dpi):
-                raise AssertionError("render should not run")
+        def input_fn(_prompt: str = "") -> str:
+            try:
+                return next(answers)
+            except StopIteration:
+                raise EOFError from None
 
-        controller = CropController(renderer=_FakeRenderer(), workspace=make_recognizer(tmp_path))
-        answers = iter(["n", "", "y"])
-        controller.confirm_loop(
-            tmp_path / "pages",
-            force_yes=False,
-            input_fn=lambda _prompt="": next(answers),
-        )
-        assert "Page image missing" in capsys.readouterr().err
+        with pytest.raises(PageImageMissingError):
+            controller.confirm_loop(tmp_path / "pages", input_fn=input_fn)
+
+    def test_confirm_loop_ctrl_c_cancels(self, tmp_path: Path) -> None:
+        _write_regions(tmp_path / "crops", 1, 1)
+        controller = CropController(renderer=self._NoRender(), workspace=make_recognizer(tmp_path))
+
+        def interrupted(_prompt: str = "") -> str:
+            raise KeyboardInterrupt
+
+        with pytest.raises(OperationCancelledError):
+            controller.confirm_loop(tmp_path / "pages", input_fn=interrupted)
 
     def test_crop_controller_accepts_crop_workspace_port(self, tmp_path: Path) -> None:
         pages_dir = tmp_path / "pages"
@@ -293,6 +329,68 @@ class TestCropConfirm:
         assert len(result.pages) == 1
         assert result.pages[0].json_path.is_file()
 
+    class _RecordingCrop(CropWorkspace):
+        """Workspace that writes one region per proposed page and records the page numbers."""
+
+        def __init__(self, crops: Path) -> None:
+            self._crops = crops
+            self.proposed: list[int] = []
+
+        @property
+        def crops_dir(self) -> Path:
+            return self._crops
+
+        def page_crop_dir(self, page_number: int) -> Path:
+            return self._crops / f"page_{page_number:03d}"
+
+        def propose_page_crops(self, image_path: Path, page_number: int):
+            self.proposed.append(page_number)
+            regions = [
+                DetectedRegion(type="solution", region=Region(x=0, y=0, width=10, height=10), order=0)
+            ]
+            path = write_regions_artifact(
+                self.page_crop_dir(page_number), page_number, regions=regions, source="ink"
+            )
+            return regions, "ink", path
+
+        def recrop_page_from_json(self, image_path: Path, page_number: int):
+            raise AssertionError("recrop should not run")
+
+    def test_use_existing_proposes_only_pages_without_json(self, tmp_path: Path) -> None:
+        workspace = self._RecordingCrop(tmp_path / "crops")
+        _write_regions(workspace.crops_dir, 1, 2)
+        edited = regions_json_path(workspace.page_crop_dir(1), 1)
+        before = edited.read_bytes()
+        controller = CropController(renderer=self._NoRender(), workspace=workspace)
+        pages = [
+            Page(page_number=n, width=20, height=20, image=f"page_{n:03d}.png") for n in (1, 2)
+        ]
+        result = controller.ensure_crops_confirmed(
+            pages, tmp_path / "pages", use_existing=True, force_yes=True
+        )
+        assert workspace.proposed == [2]
+        assert edited.read_bytes() == before
+        assert [(s.page_number, len(s.crop_paths)) for s in result.pages] == [(1, 2), (2, 1)]
+
+    def test_ensure_returns_result_of_last_recrop(self, tmp_path: Path) -> None:
+        write_png(tmp_path / "pages" / "page_001.png", (30, 30), (255, 255, 255))
+        recognizer = make_recognizer(tmp_path)
+        _write_regions(recognizer.crops_dir, 1, 1)
+        controller = CropController(renderer=self._NoRender(), workspace=recognizer)
+
+        def add_region() -> str:
+            _write_regions(recognizer.crops_dir, 1, 2)
+            return ""
+
+        answers = iter([lambda: "n", add_region, lambda: "y"])
+        result = controller.ensure_crops_confirmed(
+            [Page(page_number=1, width=30, height=30, image="page_001.png")],
+            tmp_path / "pages",
+            use_existing=True,
+            input_fn=lambda _prompt="": next(answers)(),
+        )
+        assert [len(s.crop_paths) for s in result.pages] == [2]
+
     def test_cli_recrop_without_regions_json_exits_1(
         self, tmp_path: Path, monkeypatch, capsys
     ) -> None:
@@ -327,9 +425,14 @@ class TestCropConfirm:
         recognizer = make_recognizer(tmp_path)
         write_regions_artifact(recognizer.page_crop_dir(1), 1, regions=[], source="ink")
         controller = CropController(renderer=object(), workspace=recognizer)
-        answers = iter(["n", "", "y"])
+
+        def fix_regions() -> str:
+            _write_regions(recognizer.crops_dir, 1, 1)
+            return ""
+
+        answers = iter([lambda: "n", lambda: "", fix_regions, lambda: "y"])
         controller.confirm_loop(
-            tmp_path / "pages", input_fn=lambda _prompt="": next(answers)
+            tmp_path / "pages", input_fn=lambda _prompt="": next(answers)()
         )
         assert "No regions in" in capsys.readouterr().err
 
@@ -519,6 +622,43 @@ class TestQuestionLabelController:
         with pytest.raises(QuestionCropsInvalidError, match="menu 6"):
             controller.confirm_loop(result, force_yes=True)
 
+    def test_confirm_loop_eof_while_invalid_raises(self, tmp_path: Path) -> None:
+        _write_regions(tmp_path, 1, 1)
+        controller = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1))
+        write_question_crops(tmp_path, {1: ["page_001_region_05_solution.png"]})
+        result = controller.reload_all()
+
+        def eof(_prompt: str = "") -> str:
+            raise EOFError
+
+        with pytest.raises(QuestionCropsInvalidError):
+            controller.confirm_loop(result, input_fn=eof)
+
+    def test_confirm_loop_ctrl_c_cancels(self, tmp_path: Path) -> None:
+        _write_regions(tmp_path, 1, 1)
+        controller = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1))
+        result = controller.label_all()
+        assert result.report.ok
+
+        def interrupted(_prompt: str = "") -> str:
+            raise KeyboardInterrupt
+
+        with pytest.raises(OperationCancelledError):
+            controller.confirm_loop(result, input_fn=interrupted)
+
+    def test_reload_all_reports_broken_regions_json(self, tmp_path: Path) -> None:
+        _write_regions(tmp_path, 1, 1)
+        write_question_crops(tmp_path, {1: [crop_filename(1, 0)]})
+        regions_json_path(tmp_path / "page_001", 1).write_text("{broken", encoding="utf-8")
+        result = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1)).reload_all()
+        assert not result.report.ok
+        assert result.mapping == {}
+
+    def test_reading_order_skips_page_zero_folder(self, tmp_path: Path) -> None:
+        names = _write_regions(tmp_path, 1, 1)
+        (tmp_path / "page_000").mkdir()
+        assert [r.name for r in list_crops_in_reading_order(tmp_path)] == names
+
     def test_reload_all_without_folder_reports_error(self, tmp_path: Path) -> None:
         _write_regions(tmp_path, 1, 1)
         result = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1)).reload_all()
@@ -532,6 +672,15 @@ class TestQuestionLabelController:
         captured = capsys.readouterr()
         assert "Nomor soal per crop" in captured.out
         assert "label-questions" in captured.err
+
+    def test_factory_reads_schema_from_topic_folder(self, tmp_path: Path) -> None:
+        standard = q1_standard(tmp_path)
+        config = AppConfig(grading=GradingConfig(standards_root=standard.parent))
+        crops = tmp_path / "crops"
+        controller = build_question_label_controller(config, crops, topic_id="1.5")
+        assert controller.json_dir == question_crops_dir(crops)
+        with pytest.raises(ExamSchemaMissingError, match="topik_2"):
+            build_question_label_controller(config, crops, topic_id="2")
 
 
 class TestRecognizerQuestionCrops:

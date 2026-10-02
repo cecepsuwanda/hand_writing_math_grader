@@ -10,17 +10,27 @@ from app.controllers.crop_controller import CropController
 from app.controllers.extract_controller import ExtractController
 from app.controllers.grade_controller import GradeController
 from app.controllers.latex_controller import LatexController
+from app.controllers.question_review_controller import QuestionReviewController
 from app.controllers.recognize_controller import RecognizeController
 from app.controllers.render_controller import RenderController
 from app.controllers.report_controller import ReportController
 from app.controllers.validate_controller import ValidateController
-from app.exceptions import CropsRegionsMissingError, QuestionCropsInvalidError
-from app.functions.pages_artifact import crops_regions_present, load_pages_from_dir
+from app.exceptions import (
+    CropsRegionsMissingError,
+    QuestionCropsInvalidError,
+    QuestionsNotFoundError,
+)
+from app.functions.pages_artifact import (
+    crops_regions_present,
+    load_pages_from_dir,
+    pages_missing_regions,
+)
 from app.functions.question_crops import (
     list_crops_in_reading_order,
     load_question_crops,
     validate_question_crops,
 )
+from app.functions.validation_artifact import question_artifact_paths
 from app.functions.workspace_reset import (
     clear_directory_contents,
     prepare_pipeline_workspace,
@@ -60,6 +70,7 @@ class ProcessController:
         on_output_cleared: ClearedCallback | None = None,
         question_numbers: list[int] | None = None,
         on_question_crops_missing: QuestionCropsMissingCallback | None = None,
+        question_review: QuestionReviewController | None = None,
     ) -> None:
         self._render = render_controller
         self._recognize = recognize_controller
@@ -73,6 +84,7 @@ class ProcessController:
         self._on_output_cleared = on_output_cleared
         self._question_numbers = list(question_numbers or [])
         self._on_question_crops_missing = on_question_crops_missing
+        self._question_review = question_review
 
     def process(
         self,
@@ -97,13 +109,17 @@ class ProcessController:
         output_dir = Path(output_dir)
 
         if reset_workspace:
-            root = Path(workspace_root) if workspace_root is not None else output_dir
+            # Guessing the run root (e.g. from a custom --output) could wipe the wrong folder.
+            if workspace_root is None:
+                raise ValueError("reset_workspace=True requires workspace_root")
+            root = Path(workspace_root)
             removed = prepare_pipeline_workspace(
                 root,
                 pages_dir=pages_dir,
                 recognition_dir=recognition_dir,
                 questions_dir=questions_dir,
-                crops_dir=crops_dir,
+                crops_dir=self._resolve_crops_dir(crops_dir) if use_existing_crops else crops_dir,
+                keep_crops=use_existing_crops,
             )
             if self._on_output_cleared is not None:
                 self._on_output_cleared(root, removed)
@@ -120,9 +136,7 @@ class ProcessController:
                 force_yes=force_yes,
             )
             from_crops = True
-            self._check_question_crops(
-                Path(crops_dir) if crops_dir is not None else self._crop.crops_dir
-            )
+            self._check_question_crops(self._crop.crops_dir if crops_dir is None else Path(crops_dir))
 
         return self._run_from_recognition(
             render_result.pages,
@@ -133,6 +147,7 @@ class ProcessController:
             student_id=student_id,
             crops_dir=crops_dir,
             from_crops=from_crops,
+            force_yes=force_yes,
         )
 
     def process_from_crops(
@@ -144,12 +159,13 @@ class ProcessController:
         output_dir: Path,
         student_id: str = DEFAULT_STUDENT_ID,
         crops_dir: Path | None = None,
+        force_yes: bool = False,
     ) -> ProcessResult:
         """Continue pipeline from existing page images + regions crops (no re-ink)."""
         pages_dir = Path(pages_dir)
         recognition_dir = Path(recognition_dir)
         questions_dir = Path(questions_dir)
-        crops = Path(crops_dir) if crops_dir is not None else None
+        crops = self._resolve_crops_dir(crops_dir)
 
         if crops is not None:
             if not crops_regions_present(crops):
@@ -158,6 +174,8 @@ class ProcessController:
 
         # Load pages first so a broken pages/ does not cost the prior artifacts.
         pages = load_pages_from_dir(pages_dir)
+        if crops is not None and pages_missing_regions(crops, [p.page_number for p in pages]):
+            raise CropsRegionsMissingError(crops)
 
         # Drop prior recognition/questions so a shorter rerun cannot grade leftovers.
         # Pages, crops, and standards stay.
@@ -173,6 +191,34 @@ class ProcessController:
             student_id=student_id,
             crops_dir=crops,
             from_crops=True,
+            force_yes=force_yes,
+        )
+
+    def process_from_questions(
+        self,
+        *,
+        questions_dir: Path,
+        output_dir: Path,
+        pages_dir: Path,
+        recognition_dir: Path,
+        student_id: str = DEFAULT_STUDENT_ID,
+        crops_dir: Path | None = None,
+        force_yes: bool = False,
+    ) -> ProcessResult:
+        """Continue from existing (possibly user-edited) question.json; never rewrites them."""
+        questions_dir = Path(questions_dir)
+        if not question_artifact_paths(questions_dir):
+            raise QuestionsNotFoundError(questions_dir)
+        if self._question_review is not None:
+            self._question_review.prune_stale_latex_sources(questions_dir)
+        return self._run_from_questions(
+            pages_dir=Path(pages_dir),
+            recognition_dir=Path(recognition_dir),
+            questions_dir=questions_dir,
+            output_dir=Path(output_dir),
+            student_id=student_id,
+            crops_dir=Path(crops_dir) if crops_dir is not None else None,
+            force_yes=force_yes,
         )
 
     def _run_from_recognition(
@@ -186,8 +232,9 @@ class ProcessController:
         student_id: str,
         crops_dir: Path | None,
         from_crops: bool,
+        force_yes: bool,
     ) -> ProcessResult:
-        """Recognize → extract → LaTeX → validate → grade → report."""
+        """Recognize → extract → (review) → LaTeX → validate → grade → report."""
         self._recognize.recognize_pages(
             pages, pages_dir, recognition_dir, from_crops=from_crops
         )
@@ -199,6 +246,31 @@ class ProcessController:
             force_recognize=False,
         )
         self._emit(ProcessStage.EXTRACT)
+
+        return self._run_from_questions(
+            pages_dir=pages_dir,
+            recognition_dir=recognition_dir,
+            questions_dir=questions_dir,
+            output_dir=output_dir,
+            student_id=student_id,
+            crops_dir=crops_dir,
+            force_yes=force_yes,
+        )
+
+    def _run_from_questions(
+        self,
+        *,
+        pages_dir: Path,
+        recognition_dir: Path,
+        questions_dir: Path,
+        output_dir: Path,
+        student_id: str,
+        crops_dir: Path | None,
+        force_yes: bool,
+    ) -> ProcessResult:
+        """(review) → LaTeX → validate → grade → report."""
+        if self._question_review is not None:
+            self._question_review.review_loop(questions_dir, force_yes=force_yes)
 
         self._latex.build(questions_dir)
         self._emit(ProcessStage.LATEX)
@@ -267,17 +339,21 @@ class ProcessController:
             summary_csv_path=report_result.summary_csv_path,
             report_html_path=report_result.report_html_path,
             report_tex_path=report_result.report_tex_path,
+            report_pdf_path=report_result.report_pdf_path,
             questions_dir=questions_dir,
             pages_dir=pages_dir,
             recognition_dir=recognition_dir,
         )
 
-    def _report_crops_dir(self, crops_dir: Path | None) -> Path | None:
+    def _resolve_crops_dir(self, crops_dir: Path | None) -> Path | None:
         if crops_dir is not None:
             return Path(crops_dir)
         if self._crop is not None:
             return self._crop.crops_dir
         return None
+
+    def _report_crops_dir(self, crops_dir: Path | None) -> Path | None:
+        return self._resolve_crops_dir(crops_dir)
 
     def _check_question_crops(self, crops_dir: Path) -> None:
         """Validate user question_crops, or warn that the model will guess numbers."""
@@ -289,7 +365,10 @@ class ProcessController:
             if self._on_question_crops_missing is not None:
                 self._on_question_crops_missing(crops_dir)
             return
-        known = [crop.name for crop in list_crops_in_reading_order(crops_dir)]
+        try:
+            known = [crop.name for crop in list_crops_in_reading_order(crops_dir)]
+        except ValueError as exc:
+            raise QuestionCropsInvalidError([str(exc)]) from exc
         report = validate_question_crops(mapping, self._question_numbers, known)
         if not report.ok:
             raise QuestionCropsInvalidError(report.errors)

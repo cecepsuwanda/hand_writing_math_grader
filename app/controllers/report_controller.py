@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.exceptions import GradingNotFoundError, ReportWriteError
+from app.exceptions import GradingNotFoundError, ReportPdfError, ReportWriteError
 from app.functions.artifact_guard import changed_files, snapshot_files
-from app.functions.grading_artifact import grading_artifact_paths, load_question_grades
+from app.functions.grading_artifact import load_question_grades, paired_grading_artifact_paths
 from app.functions.question_names import (
     report_html_filename,
     report_json_filename,
@@ -18,10 +19,12 @@ from app.functions.report_aggregate import aggregate_exam_report
 from app.functions.report_details import load_question_report_details
 from app.functions.run_layout import CROPS_SUBDIR
 from app.functions.validation_artifact import question_artifact_paths
+from app.interfaces.latex_compiler import LatexCompiler
 from app.interfaces.reporter import DetailedReporter, GradeReporter
 from app.models.defaults import DEFAULT_STUDENT_ID
 from app.models.grading import QuestionGrade
 from app.models.report import ExamReport, PromptVersions, ReportMetadata, ReportResult
+from app.views.error_view import print_warning
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,7 @@ class ReportController:
         reasoning_model: str = "",
         prompt_versions: PromptVersions | None = None,
         latex_reporter: DetailedReporter | None = None,
+        pdf_compiler: LatexCompiler | None = None,
     ) -> None:
         self._reporter = reporter
         self._standard_dir = Path(standard_dir)
@@ -43,6 +47,7 @@ class ReportController:
         self._reasoning_model = reasoning_model
         self._prompt_versions = prompt_versions or PromptVersions()
         self._latex_reporter = latex_reporter
+        self._pdf_compiler = pdf_compiler
 
     def report(
         self,
@@ -54,7 +59,7 @@ class ReportController:
     ) -> ReportResult:
         questions_dir = Path(questions_dir)
         output_dir = Path(output_dir)
-        grading_paths = grading_artifact_paths(questions_dir)
+        grading_paths = paired_grading_artifact_paths(questions_dir)
         if not grading_paths:
             raise GradingNotFoundError(questions_dir)
         grades = self._load_grades(grading_paths)
@@ -73,6 +78,7 @@ class ReportController:
             raise ReportWriteError(
                 f"source artifact was modified during report: {modified[0]}"
             )
+        pdf_path = self._compile_pdf(tex_path)
 
         by_name = {p.name: p for p in written}
         result = ReportResult(
@@ -88,6 +94,7 @@ class ReportController:
                 report_html_filename(), output_dir / report_html_filename()
             ),
             report_tex_path=tex_path,
+            report_pdf_path=pdf_path,
         )
         logger.info(
             "Reported %s question(s) for %s -> %s",
@@ -129,3 +136,20 @@ class ReportController:
         except ValueError as exc:
             raise ReportWriteError(str(exc)) from exc
         return self._latex_reporter.write(exam, details, output_dir)
+
+    def _compile_pdf(self, tex_path: Path | None) -> Path | None:
+        """PDF failure only warns: report.tex and the other reports are already written.
+
+        A ``report.pdf`` left from an earlier run is removed on failure so it is not
+        mistaken for the current report.
+        """
+        if self._pdf_compiler is None or tex_path is None:
+            return None
+        try:
+            return self._pdf_compiler.compile(tex_path)
+        except ReportPdfError as exc:
+            print_warning(str(exc))
+            # A PDF still open in a viewer cannot be removed; the warning already says so.
+            with contextlib.suppress(OSError):
+                tex_path.with_suffix(".pdf").unlink(missing_ok=True)
+            return None

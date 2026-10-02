@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import sys
-from typing import Sequence
+from typing import Sequence, TextIO
 
 _VT_ENABLED = False
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -105,6 +105,20 @@ def bar(fraction: float, width: int = 10) -> str:
 def visible_len(text: str) -> int:
     """Printable width of ``text`` (ANSI escape sequences take no columns)."""
     return len(_ANSI_ESCAPE.sub("", text))
+
+
+def strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE.sub("", text)
+
+
+def for_stream(text: str, stream: TextIO) -> str:
+    """Drop ANSI codes when ``stream`` is redirected (colors follow stdout's TTY)."""
+    isatty = getattr(stream, "isatty", None)
+    try:
+        tty = bool(isatty()) if isatty is not None else False
+    except (ValueError, OSError):  # closed / detached stream
+        tty = False
+    return text if tty else strip_ansi(text)
 
 
 def box(lines: Sequence[str], *, width: int | None = None) -> str:

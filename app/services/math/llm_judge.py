@@ -25,7 +25,7 @@ from app.interfaces.llm_client import LlmClient
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "validation.txt"
-PROMPT_VERSION = "validation-v1"
+PROMPT_VERSION = "validation-v2"
 
 
 class LlmStepJudge:

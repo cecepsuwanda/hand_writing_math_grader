@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from app.exceptions import RecognitionPathMismatchError
@@ -10,6 +11,8 @@ from app.interfaces.recognizer import VisionRecognizer
 from app.interfaces.renderer import PdfRenderer
 from app.models.page import Page
 from app.models.recognition import PageRecognition, RecognizeResult
+
+logger = logging.getLogger(__name__)
 
 
 class RecognizeController:
@@ -56,9 +59,11 @@ class RecognizeController:
                     image_path, page.page_number
                 )
             recognitions.append(recognition)
-            artifact_paths.append(
-                recognition_dir / page_recognition_filename(page.page_number)
-            )
+            artifact = recognition_dir / page_recognition_filename(page.page_number)
+            if artifact.is_file():
+                artifact_paths.append(artifact)
+            else:
+                logger.warning("Recognizer wrote no artifact for page %s", page.page_number)
         return RecognizeResult(
             pages=recognitions,
             output_dir=recognition_dir,

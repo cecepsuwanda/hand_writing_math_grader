@@ -1,5 +1,6 @@
 """One-line summaries for each single-stage CLI subcommand."""
 
+from app.functions.page_names import page_recognition_filename
 from app.models.grading import GradeResult
 from app.models.latex import LatexResult
 from app.models.page import RenderResult
@@ -27,12 +28,15 @@ def print_render_result(result: RenderResult) -> None:
 def print_recognize_result(result: RecognizeResult) -> None:
     page_count = len(result.pages)
     _ok(f"Recognized {page_count} page(s) → {result.output_dir}")
-    for page, artifact in zip(result.pages, result.artifact_paths, strict=False):
+    written = {path.name for path in result.artifact_paths}
+    for page in result.pages:
         question_count = len(page.questions)
         step_count = sum(len(q.steps) for q in page.questions)
+        name = page_recognition_filename(page.page_number)
+        target = name if name in written else "(tidak ada JSON)"
         print(
             f"  page {page.page_number}: {question_count} question(s), "
-            f"{step_count} step(s) → {artifact.name}"
+            f"{step_count} step(s) → {target}"
         )
         print(dim(f"    model={page.model or '(unset)'} prompt={page.prompt_version}"))
 
@@ -127,6 +131,7 @@ def print_report_paths(result: ReportResult | ProcessResult) -> None:
         ("CSV:  ", result.summary_csv_path),
         ("HTML: ", result.report_html_path),
         ("LaTeX: ", result.report_tex_path),
+        ("PDF:  ", result.report_pdf_path),
     )
     for label, path in rows:
         if path:

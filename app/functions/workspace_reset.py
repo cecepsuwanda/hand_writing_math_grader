@@ -67,18 +67,27 @@ def prepare_pipeline_workspace(
     questions_dir: Path,
     crops_dir: Path | None = None,
     preserve: frozenset[str] | set[str] = DEFAULT_PRESERVE,
+    keep_crops: bool = False,
 ) -> list[str]:
-    """Clear ``workspace_root`` (except preserve) and any artifact dirs outside it."""
+    """Clear ``workspace_root`` (except preserve) and any artifact dirs outside it.
+
+    ``keep_crops`` leaves ``crops_dir`` untouched, inside or outside the root.
+    """
     workspace_root = Path(workspace_root)
-    removed = clear_output_workspace(workspace_root, preserve=preserve)
     root_resolved = workspace_root.resolve()
+    preserve_names = set(preserve)
+    if keep_crops and crops_dir is not None:
+        top = _top_level_name(Path(crops_dir), root_resolved)
+        if top is not None:
+            preserve_names.add(top)
+    removed = clear_output_workspace(workspace_root, preserve=preserve_names)
 
     extras: list[tuple[str, Path]] = [
         ("pages", Path(pages_dir)),
         ("recognition", Path(recognition_dir)),
         ("questions", Path(questions_dir)),
     ]
-    if crops_dir is not None:
+    if crops_dir is not None and not keep_crops:
         extras.append(("crops", Path(crops_dir)))
 
     for label, path in extras:
@@ -93,3 +102,12 @@ def prepare_pipeline_workspace(
         path.mkdir(parents=True, exist_ok=True)
 
     return removed
+
+
+def _top_level_name(path: Path, root_resolved: Path) -> str | None:
+    """First path segment of ``path`` under ``root_resolved``, or None if outside."""
+    try:
+        parts = path.resolve().relative_to(root_resolved).parts
+    except ValueError:
+        return None
+    return parts[0] if parts else None

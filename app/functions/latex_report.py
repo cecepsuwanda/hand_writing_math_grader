@@ -63,6 +63,33 @@ _RIGHT_DELIM = re.compile(r"\\right(?![A-Za-z])")
 _MATH_MODE_SWITCH = re.compile(r"\\[\[\]()]")
 # ``x_`` / ``x^{}``-less script at the end or right before a closing brace.
 _DANGLING_SCRIPT = re.compile(r"[_^]\s*(?:$|\})")
+# OCR sometimes emits escape sequences (``\n`` line breaks) as two literal characters.
+_LITERAL_ESCAPE = re.compile(r"(?<!\\)\\[nrt](?![A-Za-z])")
+_LITERAL_ESCAPE_SEPARATOR = r" \quad "
+_CONTROL_WORD = re.compile(r"\\([A-Za-z]+)")
+_GREEK_LETTERS = frozenset(
+    """
+    alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta iota kappa
+    lambda mu nu xi pi varpi rho varrho sigma varsigma tau upsilon phi varphi chi
+    psi omega Gamma Delta Theta Lambda Xi Pi Sigma Upsilon Phi Psi Omega
+    """.split()
+)
+# Anything outside this set falls back to ``\texttt`` instead of reaching pdflatex.
+_MATH_COMMANDS = (
+    frozenset(macro.lstrip("\\") for macro in _UNICODE_MATH.values() if macro.startswith("\\"))
+    | frozenset(
+        """
+        frac dfrac tfrac sqrt surd le leq ge geq lt gt ne neq infty cup cap cdot
+        times div pm mp in notin to implies iff Rightarrow rightarrow Leftarrow
+        leftarrow Leftrightarrow leftrightarrow Longrightarrow quad qquad left
+        right text mathrm mathbb mathbf emptyset varnothing ldots cdots dots circ
+        mid setminus subset subseteq approx equiv vert lvert rvert lbrace rbrace
+        langle rangle land lor neg wedge vee forall exists therefore because
+        displaystyle
+        """.split()
+    )
+    | _GREEK_LETTERS
+)
 _UNSAFE_PATH_CHARS = frozenset("#%&~$^{}\\")
 
 _STATUS_COLORS = {
@@ -147,9 +174,18 @@ def _delimiters_unbalanced(text: str) -> bool:
     return len(_LEFT_DELIM.findall(text)) != len(_RIGHT_DELIM.findall(text))
 
 
+def _has_unknown_command(text: str) -> bool:
+    return any(word not in _MATH_COMMANDS for word in _CONTROL_WORD.findall(text))
+
+
+def normalize_literal_escapes(text: str) -> str:
+    """Literal ``\\n`` / ``\\r`` / ``\\t`` → ``\\quad`` (keeps ``\\ne``, ``\\to``, ``\\right``)."""
+    return _LITERAL_ESCAPE.sub(lambda _: _LITERAL_ESCAPE_SEPARATOR, text)
+
+
 def latex_math_or_text(raw: str) -> str:
     """Render an OCR LaTeX fragment as inline math, or as escaped code if unsafe."""
-    collapsed = " ".join((raw or "").split())
+    collapsed = " ".join(normalize_literal_escapes(raw or "").split())
     if not collapsed:
         return ""
     inner = _strip_math_wrapper(collapsed)
@@ -162,6 +198,7 @@ def latex_math_or_text(raw: str) -> str:
         or _delimiters_unbalanced(candidate)
         or _MATH_MODE_SWITCH.search(candidate) is not None
         or _DANGLING_SCRIPT.search(candidate) is not None
+        or _has_unknown_command(candidate)
     )
     if unsafe:
         return latex_code(collapsed)
@@ -182,7 +219,7 @@ def _script_outside_math(text: str) -> bool:
 
 def latex_stem(stem: str) -> str:
     """Question text from ``question_crops`` (prose with ``$...$`` math)."""
-    collapsed = " ".join((stem or "").split())
+    collapsed = " ".join(normalize_literal_escapes(stem or "").split())
     if not collapsed:
         return ""
     dollar_count = sum(

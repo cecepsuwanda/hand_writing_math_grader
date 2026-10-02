@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 
-from sympy import Eq, Expr, Symbol
+from sympy import Eq, Expr, S, Symbol
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import Boolean
 
 from app.exceptions import MathParseError
+from app.functions.step_references import (
+    final_reference_index,
+    reference_indices,
+    step_checks_for,
+)
 from app.interfaces.validator import StepValidator
 from app.models.question import Question, StudentStep
 from app.models.validation import (
     QuestionValidation,
+    StepCheck,
     StepValidation,
     ValidationMethod,
     ValidationStatus,
@@ -37,32 +44,49 @@ from app.services.math.parser import (
     parse_math_step,
     try_parse_function_value_eq,
 )
+from app.services.math.role_checks import (
+    finite_solutions,
+    numeric_relation_holds,
+    values_are_zero_makers,
+)
 
 logger = logging.getLogger(__name__)
 
+_StepChecker = Callable[[StudentStep, ParsedStep | None, ParsedStep | None], StepValidation]
+
 
 class SymPyStepValidator(StepValidator):
-    def __init__(self, symbol: Symbol | None = None) -> None:
+    def __init__(
+        self,
+        symbol: Symbol | None = None,
+        step_checks: Mapping[str, StepCheck] | None = None,
+    ) -> None:
         self._symbol = symbol or default_symbol()
+        self._step_checks = dict(step_checks or {})
+        self._checkers: dict[StepCheck, _StepChecker] = {
+            StepCheck.TRANSITION: self._validate_transition,
+            StepCheck.ZERO_MAKERS: self._check_zero_makers,
+            StepCheck.NUMERIC_EVAL: self._check_numeric_eval,
+            StepCheck.SOLUTION_SET: self._check_solution_set,
+            StepCheck.NOT_SYMBOLIC: self._check_not_symbolic,
+        }
 
     def validate_question(self, question: Question) -> QuestionValidation:
         steps = sorted(question.student_steps, key=lambda s: s.step_number)
-        parsed: list[ParsedStep | None] = []
-        step_results: list[StepValidation] = []
-
-        for index, step in enumerate(steps):
-            item = self._try_parse(step)
-            parsed.append(item)
-            if index == 0:
-                step_results.append(self._validate_first(step, item))
-            else:
-                step_results.append(
-                    self._validate_transition(
-                        step=step,
-                        previous=parsed[index - 1],
-                        current=item,
-                    )
-                )
+        checks = step_checks_for([step.role for step in steps], self._step_checks)
+        parsed = [self._try_parse(step) for step in steps]
+        step_results = [
+            self._validate_step(
+                step,
+                check,
+                reference=None if ref is None else parsed[ref],
+                current=parsed[index],
+                has_reference=ref is not None,
+            )
+            for index, (step, check, ref) in enumerate(
+                zip(steps, checks, reference_indices(checks))
+            )
+        ]
 
         final_status = None
         final_text = ""
@@ -74,9 +98,10 @@ class SymPyStepValidator(StepValidator):
         elif (question.student_final_answer or "").strip():
             final_text = question.student_final_answer.strip()
         if final_text and steps:
+            final_ref = final_reference_index(checks)
             final_status = self._validate_final_answer(
                 final_text,
-                parsed[-1],
+                None if final_ref is None else parsed[final_ref],
                 last_step_number=steps[-1].step_number,
             )
 
@@ -136,6 +161,96 @@ class SymPyStepValidator(StepValidator):
             status=ValidationStatus.VALID,
             method=ValidationMethod.PARSE,
             reason="first step parsed successfully",
+        )
+
+    def _validate_step(
+        self,
+        step: StudentStep,
+        check: StepCheck,
+        *,
+        reference: ParsedStep | None,
+        current: ParsedStep | None,
+        has_reference: bool,
+    ) -> StepValidation:
+        if check == StepCheck.TRANSITION:
+            if not has_reference:
+                return self._validate_first(step, current)
+            return self._validate_transition(step, reference, current)
+        result = self._checkers[check](step, reference, current)
+        return result.model_copy(update={"reason": f"{check.value}: {result.reason}"})
+
+    def _check_zero_makers(
+        self,
+        step: StudentStep,
+        reference: ParsedStep | None,
+        current: ParsedStep | None,
+    ) -> StepValidation:
+        if current is None or current.kind != "relation":
+            return self._uncertain(step, "could not parse zero-maker step")
+        assert isinstance(current.value, Boolean)
+        values = finite_solutions(current.value, self._symbol)
+        if values is None:
+            # Not a list of points (mislabelled role): judge it as an ordinary transition.
+            return self._validate_transition(step, reference, current)
+        if values is S.EmptySet:
+            return StepValidation(
+                step_number=step.step_number,
+                status=ValidationStatus.INVALID,
+                method=ValidationMethod.SYMPY,
+                reason="stated equations have no common solution",
+            )
+        if reference is None or reference.kind != "relation":
+            return self._uncertain(step, "no parseable reference inequality")
+        assert isinstance(reference.value, Boolean)
+        return self._status_from_bool(
+            step.step_number,
+            values_are_zero_makers(values, reference.value, self._symbol),
+            ok="values are zero-makers of the reference inequality",
+            bad="a value is not a zero-maker of the reference inequality",
+            unsure="SymPy could not find zero-makers of the reference inequality",
+        )
+
+    def _check_numeric_eval(
+        self,
+        step: StudentStep,
+        reference: ParsedStep | None,
+        current: ParsedStep | None,
+    ) -> StepValidation:
+        if current is None or current.kind != "relation":
+            return self._uncertain(step, "could not parse numeric evaluation")
+        assert isinstance(current.value, Boolean)
+        return self._status_from_bool(
+            step.step_number,
+            numeric_relation_holds(current.value),
+            ok="numeric evaluation is correct",
+            bad="numeric evaluation is wrong",
+            unsure="step is not a closed numeric evaluation",
+        )
+
+    def _check_solution_set(
+        self,
+        step: StudentStep,
+        reference: ParsedStep | None,
+        current: ParsedStep | None,
+    ) -> StepValidation:
+        if reference is None:
+            return self._uncertain(step, "no parseable reference inequality")
+        return self._validate_transition(step, reference, current)
+
+    def _check_not_symbolic(
+        self,
+        step: StudentStep,
+        reference: ParsedStep | None,
+        current: ParsedStep | None,
+    ) -> StepValidation:
+        return self._uncertain(step, "figure/graph step is not SymPy-checkable")
+
+    def _uncertain(self, step: StudentStep, reason: str) -> StepValidation:
+        return StepValidation(
+            step_number=step.step_number,
+            status=ValidationStatus.UNCERTAIN,
+            method=ValidationMethod.PARSE,
+            reason=reason,
         )
 
     def _validate_transition(
@@ -423,7 +538,7 @@ class SymPyStepValidator(StepValidator):
     def _validate_final_answer(
         self,
         final_answer: str,
-        last_item: ParsedStep | None,
+        reference_item: ParsedStep | None,
         last_step_number: int,
     ) -> StepValidation:
         try:
@@ -435,33 +550,33 @@ class SymPyStepValidator(StepValidator):
                 method=ValidationMethod.PARSE,
                 reason="could not parse final answer",
             )
-        if last_item is None:
+        if reference_item is None:
             return StepValidation(
                 step_number=last_step_number,
                 status=ValidationStatus.UNCERTAIN,
                 method=ValidationMethod.PARSE,
-                reason="last step not parseable for final-answer check",
+                reason="reference step not parseable for final-answer check",
             )
 
-        if last_item.kind == "limit":
+        if reference_item.kind == "limit":
             fake_step = StudentStep(step_number=last_step_number, raw_text="", latex="")
-            return self._validate_limit_transition(fake_step, last_item, final_item)
+            return self._validate_limit_transition(fake_step, reference_item, final_item)
 
-        if last_item.kind == "derivative":
+        if reference_item.kind == "derivative":
             fake_step = StudentStep(step_number=last_step_number, raw_text="", latex="")
-            return self._validate_derivative_transition(fake_step, last_item, final_item)
+            return self._validate_derivative_transition(fake_step, reference_item, final_item)
 
-        if last_item.kind == "integral":
+        if reference_item.kind == "integral":
             fake_step = StudentStep(step_number=last_step_number, raw_text="", latex="")
-            return self._validate_integral_transition(fake_step, last_item, final_item)
+            return self._validate_integral_transition(fake_step, reference_item, final_item)
 
-        if last_item.kind == "matrix":
+        if reference_item.kind == "matrix":
             fake_step = StudentStep(step_number=last_step_number, raw_text="", latex="")
-            return self._validate_matrix_transition(fake_step, last_item, final_item)
+            return self._validate_matrix_transition(fake_step, reference_item, final_item)
 
         applicable, set_result = try_set_form_equivalence(
-            last_item.kind,
-            last_item.value,
+            reference_item.kind,
+            reference_item.value,
             final_item.kind,
             final_item.value,
             self._symbol,
@@ -470,36 +585,36 @@ class SymPyStepValidator(StepValidator):
             return self._status_from_bool(
                 last_step_number,
                 set_result,
-                ok="final answer matches last step solution set",
-                bad="final answer solution set differs from last step",
+                ok="final answer matches reference step solution set",
+                bad="final answer solution set differs from reference step",
                 unsure="SymPy could not compare final answer set",
             )
 
-        if last_item.kind != final_item.kind:
+        if reference_item.kind != final_item.kind:
             return StepValidation(
                 step_number=last_step_number,
                 status=ValidationStatus.UNCERTAIN,
                 method=ValidationMethod.SYMPY,
-                reason="final answer kind differs from last step",
+                reason="final answer kind differs from reference step",
             )
 
-        if last_item.kind == "relation":
-            assert isinstance(last_item.value, Boolean)
+        if reference_item.kind == "relation":
+            assert isinstance(reference_item.value, Boolean)
             assert isinstance(final_item.value, Boolean)
             return self._status_from_bool(
                 last_step_number,
-                relations_equivalent(last_item.value, final_item.value, self._symbol),
-                ok="final answer matches last step solution set",
-                bad="final answer solution set differs from last step",
+                relations_equivalent(reference_item.value, final_item.value, self._symbol),
+                ok="final answer matches reference step solution set",
+                bad="final answer solution set differs from reference step",
                 unsure="SymPy could not compare final answer",
             )
 
-        assert isinstance(last_item.value, Expr)
+        assert isinstance(reference_item.value, Expr)
         assert isinstance(final_item.value, Expr)
         return self._status_from_bool(
             last_step_number,
-            expressions_equivalent(last_item.value, final_item.value),
-            ok="final answer matches last step expression",
-            bad="final answer expression differs from last step",
+            expressions_equivalent(reference_item.value, final_item.value),
+            ok="final answer matches reference step expression",
+            bad="final answer expression differs from reference step",
             unsure="SymPy could not compare final answer expression",
         )

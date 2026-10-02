@@ -8,7 +8,11 @@ import pymupdf
 from PIL import Image
 
 from app.functions.question_crops import write_question_crops
-from app.functions.question_names import question_dir_name
+from app.functions.question_names import (
+    latex_source_filename,
+    question_artifact_filename,
+    question_dir_name,
+)
 from app.functions.run_layout import RunLayout
 from app.models.grading import (
     ErrorType,
@@ -145,6 +149,19 @@ def write_crop_workspace(pages_dir: Path, crops_dir: Path) -> Path:
     return regions
 
 
+def write_question_dir(
+    questions_dir: Path, question: Question, *, latex_source: str = ""
+) -> Path:
+    """``questions/<question_id>/question.json`` (+ optional ``latex_source.tex``)."""
+    folder = questions_dir / question.question_id
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / question_artifact_filename()
+    path.write_text(question.model_dump_json(indent=2), encoding="utf-8")
+    if latex_source:
+        (folder / latex_source_filename()).write_text(latex_source, encoding="utf-8")
+    return path
+
+
 def write_config(
     tmp_path: Path,
     *,
@@ -152,7 +169,8 @@ def write_config(
     reasoning_model: str | None = None,
     jawaban_dir: Path | None = None,
     output_root: Path | None = None,
-    standard_dir: Path | None = None,
+    standards_root: Path | None = None,
+    topic_id: str | None = None,
 ) -> Path:
     """Write ``config.yaml``; ``None`` omits a key (``vision_model=''`` keeps it empty)."""
     lines: list[str] = []
@@ -166,8 +184,12 @@ def write_config(
         lines += ["input:", f"  jawaban_dir: {jawaban_dir.as_posix()}"]
     if output_root is not None:
         lines += ["output:", f"  root_dir: {output_root.as_posix()}"]
-    if standard_dir is not None:
-        lines += ["grading:", f"  standard_dir: {standard_dir.as_posix()}"]
+    if standards_root is not None or topic_id is not None:
+        lines.append("grading:")
+        if standards_root is not None:
+            lines.append(f"  standards_root: {standards_root.as_posix()}")
+        if topic_id is not None:
+            lines.append(f'  topic_id: "{topic_id}"')
     path = tmp_path / "config.yaml"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -210,6 +232,7 @@ def make_step(
     raw_text: str = "",
     symbolic_repr: SymbolicSpec = None,
     role: str | None = None,
+    confidence: float | None = None,
 ) -> StudentStep:
     return StudentStep(
         step_number=number,
@@ -217,6 +240,7 @@ def make_step(
         latex=latex,
         symbolic=symbolic(symbolic_repr),
         role=role,
+        confidence=confidence,
     )
 
 
@@ -253,6 +277,38 @@ def make_question(
         student_final_symbolic=symbolic(final_symbolic),
         figure_refs=figures or [],
     )
+
+
+RATIONAL_INEQUALITY_STEPS: tuple[tuple[str, str], ...] = (
+    ("(x+2)/(x+4) < (x-1)/(x-2)", "algebra"),
+    ("(x+2)/(x+4) - (x-1)/(x-2) < 0", "algebra"),
+    ("((x+2)*(x-2) - (x-1)*(x+4))/((x+4)*(x-2)) < 0", "algebra"),
+    ("((x**2-4) - (x**2+3*x-4))/((x+4)*(x-2)) < 0", "algebra"),
+    ("(x**2-4-x**2-3*x+4)/((x+4)*(x-2)) < 0", "algebra"),
+    ("-3*x/((x+4)*(x-2)) < 0", "algebra"),
+    ("-3x=0 and x=0", "critical_points"),
+    ("x+4=0 and x=-4", "critical_points"),
+    ("x-2=0 and x=2", "critical_points"),
+    ("(-4, 0) U (2, oo)", "hp"),
+    ("(-3*(-5))/((-5+4)*(-5-2)) = 15/7", "sign_chart"),
+    ("(-3*(-2))/((-2+4)*(-2-2)) = -3/4", "sign_chart"),
+    ("(-3*1)/((1+4)*(1-2)) = 3/5", "sign_chart"),
+    ("(-3*3)/((3+4)*(3-2)) = -9/7", "sign_chart"),
+)
+
+
+def make_rational_inequality_question(
+    *,
+    replace: dict[int, str] | None = None,
+    final_symbolic: str = "(-4, 0) U (2, oo)",
+) -> Question:
+    """Role-tagged (x+2)/(x+4) < (x-1)/(x-2) solution; ``replace`` swaps reprs by step number."""
+    overrides = replace or {}
+    steps = [
+        make_step(number, symbolic_repr=overrides.get(number, repr_), role=role)
+        for number, (repr_, role) in enumerate(RATIONAL_INEQUALITY_STEPS, start=1)
+    ]
+    return make_question(steps=steps, number=7, final_symbolic=final_symbolic)
 
 
 # --- validation / grading ------------------------------------------------------
@@ -363,7 +419,7 @@ def make_page(number: int = 1) -> Page:
 def make_report_metadata(tmp_path: Path) -> ReportMetadata:
     return ReportMetadata(
         generated_at="2026-01-01T00:00:00+00:00",
-        standard_dir=tmp_path / "standards" / "exam_001",
+        standard_dir=tmp_path / "standards" / "topik_1",
         questions_dir=tmp_path / "questions",
         student_id="student_001",
         vision_model="vision-test",

@@ -20,6 +20,16 @@ class ValidationMethod(str, Enum):
     LLM = "llm"
 
 
+class StepCheck(str, Enum):
+    """Pack-agnostic check applied to a step; topic packs map roles onto these."""
+
+    TRANSITION = "transition"
+    ZERO_MAKERS = "zero_makers"
+    NUMERIC_EVAL = "numeric_eval"
+    SOLUTION_SET = "solution_set"
+    NOT_SYMBOLIC = "not_symbolic"
+
+
 class LlmJudgement(BaseModel):
     status: ValidationStatus
     reason: str = ""

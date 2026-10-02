@@ -66,7 +66,7 @@ Setiap perubahan: implementasi → tulis/perluas tes → jalankan `pytest -q` �
 
 ## Phase 8 — Report
 
-- `report.json` (+ metadata model & versi prompt), `summary.csv`, `report.html`, `report.tex` (satu file per mahasiswa: crop + OCR + komentar; kompilasi `pdflatex` manual di folder run).
+- `report.json` (+ metadata model & versi prompt), `summary.csv`, `report.html`, `report.tex` (satu file per mahasiswa: crop + OCR + komentar; dikompilasi otomatis ke `report.pdf` setelah grading; lihat README).
 - Acceptance: artefak report lengkap dan konsisten dengan `grading.json` per soal.
 
 ## Phase 9 — CLI polish

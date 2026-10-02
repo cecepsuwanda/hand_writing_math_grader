@@ -32,8 +32,12 @@ Hanya setelah bab sebelumnya punya acceptance test hijau (urutan: `docs/math-top
 Pack progress:
 - [ ] app/topics/<nama_bab>/__init__.py: class pack + PACK = ...
 - [ ] Implement semua anggota TopicPack (app/interfaces/topic_pack.py):
-      id, label, topik_refs, part_kinds, roles, figure_kinds, capability_ids,
-      recognition_role_instructions, rubric_from_parts, coalesce_step_role
+      id, label, topik_refs, part_kinds, roles, step_checks, figure_kinds,
+      capability_ids, recognition_role_instructions, rubric_from_parts,
+      coalesce_step_role
+- [ ] step_checks: petakan tiap role ke StepCheck (app/models/validation.py);
+      role tanpa entri = TRANSITION. Jenis cek baru = anggota StepCheck + checker
+      di SymPyStepValidator._checkers (bukan nama role di service inti)
 - [ ] Tambah entri di _PACKS (app/topics/registry.py)
 - [ ] Notasi baru? rewrite_* di app/functions/<x>_normalize.py (pure)
       + entri _CAPABILITIES (app/capabilities/registry.py); pilih lewat capability_ids
@@ -69,26 +73,31 @@ Aturan: recognition tidak mengoreksi jawaban; SymPy sebelum LLM; output LLM diva
 
 ```text
 CLI progress:
-- [ ] Parser: _add_<nama>_parser(subparsers) di app/cli.py memakai helper argumen
-      (_add_pdf_arg, _add_dpi_arg, _add_pages_dir_arg, _add_yes_arg, _add_questions_dir_arg,
-      _add_standard_arg, _add_run_arg, _add_topic_arg, …); daftarkan di loop build_parser()
-- [ ] Handler _run_<nama>(args): load_config → pipeline_factory.build_* → controller → view → return 0;
-      daftarkan di _HANDLERS. main() sudah memetakan error lewat _report_failure
+- [ ] Class XCommand(Command) di app/commands/ (stages.py / crops.py / workflows.py sesuai jenis):
+      atribut name + help; configure(parser) memakai helper di app/commands/base.py
+      (add_pdf_arg, add_dpi_arg, add_pages_dir_arg, add_yes_arg, add_questions_dir_arg,
+      add_standard_arg, add_run_arg, add_topic_arg, …)
+- [ ] run(args): load_config → pipeline_factory.build_* (panggil lewat modul
+      `pipeline_factory.build_x`, bukan import nama) → controller → view → return 0
+- [ ] Daftarkan instance di COMMANDS (app/commands/__init__.py); urutan = urutan --help.
+      main() di app/cli.py sudah memetakan error lewat flows.report_failure
       (MathGraderError → 1, lainnya → 2 + logger.exception)
-- [ ] Folder run: _layout_for_pdf (ada PDF) atau _layout_for_run (--run)
+- [ ] Folder run: flows.layout_for (ada PDF) atau flows.layout_for_run (--run)
 - [ ] Pengosongan output hanya untuk folder run milik perintah itu
-- [ ] Alur dipakai subcommand DAN menu? Helper _<alur>(config, layout, ...) di cli.py,
-      dipanggil dari _run_<nama> dan _CliMenuActions (jangan duplikasi)
+- [ ] Alur dipakai subcommand DAN menu? Fungsi <alur>(config, layout, ...) di app/commands/flows.py,
+      dipanggil dari XCommand.run dan CliMenuActions (jangan duplikasi)
 - [ ] Item menu (opsional):
       - entri MenuChoice + MAIN_MENU (app/functions/menu_choices.py)
-      - method di Protocol MenuActions (app/interfaces/menu_actions.py), implementasi di _CliMenuActions
-      - handler di MenuController._handlers (state sesi di MenuSession, bukan di cli.py)
-- [ ] Input interaktif hanya lewat app/views/prompt_view.py (tidak ada input() di cli.py/controller)
-- [ ] Tes: subcommand di TestCliProcess (CliHarness); menu di TestMenuController (RecordingMenuActions)
+      - method di Protocol MenuActions (app/interfaces/menu_actions.py), implementasi di
+        CliMenuActions (app/commands/menu_actions.py)
+      - handler di MenuController._handlers (state sesi di MenuSession, bukan di app/commands/)
+- [ ] Input interaktif hanya lewat app/views/prompt_view.py (tidak ada input() di app/commands/ / controller)
+- [ ] Tes: subcommand di TestCliProcess (CliHarness) + nama baru di TestCliCommands.EXPECTED_NAMES;
+      menu di TestMenuController (RecordingMenuActions)
 - [ ] Update README.md (menu/flag) + docs/architecture.md (kontrak CLI)
 ```
 
-`cli.py` tetap tipis: parser, `_HANDLERS`, helper alur bersama, dan adapter `_CliMenuActions`. Logika bisnis ada di controller/service.
+`app/cli.py` hanya bootstrap (`build_parser` dari `COMMANDS`, `main`). Subcommand = class `Command` di `app/commands/`, alur bersama di `flows.py`, adapter menu `CliMenuActions`. Logika bisnis ada di controller/service.
 
 ## Setelah selesai
 

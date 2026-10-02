@@ -7,10 +7,25 @@ class MathGraderError(Exception):
     """Base error for recoverable CLI failures."""
 
 
+class ConfigNotFoundError(MathGraderError):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(
+            f"Config file not found: {path}. Periksa path --config "
+            "(letakkan sebelum subcommand) atau hapus opsi itu untuk memakai default."
+        )
+
+
 class PdfNotFoundError(MathGraderError):
     def __init__(self, path: Path) -> None:
         self.path = path
         super().__init__(f"PDF not found: {path}")
+
+
+class KunciNotFoundError(MathGraderError):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(f"Kunci .tex not found: {path}")
 
 
 class NoJawabanPdfError(MathGraderError):
@@ -37,6 +52,17 @@ class NoKunciTexError(MathGraderError):
         )
 
 
+class AmbiguousKunciDirError(MathGraderError):
+    def __init__(self, kunci_dir: Path, names: list[str]) -> None:
+        self.kunci_dir = kunci_dir
+        self.names = list(names)
+        super().__init__(
+            f"{len(self.names)} kunci .tex files in {kunci_dir} "
+            f"({', '.join(self.names)}); one ingest = one kunci per topic. "
+            "Pass the file explicitly: ingest-kunci <file.tex> [--topic <id>]."
+        )
+
+
 class InvalidKunciSelectionError(MathGraderError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
@@ -44,16 +70,18 @@ class InvalidKunciSelectionError(MathGraderError):
 
 
 class RunNotSpecifiedError(MathGraderError):
-    def __init__(self, output_root: Path, available: list[str]) -> None:
+    def __init__(
+        self, output_root: Path, available: list[str], *, hint: str | None = None
+    ) -> None:
         self.output_root = output_root
         self.available = list(available)
         if self.available:
-            hint = "Available runs: " + ", ".join(self.available) + "."
+            runs = "Available runs: " + ", ".join(self.available) + "."
         else:
-            hint = "No run folders yet; process a PDF first."
+            runs = "No run folders yet; process a PDF first."
+        advice = hint if hint is not None else "Pass --run <nama_pdf>."
         super().__init__(
-            f"Cannot pick a run folder under {output_root}. "
-            f"Pass --run <nama_pdf>. {hint}"
+            f"Cannot pick a run folder under {output_root}. {advice} {runs}"
         )
 
 
@@ -148,10 +176,28 @@ class QuestionCropsInvalidError(MathGraderError):
         )
 
 
+class QuestionArtifactsInvalidError(MathGraderError):
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = list(errors)
+        detail = "; ".join(self.errors)
+        super().__init__(
+            f"question.json tidak valid: {detail}. "
+            "Perbaiki questions/question_*/question.json lalu lanjutkan lewat menu 8 "
+            "(finish-questions), atau kenali ulang lewat menu 7."
+        )
+
+
 class QuestionCropsNotFoundError(MathGraderError):
     def __init__(self, json_dir: Path) -> None:
         self.json_dir = json_dir
         super().__init__(f"{json_dir} belum ada; jalankan label-questions dulu")
+
+
+class OperationCancelledError(MathGraderError):
+    def __init__(self, step: str = "") -> None:
+        self.step = step
+        where = f" ({step})" if step else ""
+        super().__init__(f"Dibatalkan oleh pengguna{where} (Ctrl+C).")
 
 
 class InvalidMenuSelectionError(MathGraderError):
@@ -318,3 +364,12 @@ class ReportWriteError(MathGraderError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__(f"Failed to write report: {reason}")
+
+
+class ReportPdfError(MathGraderError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(
+            f"report.pdf tidak dikompilasi: {reason}. "
+            "report.tex tetap ada; kompilasi ulang lewat menu 8 atau subcommand `report`."
+        )

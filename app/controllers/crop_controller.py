@@ -83,25 +83,40 @@ class CropController:
         *,
         force_yes: bool = False,
         input_fn: InputFn | None = None,
-    ) -> None:
-        """Ask until crops OK; on no, wait for JSON edit then recrop."""
+    ) -> CropProposeResult | None:
+        """Ask until crops OK; on no, wait for JSON edit then recrop.
+
+        After a failed recrop the crops on disk are stale, so the loop asks for
+        another edit instead of offering "OK?" (whose default is yes).
+
+        Returns the last successful recrop, or ``None`` if nothing was recropped.
+        """
         if force_yes or not is_interactive(input_fn):
-            return
+            return None
         pages_dir = Path(pages_dir)
+        pending: Exception | None = None
+        latest: CropProposeResult | None = None
         while True:
-            if ask_crops_ok(input_fn=input_fn):
-                return
-            wait_for_json_edit(
+            if pending is None and ask_crops_ok(input_fn=input_fn):
+                return latest
+            edited = wait_for_json_edit(
                 json_hint=str(self.crops_dir / REGIONS_JSON_HINT), input_fn=input_fn
             )
+            if not edited and pending is not None:
+                raise pending
             try:
                 result = self.recrop_all(pages_dir)
             except (MathGraderError, ValueError) as exc:
                 # A bad JSON edit should re-prompt, not abort the whole session.
                 print_error(exc)
+                pending = exc
                 continue
             if not result.pages:
-                print_error(NoRegionsJsonError(self.crops_dir))
+                pending = NoRegionsJsonError(self.crops_dir)
+                print_error(pending)
+                continue
+            pending = None
+            latest = result
 
     def ensure_crops_confirmed(
         self,
@@ -112,21 +127,30 @@ class CropController:
         force_yes: bool = False,
         input_fn: InputFn | None = None,
     ) -> CropProposeResult:
-        """Propose (unless existing) then run confirm loop before VLM."""
+        """Propose (unless existing) then run confirm loop before VLM.
+
+        With ``use_existing`` only pages lacking a regions JSON are proposed, so
+        hand-edited boxes on the other pages survive.
+        """
         pages_dir = Path(pages_dir)
-        if use_existing and all(
-            page_has_regions_artifact(
-                self._workspace.page_crop_dir(p.page_number), p.page_number
-            )
-            for p in pages
-        ):
+        if use_existing:
+            existing = [p for p in pages if self._has_regions(p.page_number)]
+            missing = [p for p in pages if not self._has_regions(p.page_number)]
+            summaries = [self._summarize_existing(p.page_number) for p in existing]
+            if missing:
+                summaries += self.propose_pages(missing, pages_dir).pages
             result = CropProposeResult(
-                pages=[self._summarize_existing(p.page_number) for p in pages]
+                pages=sorted(summaries, key=lambda s: s.page_number)
             )
         else:
             result = self.propose_pages(pages, pages_dir)
-        self.confirm_loop(pages_dir, force_yes=force_yes, input_fn=input_fn)
-        return result
+        recropped = self.confirm_loop(pages_dir, force_yes=force_yes, input_fn=input_fn)
+        return recropped or result
+
+    def _has_regions(self, page_number: int) -> bool:
+        return page_has_regions_artifact(
+            self._workspace.page_crop_dir(page_number), page_number
+        )
 
     def _summarize_existing(self, page_number: int) -> PageCropSummary:
         page_dir = self._workspace.page_crop_dir(page_number)

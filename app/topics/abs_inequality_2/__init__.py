@@ -29,6 +29,7 @@ class AbsInequalityPack:
     topik_refs = ("2", "2.1", "2.2")
     part_kinds = INEQUALITY_15.part_kinds
     roles = INEQUALITY_15.roles
+    step_checks = INEQUALITY_15.step_checks
     # Figure optional via kunci expects_figure; not required by pack.
     figure_kinds = ("number_line", "none")
     capability_ids = _CAPABILITY_IDS

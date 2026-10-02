@@ -28,8 +28,9 @@ def ask_crops_ok(*, input_fn: InputFn | None = None) -> bool:
     return ask_yes_no("Crop OK? [y/n]: ", input_fn=input_fn)
 
 
-def wait_for_json_edit(*, json_hint: str, input_fn: InputFn | None = None) -> None:
-    wait_for_edit(
+def wait_for_json_edit(*, json_hint: str, input_fn: InputFn | None = None) -> bool:
+    """False when input ended (EOF) instead of Enter."""
+    return wait_for_edit(
         "Edit the region boxes in the JSON (x, y, width, height), save the file,"
         f"\nthen press Enter to recrop.\n  {json_hint}",
         input_fn=input_fn,

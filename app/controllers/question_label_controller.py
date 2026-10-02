@@ -84,9 +84,9 @@ class QuestionLabelController:
 
     def reload_all(self) -> QuestionLabelResult:
         """Re-read edited question_*.json and validate against kunci + regions."""
-        crops = list_crops_in_reading_order(self._crops_dir)
         mapping: QuestionCropMap = {}
         try:
+            crops = list_crops_in_reading_order(self._crops_dir)
             loaded = load_question_crops(self._crops_dir)
         except ValueError as exc:
             report = QuestionCropsReport(errors=[str(exc)])
@@ -117,7 +117,9 @@ class QuestionLabelController:
         while True:
             if result.report.ok and ask_question_crops_ok(input_fn=input_fn):
                 return result
-            wait_for_question_crops_edit(json_dir=self.json_dir, input_fn=input_fn)
+            edited = wait_for_question_crops_edit(json_dir=self.json_dir, input_fn=input_fn)
+            if not edited and not result.report.ok:
+                raise QuestionCropsInvalidError(result.report.errors)
             result = self.reload_all()
 
     def _result(

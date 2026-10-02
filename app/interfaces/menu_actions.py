@@ -12,8 +12,8 @@ from app.models.question_crops import LabelMode
 
 @runtime_checkable
 class MenuActions(Protocol):
-    def select_topic(self, active_topic_id: str) -> str:
-        """Ask for a topic pack; return its id (``active_topic_id`` if cancelled)."""
+    def select_topic(self, active_topic_id: str) -> str | None:
+        """Ask for a topic pack; return its id, or ``None`` if cancelled."""
 
     def select_pdf(self, config: AppConfig) -> Path:
         """Ask for a student PDF under ``config.input.jawaban_dir``."""
@@ -22,7 +22,7 @@ class MenuActions(Protocol):
         """Resolve an existing run folder (single run, or interactive choice)."""
 
     def ingest(self, config: AppConfig, topic_id: str) -> None:
-        """Ask for a kunci ``.tex`` and ingest it into the standards dir."""
+        """Ask for a kunci ``.tex`` and ingest it into the topic's ``topik_<bab>`` dir."""
 
     def propose_crops(self, config: AppConfig, layout: RunLayout, pdf_path: Path) -> None:
         """Render ``pdf_path``, ink-propose crops, and confirm them."""
@@ -35,3 +35,8 @@ class MenuActions(Protocol):
 
     def finish(self, config: AppConfig, layout: RunLayout, topic_id: str | None) -> None:
         """Run recognize → report from the confirmed crops."""
+
+    def finish_questions(
+        self, config: AppConfig, layout: RunLayout, topic_id: str | None
+    ) -> None:
+        """Review then LaTeX → report from existing question.json (never rewritten)."""

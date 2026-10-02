@@ -54,11 +54,15 @@ Silabus, status per bab, dan topic pack: [`math-topics.md`](math-topics.md).
 | Domain model (Pydantic) | Helper di `app/functions/` |
 
 - `app/functions/` utamanya pure. Pengecualian yang disengaja: helper baca/tulis **artefak** (`*_artifact.py`, `question_crops.py`, `image_crop.py`, `report_details.py`, `workspace_reset.py`, `load_exam_schema`). Jangan menambah I/O jaringan atau model di sana.
+- Proses eksternal (`subprocess`) hanya ada di `services/latex/pdflatex_compiler.py`, lewat `runner` yang di-inject (tes memakai `FakeLatexRunner`, tidak pernah pdflatex sungguhan). Path pdflatex diambil dari `config.report.pdf` / env `PDFLATEX_PATH`, atau dideteksi otomatis; jangan di-hard-code di tempat lain. Kegagalan kompilasi PDF (`ReportPdfError`) tidak menggagalkan run.
+- `raw_text` OCR hanya disanitasi saat dirender ke `report.tex` (`app/functions/latex_report.py`); `question.json` tidak diubah. Escape literal `\n`/`\r`/`\t` diganti `\quad`, dan perintah di luar allowlist `_MATH_COMMANDS` jatuh ke `\texttt`, sehingga makro yang tidak dikenal tidak sampai ke pdflatex.
 - Composition over inheritance; jangan buat class berisi static method saja.
 
 ## Recognition fidelity
 
 Recognition memakai **ink bbox**: clustering tinta deterministik (`ink_layout`), lalu crop Pillow + konfirmasi user (`page_*_regions.json` editable) + `crop_math`. Konteks ujian ke vision hanya **stem + `expects_figure`** dari `exam_schema` — jangan kirim steps/HP ke OCR.
+
+Koreksi transkripsi hanya oleh **user**, di checkpoint tinjau `question.json` setelah Extract (`QuestionReviewController`); sistem cuma memberi tanda (`ReviewFlag`) dan tidak pernah mengubah langkah sendiri. Penanda harus pack-agnostic: cek `symbolic.kind`, bukan nama role.
 
 Saat recognition, LLM **tidak boleh**:
 
@@ -72,8 +76,8 @@ Jika ragu: tandai `uncertain` / confidence rendah / `review_required`, dan perta
 ## Validasi dan grading
 
 1. Syntax / parse (symbolic ASCII / LaTeX artefak).
-2. SymPy: konsistensi langkah mahasiswa.
-3. LLM judge hanya untuk langkah yang SymPy tandai `uncertain`.
+2. SymPy: konsistensi langkah mahasiswa. Setiap langkah dicek terhadap **langkah acuan** = langkah `TRANSITION` terakhir sebelumnya, bukan otomatis langkah sebelumnya. Pack memetakan `role` → `StepCheck` (`TopicPack.step_checks`): `transition` (ekuivalen dengan acuan), `zero_makers` (nilai = pembuat nol pembilang/penyebut acuan), `numeric_eval` (aritmetika uji titik benar), `solution_set` (himpunan solusi = acuan), `not_symbolic` (figure → `uncertain`). Role tanpa pemetaan = `transition`. Final answer dibandingkan dengan acuan terakhir bila ada langkah non-`transition`, selain itu dengan langkah terakhir. Reason di `validation.json` diawali jenis ceknya (mis. `zero_makers: …`).
+3. LLM judge hanya untuk langkah yang SymPy tandai `uncertain`; judge menerima langkah acuan (bukan langkah sebelumnya) dan jenis ceknya (`Check kind: …`).
 4. **Grading:** skor langkah = konsistensi; soft-align ke `exam_schema` / solutions `.tex` = audit; skor `final_answer` = min(konsistensi, standard SymPy).
 5. Partial credit; jangan nolkan semua skor hanya karena final answer salah.
 6. Error type deterministik: `calculation` / `carry_forward` / `transcription` / `uncertain`; `conceptual` hanya dari annotator LLM (feedback, tidak mengubah skor).
@@ -103,14 +107,14 @@ Kontrak markup itemize di dalam `\textbf{Penyelesaian}` (pack `1.5`):
 
 ## Reproducibility dan keamanan
 
-- Tersimpan saat ini: `report.json` metadata = `generated_at`, `student_id`, `standard_dir`, model vision/reasoning, versi prompt (recognition dari header `crop_math.txt`, `validation-v1`, `grading-v1`).
+- Tersimpan saat ini: `report.json` metadata = `generated_at`, `student_id`, `standard_dir`, model vision/reasoning, versi prompt (recognition dari header `crop_math.txt`, `validation-v2`, `grading-v1`).
 - Target (belum ada): versi aplikasi dan `submission_id`.
 - Jangan commit password/API key; pakai environment variable.
 - Prefer Ollama **lokal** untuk data mahasiswa. Model `*-cloud` di `config.yaml` berarti gambar keluar dari mesin.
 
 ## Logging
 
-Modul memakai `logging.getLogger(__name__)` (model, attempt, status HTTP, durasi, status tahap). CLI belum mengonfigurasi handler, jadi log INFO/DEBUG tidak tampil secara default. Pengecualian: pada exit code `2`, `_report_failure` di `app/cli.py` memanggil `logger.exception`, sehingga traceback tetap tercetak ke stderr lewat `logging.lastResort` (level WARNING ke atas). Target: timestamp, `submission_id`, page, model, prompt_version, processing_time.
+Modul memakai `logging.getLogger(__name__)` (model, attempt, status HTTP, durasi, status tahap). CLI belum mengonfigurasi handler, jadi log INFO/DEBUG tidak tampil secara default. Pengecualian: pada exit code `2`, `report_failure` di `app/commands/flows.py` (dipakai `main()` di `app/cli.py` dan loop `process`) memanggil `logger.exception`, sehingga traceback tetap tercetak ke stderr lewat `logging.lastResort` (level WARNING ke atas). Target: timestamp, `submission_id`, page, model, prompt_version, processing_time.
 
 ## Testing
 

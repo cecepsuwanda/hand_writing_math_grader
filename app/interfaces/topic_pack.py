@@ -40,6 +40,10 @@ class TopicPack(Protocol):
         """Step role → validation check; unmapped roles use ``TRANSITION``."""
 
     @property
+    def role_rubric_parts(self) -> Mapping[str, str]:
+        """Step role → rubric part id that scores it (outside the algebra pool)."""
+
+    @property
     def figure_kinds(self) -> tuple[str, ...]:
         """Figure kinds this pack grades (e.g. ``number_line``, ``none``)."""
 

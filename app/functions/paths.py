@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -59,7 +60,7 @@ def resolve_jawaban_pdf(pdf: Path, jawaban_dir: Path) -> Path:
 
 
 def parse_path_choice(
-    paths: list[Path],
+    paths: Sequence[Path],
     raw: str,
     *,
     kind: str = "file",
@@ -93,16 +94,16 @@ def parse_path_choice(
     raise ValueError(f"unknown {kind}: {choice}")
 
 
-def parse_pdf_choice(pdfs: list[Path], raw: str) -> Path:
+def parse_pdf_choice(pdfs: Sequence[Path], raw: str) -> Path:
     """Map a menu choice (filename preferred, then 1-based index) to a PDF path."""
     return parse_path_choice(pdfs, raw, kind="PDF", default_suffix=".pdf")
 
 
-def parse_kunci_choice(tex_files: list[Path], raw: str) -> Path:
+def parse_kunci_choice(tex_files: Sequence[Path], raw: str) -> Path:
     """Map a menu choice to a kunci ``.tex`` path."""
     return parse_path_choice(tex_files, raw, kind="kunci", default_suffix=".tex")
 
 
-def parse_run_choice(run_dirs: list[Path], raw: str) -> Path:
+def parse_run_choice(run_dirs: Sequence[Path], raw: str) -> Path:
     """Map a menu choice (folder name or 1-based index) to a run directory."""
     return parse_path_choice(run_dirs, raw, kind="run")

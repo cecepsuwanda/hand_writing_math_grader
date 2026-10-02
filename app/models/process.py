@@ -43,6 +43,8 @@ class QuestionScoreSummary(BaseModel):
     score: float
     maximum_score: float
     review_status: ReviewStatus
+    missing: bool = False
+    missing_label: str = ""
 
 
 class ProcessResult(BaseModel):

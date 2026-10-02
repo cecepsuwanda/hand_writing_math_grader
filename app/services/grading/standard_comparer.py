@@ -7,11 +7,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from sympy import Expr, Symbol
+from sympy import Expr, FiniteSet, Symbol
 from sympy.logic.boolalg import Boolean
 
 from app.exceptions import MathParseError
 from app.functions.kunci_ingest import load_exam_schema
+from app.functions.math_normalize import split_implication_clauses
 from app.functions.number_line import (
     compare_number_lines,
     number_line_from_symbolic,
@@ -24,6 +25,7 @@ from app.functions.standard_extract import (
     standard_solution_path,
     standard_step_texts,
 )
+from app.functions.question_split import schema_final_text, schema_stem_text
 from app.functions.step_align import align_student_steps_to_standard
 from app.models.exam_schema import ExamMilestone, ExamQuestion, ExamSchema, NumberLineSpec
 from app.models.question import FigureRef, Question, StudentStep
@@ -32,6 +34,7 @@ from app.services.math.equivalence import (
     derivatives_equivalent,
     expressions_equivalent,
     integrals_equivalent,
+    is_solved_form,
     limits_equivalent,
     matrices_equivalent,
     relations_equivalent,
@@ -46,10 +49,15 @@ from app.services.math.parser import (
     MatrixClaim,
     ParsedStep,
     default_symbol,
+    infer_main_symbol,
     parse_math_step,
+    rebind_default_symbol,
 )
+from app.services.math.role_checks import finite_solutions
 
 logger = logging.getLogger(__name__)
+
+FIGURE_UNCOMPARED_REASON = "figure present; no key number line to compare"
 
 # Split joined critical-point lists (``;`` or ``\;``). Do not split logical "and".
 _ATOM_SPLIT_RE = re.compile(r"\s*\\?;\s*")
@@ -140,14 +148,106 @@ class StandardFinalComparer:
             if exam_schema is not None
             else load_exam_schema(self._standard_dir)
         )
+        self._fixed_symbol = symbol
         self._symbol = symbol or default_symbol()
+
+    def _bind_symbol(self, question: Question) -> ExamQuestion | None:
+        """Pick the question's variable (stem, key final, student work); return its schema entry."""
+        schema_q = schema_question(self._schema, question.question_number)
+        if self._fixed_symbol is not None:
+            self._symbol = self._fixed_symbol
+            return schema_q
+        texts: list[str] = []
+        if schema_q is not None:
+            texts.extend([schema_stem_text(schema_q), schema_final_text(schema_q)])
+        texts.extend(_student_step_text(step) for step in question.student_steps)
+        texts.append(question.student_final_answer or "")
+        self._symbol = infer_main_symbol(
+            clause for text in texts for clause in split_implication_clauses(text)
+        )
+        return schema_q
+
+    def _parse(self, text: str) -> ParsedStep:
+        clauses = split_implication_clauses(text)
+        source = clauses[-1] if len(clauses) > 1 else text
+        return rebind_default_symbol(
+            parse_math_step(source, self._symbol), source, self._symbol
+        )
+
+    def compare_first_step(
+        self,
+        question: Question,
+    ) -> tuple[int, ValidationStatus, str] | None:
+        """First written step must keep the stem's solution set.
+
+        Returns ``(step_number, UNCERTAIN, reason)`` when it does not (or
+        cannot be decided), else None. Only relational stems (equations /
+        inequalities) are checked; unparseable stems are skipped.
+        """
+        schema_q = self._bind_symbol(question)
+        if schema_q is None:
+            return None
+        stem_text = schema_stem_text(schema_q)
+        first = next(
+            (
+                step
+                for step in sorted(question.student_steps, key=lambda s: s.step_number)
+                if not _is_figure_student_step(step) and _student_step_text(step)
+            ),
+            None,
+        )
+        if first is None or not stem_text:
+            return None
+        try:
+            stem = self._parse(stem_text)
+        except MathParseError:
+            return None
+        if stem.kind != "relation":
+            return None
+        clauses = split_implication_clauses(_student_step_text(first))
+        try:
+            student = self._parse(clauses[0] if clauses else _student_step_text(first))
+        except MathParseError:
+            return None
+        result = self._equivalent(student, stem)
+        if result is True:
+            return None
+        reason = (
+            "first step does not keep the problem stem's solution set"
+            if result is False
+            else "could not compare first step to the problem stem"
+        )
+        return first.step_number, ValidationStatus.UNCERTAIN, reason
+
+    def _unsolved_final_reason(
+        self,
+        student_step: ParsedStep,
+        schema_q: ExamQuestion | None,
+    ) -> str | None:
+        """Reason when the final answer is not stated directly (copied stem / unfinished)."""
+        if is_solved_form(student_step.kind, student_step.value, self._symbol):
+            return None
+        if schema_q is not None and student_step.kind == "relation":
+            try:
+                stem = self._parse(schema_stem_text(schema_q))
+            except MathParseError:
+                stem = None
+            if (
+                stem is not None
+                and stem.kind == "relation"
+                and isinstance(stem.value, Boolean)
+                and isinstance(student_step.value, Boolean)
+                and relations_form_equivalent(student_step.value, stem.value) is True
+            ):
+                return "final answer repeats the problem stem"
+        return "final answer not in solved form"
 
     def compare(
         self,
         question: Question,
     ) -> tuple[ValidationStatus, str] | None:
         """Return (status, reason), or None if no schema question and no .tex."""
-        schema_q = schema_question(self._schema, question.question_number)
+        schema_q = self._bind_symbol(question)
         path = standard_solution_path(
             self._standard_dir, question.question_number
         )
@@ -178,7 +278,7 @@ class StandardFinalComparer:
             return ValidationStatus.INVALID, "student final answer is empty"
 
         try:
-            student_step = parse_math_step(student_text, self._symbol)
+            student_step = self._parse(student_text)
         except MathParseError:
             return (
                 ValidationStatus.UNCERTAIN,
@@ -186,12 +286,17 @@ class StandardFinalComparer:
             )
 
         try:
-            standard_step = parse_math_step(standard_text, self._symbol)
+            standard_step = self._parse(standard_text)
         except MathParseError:
             return (
                 ValidationStatus.UNCERTAIN,
                 "could not parse standard final answer",
             )
+
+        if is_solved_form(standard_step.kind, standard_step.value, self._symbol):
+            unsolved = self._unsolved_final_reason(student_step, schema_q)
+            if unsolved is not None:
+                return ValidationStatus.UNCERTAIN, unsolved
 
         result = self._equivalent(student_step, standard_step)
         if result is True:
@@ -213,7 +318,7 @@ class StandardFinalComparer:
         ``shared + method``; the bank with the most VALID (then fewest
         INVALID) wins. Align is audit/feedback; scoring uses consistency.
         """
-        schema_q = schema_question(self._schema, question.question_number)
+        schema_q = self._bind_symbol(question)
         path = standard_solution_path(
             self._standard_dir, question.question_number
         )
@@ -273,14 +378,14 @@ class StandardFinalComparer:
     def compare_milestones(
         self,
         question: Question,
-    ) -> dict[str, tuple[ValidationStatus, str]]:
+    ) -> dict[str, tuple[ValidationStatus, str, float | None]]:
         """Coverage of student work vs schema milestones.
 
         Returns keys used by part scoring. When both ``critical_points``
         and ``sign_chart`` exist, their score fractions are averaged into
         the single ``critical_points`` rubric bucket.
         """
-        schema_q = schema_question(self._schema, question.question_number)
+        schema_q = self._bind_symbol(question)
         if schema_q is None or not schema_q.milestones:
             return {}
 
@@ -309,7 +414,7 @@ class StandardFinalComparer:
         self,
         question: Question,
     ) -> tuple[ValidationStatus, str]:
-        """Score figure part: number-line geometry vs schema, else presence."""
+        """Score figure part: number-line geometry vs schema, else human review."""
         schema_q = schema_question(self._schema, question.question_number)
         has_figure = _question_has_figure(question)
         expected = _expected_number_line(schema_q)
@@ -318,8 +423,7 @@ class StandardFinalComparer:
             return ValidationStatus.INVALID, "no figure step"
 
         if expected is None:
-            # Old schemas / no HP-derived geometry: presence-only fallback.
-            return ValidationStatus.VALID, "figure step present"
+            return ValidationStatus.UNCERTAIN, FIGURE_UNCOMPARED_REASON
 
         actual = _student_number_line(question)
         if actual is None:
@@ -351,7 +455,7 @@ class StandardFinalComparer:
         unparsed = 0
         for text in texts:
             try:
-                standard_parsed.append(parse_math_step(text, self._symbol))
+                standard_parsed.append(self._parse(text))
             except MathParseError:
                 unparsed += 1
         if not standard_parsed and unparsed:
@@ -367,25 +471,23 @@ class StandardFinalComparer:
                 None,
             )
 
-        students: list[ParsedStep] = []
+        student_pairs: list[tuple[StudentStep, ParsedStep]] = []
         for step in question.student_steps:
-            if step.role == "figure" or (
-                step.symbolic is not None and step.symbolic.kind == "figure"
-            ):
+            if _is_figure_student_step(step):
                 continue
-            student_text = ""
-            if step.symbolic is not None and (step.symbolic.repr or "").strip():
-                student_text = step.symbolic.repr.strip()
-            if not student_text:
-                student_text = (
-                    (step.latex or "").strip() or (step.raw_text or "").strip()
-                )
+            student_text = _student_step_text(step)
             if not student_text:
                 continue
             try:
-                students.append(parse_math_step(student_text, self._symbol))
+                student_pairs.append((step, self._parse(student_text)))
             except MathParseError:
                 continue
+        students = [parsed for _, parsed in student_pairs]
+
+        if not unparsed:
+            point_mark = self._point_set_match(milestone.role, standard_parsed, student_pairs)
+            if point_mark is not None:
+                return point_mark
 
         matched = 0
         saw_false = 0
@@ -426,6 +528,14 @@ class StandardFinalComparer:
                 f"could not decide milestone {milestone.role}",
                 None,
             )
+        if saw_undecided:
+            # Undecided atoms earn half credit (as UNCERTAIN does) and need review.
+            return (
+                ValidationStatus.UNCERTAIN,
+                f"matches {matched}/{total} of milestone {milestone.role}; "
+                f"{saw_undecided} undecided",
+                (matched + 0.5 * saw_undecided) / total,
+            )
         if matched == 0:
             return (
                 ValidationStatus.INVALID,
@@ -438,6 +548,58 @@ class StandardFinalComparer:
             fraction,
         )
 
+    def _points(self, parsed: ParsedStep) -> list[Expr] | None:
+        """Finite, non-empty real solution points of a relation; else ``None``."""
+        if parsed.kind != "relation" or not isinstance(parsed.value, Boolean):
+            return None
+        values = finite_solutions(parsed.value, self._symbol)
+        if not isinstance(values, FiniteSet) or not values:
+            return None
+        return list(values)
+
+    def _point_set_match(
+        self,
+        role: str,
+        standard_parsed: list[ParsedStep],
+        student_pairs: list[tuple[StudentStep, ParsedStep]],
+    ) -> tuple[ValidationStatus, str, float | None] | None:
+        """Compare point milestones as sets, so ``x=0 or x=1`` equals ``x=0; x=1``.
+
+        Student points come from steps with this role (else every non-figure
+        point step). Extra wrong points from role-tagged steps lower the score:
+        ``|key ∩ student| / (|key| + |student − key|)``. Untagged steps only
+        count hits, since an algebra equation like ``x = 3`` is not a stated
+        critical point. ``None`` = not a point milestone (or no student points);
+        the caller uses atom coverage instead.
+        """
+        key: list[Expr] = []
+        for atom in standard_parsed:
+            points = self._points(atom)
+            if points is None:
+                return None
+            key = _add_points(key, points)
+
+        tagged = [parsed for step, parsed in student_pairs if step.role == role]
+        pool = tagged or [parsed for _, parsed in student_pairs]
+        student: list[Expr] = []
+        for parsed in pool:
+            student = _add_points(student, self._points(parsed) or [])
+        if not student:
+            return None
+
+        hits = sum(1 for point in key if _has_point(student, point))
+        extra = (
+            sum(1 for point in student if not _has_point(key, point)) if tagged else 0
+        )
+        total = len(key)
+        source = "" if tagged else " (untagged steps)"
+        if hits == total and extra == 0:
+            return ValidationStatus.VALID, f"matches milestone {role}{source}", 1.0
+        reason = f"matches {hits}/{total} of milestone {role}{source}"
+        if extra:
+            reason += f"; {extra} extra point(s)"
+        return ValidationStatus.INVALID, reason, hits / (total + extra)
+
     def _align_to_texts(
         self,
         student_steps: list[StudentStep],
@@ -448,7 +610,7 @@ class StandardFinalComparer:
         standard_parsed: list[ParsedStep | None] = []
         for text in standard_texts:
             try:
-                standard_parsed.append(parse_math_step(text, self._symbol))
+                standard_parsed.append(self._parse(text))
             except MathParseError:
                 standard_parsed.append(None)
 
@@ -513,7 +675,7 @@ class StandardFinalComparer:
             )
 
         try:
-            student_parsed = parse_math_step(student_text, self._symbol)
+            student_parsed = self._parse(student_text)
         except MathParseError:
             return _RowBuild(
                 kind="skip",
@@ -672,6 +834,31 @@ class StandardFinalComparer:
             assert isinstance(student.value, Expr)
             return integrals_equivalent(standard.value, student.value)
         return None
+
+
+def _same_point(left: Expr, right: Expr) -> bool:
+    try:
+        return abs(complex(left) - complex(right)) < 1e-9
+    except (TypeError, ValueError):
+        return bool(left == right)
+
+
+def _has_point(points: list[Expr], point: Expr) -> bool:
+    return any(_same_point(existing, point) for existing in points)
+
+
+def _add_points(points: list[Expr], new: list[Expr]) -> list[Expr]:
+    merged = list(points)
+    for point in new:
+        if not _has_point(merged, point):
+            merged.append(point)
+    return merged
+
+
+def _student_step_text(step: StudentStep) -> str:
+    if step.symbolic is not None and (step.symbolic.repr or "").strip():
+        return step.symbolic.repr.strip()
+    return (step.latex or "").strip() or (step.raw_text or "").strip()
 
 
 def _question_has_figure(question: Question) -> bool:

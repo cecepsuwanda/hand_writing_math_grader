@@ -59,7 +59,7 @@ _JUXTAPOSED_INTERVALS_RE = re.compile(
 _INTERVAL_FIND_RE = re.compile(_INTERVAL_ATOM)
 
 _INTERVAL_PIECE_RE = re.compile(
-    rf"(?P<left>[\[(])\s*(?P<a>[^,]+?)\s*,\s*(?P<b>[^)\]]+?)\s*(?P<right>[\])])"
+    r"(?P<left>[\[(])\s*(?P<a>[^,]+?)\s*,\s*(?P<b>[^)\]]+?)\s*(?P<right>[\])])"
 )
 
 _SEP_SPLIT_RE = re.compile(
@@ -69,6 +69,35 @@ _SEP_SPLIT_RE = re.compile(
 
 _HAS_UNION_RE = re.compile(_UNION_SEP, re.IGNORECASE)
 _HAS_INTERSECT_RE = re.compile(_INTERSECT_SEP, re.IGNORECASE)
+
+# Parser tokens for answer sets that are not intervals.
+EMPTY_SET_TOKEN = "EmptySet"
+REALS_TOKEN = "Reals"
+
+_HP_LEAD = r"(?:(?i:H\.?P\.?|hp)\s*=\s*|[a-zA-Z]\s*(?:\\in|∈)\s*)"
+_EMPTY = r"(?:\\emptyset|\\varnothing|∅|\\\{\s*\\\}|\{\s*\})"
+_REALS = r"(?:\\mathbb\s*\{\s*R\s*\}|\\mathbb\s*R|ℝ)"
+_EMPTY_SET_RE = re.compile(rf"^\s*{_HP_LEAD}?{_EMPTY}\s*$")
+# A bare ``R`` only counts after ``HP =`` / ``x \in``.
+_REALS_RE = re.compile(rf"^\s*(?:{_HP_LEAD}?{_REALS}|{_HP_LEAD}R)\s*$")
+_SET_BUILDER_RE = re.compile(
+    r"^\s*(?:(?i:H\.?P\.?|hp)\s*=\s*)?\\?\{\s*[a-zA-Z]\s*(?:\\mid|\||:)\s*"
+    r"(?P<body>.+?)\s*\\?\}\s*$"
+)
+_REALS_MEMBERSHIP_SUFFIX_RE = re.compile(
+    rf"\s*,\s*[a-zA-Z]\s*(?:\\in|∈)\s*(?:{_REALS}|R)\s*$"
+)
+
+
+def rewrite_set_builder(text: str) -> str:
+    """``HP = \\{x \\mid x < 3, x \\in \\mathbb{R}\\}`` → ``x < 3``.
+
+    Runs before the abs rewrite: ``|`` here separates, it is not an absolute value.
+    """
+    match = _SET_BUILDER_RE.match(text)
+    if match is None:
+        return text
+    return _REALS_MEMBERSHIP_SUFFIX_RE.sub("", match.group("body"))
 
 
 def _interval_to_inequality(piece: str, var: str) -> str | None:
@@ -134,7 +163,12 @@ def rewrite_interval_membership(text: str) -> str:
     - ``HP = (-4, 0) \\cup (2, \\infty)`` → ``-4 < x < 0 or 2 < x < \\infty``
     - ``HP(1, oo)`` → ``1 < x < oo``
     - ``(-\\infty,1)(1,\\infty)`` → ``-\\infty < x < 1 or 1 < x < \\infty``
+    - ``HP = \\emptyset`` → ``EmptySet``; ``x \\in \\mathbb{R}`` → ``Reals``
     """
+    if _EMPTY_SET_RE.match(text):
+        return EMPTY_SET_TOKEN
+    if _REALS_RE.match(text):
+        return REALS_TOKEN
 
     def _membership_repl(match: re.Match[str]) -> str:
         var = match.group("var").strip()

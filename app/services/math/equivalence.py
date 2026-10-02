@@ -40,6 +40,7 @@ from sympy.core.relational import (
 )
 from sympy.logic.boolalg import Boolean
 from sympy.functions.elementary.exponential import ExpBase
+from sympy.sets.contains import Contains
 
 from app.services.math.parser import (
     DerivativeClaim,
@@ -92,7 +93,7 @@ def relations_equivalent(
 
 
 # Mirrored inequality ops: ``x > 1`` and ``1 < x`` are the same written form.
-_REL_MIRROR: dict[type, type] = {
+_REL_MIRROR: dict[type[Relational], type[Relational]] = {
     StrictGreaterThan: StrictLessThan,
     StrictLessThan: StrictGreaterThan,
     GreaterThan: LessThan,
@@ -158,7 +159,36 @@ def expression_as_set(expr: object):
     """Return a SymPy set if ``expr`` is Interval / Union / FiniteSet-like."""
     if isinstance(expr, (Interval, Union, FiniteSet, Intersection)):
         return expr
+    if expr is S.EmptySet or expr is S.Reals:
+        return expr
     return None
+
+
+def _isolates(side: object, other: object, symbol: Symbol) -> bool:
+    return side == symbol and symbol not in getattr(other, "free_symbols", set())
+
+
+def is_solved_form(kind: str, value: object, symbol: Symbol) -> bool:
+    """True when ``value`` states the answer directly (``x < 2``, ``[1, 3)``, ``x = 1 or x = 2``).
+
+    An unsolved relation such as ``2x - 1 < 5`` (or the stem copied verbatim)
+    is not a final answer even when its solution set matches the key.
+    """
+    if kind == "expression":
+        return expression_as_set(value) is not None
+    if kind != "relation":
+        return False
+    if value in (S.true, S.false):
+        return True
+    if isinstance(value, Contains):
+        return value.args[0] == symbol
+    if isinstance(value, Relational):
+        return _isolates(value.lhs, value.rhs, symbol) or _isolates(
+            value.rhs, value.lhs, symbol
+        )
+    if isinstance(value, (And, Or)):
+        return all(is_solved_form("relation", arg, symbol) for arg in value.args)
+    return False
 
 
 def set_relation_equivalent(

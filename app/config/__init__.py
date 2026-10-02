@@ -7,9 +7,13 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from app.exceptions import ConfigNotFoundError, OllamaModelNotConfiguredError
+from app.exceptions import (
+    ConfigInvalidError,
+    ConfigNotFoundError,
+    OllamaModelNotConfiguredError,
+)
 from app.models.defaults import DEFAULT_TOPIC_ID
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
@@ -59,6 +63,8 @@ class GradingConfig(BaseModel):
     # Each topic pack ingests into <standards_root>/topik_<bab> (e.g. 1.5 → topik_1).
     standards_root: Path = Path("data/output/standards")
     topic_id: str = DEFAULT_TOPIC_ID
+    # LLM fallback verdicts below this confidence (or without one) go to human review.
+    llm_min_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
 
 
 class ReportPdfConfig(BaseModel):
@@ -98,11 +104,42 @@ def load_config(path: Path | None = None) -> AppConfig:
         raise ConfigNotFoundError(config_path)
     raw: dict[str, object] = {}
     if config_path.is_file():
-        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        try:
+            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            raise ConfigInvalidError(str(config_path), f"YAML tidak terbaca: {exc}") from exc
+        if loaded and not isinstance(loaded, dict):
+            raise ConfigInvalidError(
+                str(config_path),
+                f"isi teratas harus berupa mapping (key: value), bukan {type(loaded).__name__}",
+            )
         if loaded:
             raw = loaded
     _warn_legacy_keys(raw, config_path)
-    return _apply_env(AppConfig.model_validate(raw))
+    try:
+        config = AppConfig.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigInvalidError(str(config_path), _validation_summary(exc)) from exc
+    return _apply_env(config)
+
+
+def _validation_summary(exc: ValidationError) -> str:
+    return "; ".join(
+        f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+        for error in exc.errors()
+    )
+
+
+def _env_number(name: str, convert: type[int] | type[float]) -> int | float | None:
+    raw = os.environ.get(name)
+    if not raw:
+        return None
+    try:
+        return convert(raw)
+    except ValueError as exc:
+        raise ConfigInvalidError(
+            f"env {name}", f"nilai {raw!r} bukan {convert.__name__}"
+        ) from exc
 
 
 def _warn_legacy_keys(raw: dict[str, object], config_path: Path) -> None:
@@ -120,17 +157,17 @@ def _apply_env(config: AppConfig) -> AppConfig:
     base_url = os.environ.get("OLLAMA_BASE_URL")
     vision_model = os.environ.get("OLLAMA_VISION_MODEL")
     reasoning_model = os.environ.get("OLLAMA_REASONING_MODEL")
-    timeout = os.environ.get("OLLAMA_TIMEOUT_SECONDS")
-    retries = os.environ.get("OLLAMA_MAX_RETRIES")
+    timeout = _env_number("OLLAMA_TIMEOUT_SECONDS", float)
+    retries = _env_number("OLLAMA_MAX_RETRIES", int)
     if base_url:
         ollama.base_url = base_url
     if vision_model:
         ollama.vision_model = vision_model
     if reasoning_model:
         ollama.reasoning_model = reasoning_model
-    if timeout:
+    if timeout is not None:
         ollama.timeout_seconds = float(timeout)
-    if retries:
+    if retries is not None:
         ollama.max_retries = int(retries)
     return config.model_copy(update={"ollama": ollama, "report": _report_from_env(config.report)})
 

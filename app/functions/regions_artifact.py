@@ -121,12 +121,13 @@ def load_regions_artifact(path: Path) -> tuple[int, str, list[DetectedRegion]]:
             width=float(region_raw.get("width") or 0),
             height=float(region_raw.get("height") or 0),
         )
+        order_raw = item.get("order")
         regions.append(
             DetectedRegion(
                 type=item.get("type") or "solution",  # type: ignore[arg-type]
                 region=region,
                 question_number=int(item.get("question_number") or 0),
-                order=int(item.get("order") if item.get("order") is not None else index),
+                order=int(order_raw) if order_raw is not None else index,
             )
         )
     return page_number, source, regions

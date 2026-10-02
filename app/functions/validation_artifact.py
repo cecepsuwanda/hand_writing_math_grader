@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -9,6 +11,16 @@ from pydantic import ValidationError
 from app.functions.question_names import question_artifact_filename, validation_filename
 from app.models.question import Question
 from app.models.validation import QuestionValidation
+
+
+def question_fingerprint(question: Question) -> str:
+    """sha256 of the graded student work (steps + final answer)."""
+    payload = question.model_dump(
+        mode="json",
+        include={"student_steps", "student_final_answer", "student_final_symbolic"},
+    )
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def question_artifact_paths(questions_dir: Path) -> list[Path]:

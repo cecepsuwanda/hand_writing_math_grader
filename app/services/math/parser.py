@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -21,6 +23,7 @@ from sympy import (
     Matrix,
     Ne,
     Or,
+    S,
     Symbol,
     cos,
     exp,
@@ -31,19 +34,25 @@ from sympy import (
 )
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import Boolean
+from sympy.sets.sets import Set
 from sympy.parsing.sympy_parser import (
     convert_xor,
     implicit_multiplication_application,
     parse_expr,
+    rationalize,
     standard_transformations,
 )
 
 from app.exceptions import MathParseError
+from app.functions.interval_normalize import EMPTY_SET_TOKEN, REALS_TOKEN
 from app.functions.math_normalize import normalize_math_text
 
+# ``rationalize``: SymPy 1.13+ treats Float(0.5) != Rational(1, 2), so decimals
+# are made exact at parse time and compare equal to the matching fraction.
 _TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
     convert_xor,
+    rationalize,
 )
 
 _OR_SPLIT_RE = re.compile(r"\s+(?:or|∨)\s+", re.IGNORECASE)
@@ -58,6 +67,14 @@ _REL_OPS = (
     (">", Gt),
 )
 
+_ANSWER_SET_TOKENS: dict[str, Set] = {
+    EMPTY_SET_TOKEN: S.EmptySet,
+    REALS_TOKEN: S.Reals,
+}
+
+_REL_SPLIT_RE = re.compile(r"<=|>=|!=|=|<|>")
+_REL_CHAIN_RE = re.compile(r"(<=|>=|!=|=|<|>)")
+
 _COMPOUND_RE = re.compile(
     r"^(?P<a>.+?)\s*(?P<op1><=|>=|<|>)\s*(?P<b>.+?)\s*(?P<op2><=|>=|<|>)\s*(?P<c>.+)$"
 )
@@ -67,7 +84,8 @@ _FUNC_ASSIGN_RE = re.compile(
     r"y'|"
     r"y|"
     r"[fg]'\s*\(\s*[a-zA-Z_]\w*\s*\)|"
-    r"\([^)=]+\)\s*\(\s*[a-zA-Z_]\w*\s*\)|"
+    # Combined functions only: (f+g)(x), (f∘g)(x) — not a factor like (x-1)(x).
+    r"\(\s*[fg](?:\s*[-+*/.∘o]?\s*[fg])*\s*\)\s*\(\s*[a-zA-Z_]\w*\s*\)|"
     r"[fg]\s*\(\s*(?:[a-zA-Z_]\w*|-?\d+(?:\.\d+)?)\s*\)"
     r")\s*=\s*(?P<rhs>.+)$",
     re.IGNORECASE,
@@ -140,7 +158,7 @@ class ParsedStep:
     value: (
         Boolean
         | Expr
-        | Interval
+        | Set
         | LimitClaim
         | DerivativeClaim
         | IntegralClaim
@@ -190,12 +208,30 @@ def try_parse_function_value_eq(
     return point, rhs
 
 
-def parse_math_step(text: str, symbol: Symbol | None = None) -> ParsedStep:
-    """Parse a student step as relation, expression, limit, derivative, or integral."""
+def parse_relation_sides(text: str, symbol: Symbol | None = None) -> list[Expr]:
+    """Sides of a single (possibly chained) relation, unevaluated as written.
+
+    ``parse_math_step`` collapses a closed relation like ``(-3*(-5))/(...) = 15/7``
+    to ``True``; numeric-evaluation checks need the written operands instead.
+    """
     normalized = normalize_math_text(text)
     if not normalized:
         raise MathParseError(text, "empty expression")
+    if _OR_SPLIT_RE.search(normalized) or _AND_SPLIT_RE.search(normalized):
+        raise MathParseError(text, "expected a single relation")
+    parts = [part.strip() for part in _REL_SPLIT_RE.split(normalized)]
+    if len(parts) < 2 or not all(parts):
+        raise MathParseError(text, "no supported relation operator found")
+    local_dict = _step_local_dict(symbol)
+    try:
+        return [_parse_side(part, local_dict) for part in parts]
+    except MathParseError:
+        raise
+    except Exception as exc:
+        raise MathParseError(text, str(exc)) from exc
 
+
+def _step_local_dict(symbol: Symbol | None) -> dict[str, object]:
     local_dict: dict[str, object] = {
         "Abs": Abs,
         "sin": sin,
@@ -213,6 +249,16 @@ def parse_math_step(text: str, symbol: Symbol | None = None) -> ParsedStep:
     }
     if symbol is not None:
         local_dict[str(symbol)] = symbol
+    return local_dict
+
+
+def parse_math_step(text: str, symbol: Symbol | None = None) -> ParsedStep:
+    """Parse a student step as relation, expression, limit, derivative, or integral."""
+    normalized = normalize_math_text(text)
+    if not normalized:
+        raise MathParseError(text, "empty expression")
+
+    local_dict = _step_local_dict(symbol)
 
     candidates = [normalized]
     for part in re.split(r"[;\n]", text):
@@ -250,18 +296,20 @@ def _parse_candidate(
     if int_step is not None:
         return int_step
 
+    answer_set = _ANSWER_SET_TOKENS.get(normalized.strip())
+    if answer_set is not None:
+        return ParsedStep(kind="expression", value=answer_set)
+
     interval_step = _try_parse_interval_expr(normalized, local_dict)
     if interval_step is not None:
         return interval_step
 
     assign = _FUNC_ASSIGN_RE.match(normalized)
     if assign is not None:
-        rhs = assign.group("rhs").strip()
-        try:
-            expr = _parse_side(rhs, local_dict)
-        except (SyntaxError, TypeError, ValueError, Exception) as exc:
-            raise MathParseError(normalized, str(exc)) from exc
-        return ParsedStep(kind="expression", value=expr)
+        assigned = _try_parse_assignment(assign, local_dict)
+        if assigned is not None:
+            return ParsedStep(kind="expression", value=assigned)
+        normalized, local_dict = _opaque_assignment_lhs(assign, normalized, local_dict)
 
     # Bare scalar / short algebraic expression (e.g. final answer "2"), not prose.
     if not any(op in normalized for op, _ in _REL_OPS):
@@ -275,6 +323,44 @@ def _parse_candidate(
     return ParsedStep(
         kind="relation",
         value=_parse_proposition(normalized, local_dict),
+    )
+
+
+def _try_parse_assignment(
+    assign: re.Match[str],
+    local_dict: dict[str, object],
+) -> Expr | None:
+    """RHS of ``f(x) = ...`` / ``y = ...``; ``None`` means "read it as a relation".
+
+    ``y = 2 or y = 3`` and ``f(0) = -1/2 < 0`` are claims about values, and a
+    bare ``y = 3`` is a root of ``y``, not the function ``y(x) = 3``.
+    """
+    try:
+        expr = _parse_side(assign.group("rhs").strip(), local_dict)
+    except (SyntaxError, TypeError, ValueError, Exception):
+        return None
+    if not isinstance(expr, Expr):
+        return None
+    if assign.group("lhs").strip() == "y" and not (expr.free_symbols - {Symbol("y")}):
+        return None
+    return expr
+
+
+_OPAQUE_LHS_NAME = "AssignedValue"
+
+
+def _opaque_assignment_lhs(
+    assign: re.Match[str],
+    normalized: str,
+    local_dict: dict[str, object],
+) -> tuple[str, dict[str, object]]:
+    """Keep ``f(0)`` as an unknown value; read literally it is ``f*0 = 0``."""
+    lhs = assign.group("lhs").strip()
+    if lhs == "y":
+        return normalized, local_dict
+    return (
+        _OPAQUE_LHS_NAME + normalized[assign.end("lhs"):],
+        {**local_dict, _OPAQUE_LHS_NAME: Symbol(lhs)},
     )
 
 
@@ -350,14 +436,13 @@ def _try_parse_matrix_expr(
 _COMMA_TUPLE_RE = re.compile(
     r"[\(\[][^\)\]]*,[^\)\]]*[\)\]]"
 )
-_JUXTAPOSED_PARENS_RE = re.compile(r"\)\s*\(")
 
 
 def _looks_like_math_expression(normalized: str) -> bool:
     """Reject multi-word prose; accept numbers and compact algebra."""
     # Interval / tuple shapes must not take the bare-expression fast path
     # (implicit mul would build Mul(Tuple) and emit SymPy deprecation).
-    if _COMMA_TUPLE_RE.search(normalized) or _JUXTAPOSED_PARENS_RE.search(normalized):
+    if _COMMA_TUPLE_RE.search(normalized):
         return False
     if re.fullmatch(r"[\d\.]+", normalized):
         return True
@@ -588,7 +673,32 @@ def _parse_atomic_proposition(
     compound = _try_parse_compound(normalized, local_dict)
     if compound is not None:
         return compound
+    chain = _try_parse_chain(normalized, local_dict)
+    if chain is not None:
+        return chain
     return _parse_single_relation(normalized, local_dict)
+
+
+def _try_parse_chain(
+    normalized: str,
+    local_dict: dict[str, object],
+) -> Boolean | None:
+    """``A = B < 0`` (sign-test layout) → ``A = B and B < 0``; needs an ``=`` link."""
+    tokens = [token.strip() for token in _REL_CHAIN_RE.split(normalized)]
+    sides, ops = tokens[0::2], tokens[1::2]
+    if len(sides) < 3 or "=" not in ops or not all(sides):
+        return None
+    try:
+        parsed = [_parse_side(side, local_dict) for side in sides]
+    except (SyntaxError, TypeError, ValueError, Exception):
+        return None
+    constructors = dict(_REL_OPS)
+    return And(
+        *(
+            constructors[op](left, right)
+            for op, left, right in zip(ops, parsed, parsed[1:])
+        )
+    )
 
 
 def _try_parse_compound(
@@ -657,9 +767,10 @@ def _expr_contains_tuple(expr: object) -> bool:
 
 def _parse_side(side: str, local_dict: dict[str, object]) -> Expr:
     stripped = side.strip()
-    # Preflight: never call parse_expr on comma-tuples / juxta intervals —
+    # Preflight: never call parse_expr on comma-tuples / juxtaposed intervals —
     # implicit_multiplication would emit SymPyDeprecationWarning (Mul+Tuple).
-    if _COMMA_TUPLE_RE.search(stripped) or _JUXTAPOSED_PARENS_RE.search(stripped):
+    # Juxtaposed factors without commas, e.g. (x-1)(x+2), are ordinary products.
+    if _COMMA_TUPLE_RE.search(stripped):
         raise MathParseError(side, "tuple/interval is not an algebraic expression")
     result = parse_expr(
         stripped,
@@ -676,3 +787,52 @@ def _parse_side(side: str, local_dict: dict[str, object]) -> Expr:
 
 def default_symbol() -> Symbol:
     return Symbol("x")
+
+
+_NON_VARIABLE_NAMES = frozenset({"C", "E", "I"})
+
+
+def _variable_candidates(step: ParsedStep, text: str) -> set[str]:
+    """Single-letter free symbols that the student actually wrote in ``text``.
+
+    Bare intervals are rewritten with ``x`` during normalize; such an ``x``
+    is not counted unless the letter appears in the source text.
+    """
+    free = getattr(step.value, "free_symbols", None) or set()
+    return {
+        str(sym)
+        for sym in free
+        if len(str(sym)) == 1
+        and str(sym) not in _NON_VARIABLE_NAMES
+        and str(sym) in text
+    }
+
+
+def infer_main_symbol(texts: Iterable[str]) -> Symbol:
+    """Most frequent written variable across ``texts``; ``x`` on ties or when none."""
+    counts: Counter[str] = Counter()
+    default = default_symbol()
+    for text in texts:
+        if not (text or "").strip():
+            continue
+        try:
+            step = parse_math_step(text, default)
+        except MathParseError:
+            continue
+        counts.update(_variable_candidates(step, text))
+    if not counts:
+        return default
+    best = max(counts.values())
+    leaders = sorted(name for name, count in counts.items() if count == best)
+    return default if str(default) in leaders else Symbol(leaders[0])
+
+
+def rebind_default_symbol(step: ParsedStep, text: str, symbol: Symbol) -> ParsedStep:
+    """Swap the normalize-injected ``x`` (bare intervals) for the question's variable."""
+    default = default_symbol()
+    if symbol == default or step.kind not in ("relation", "expression"):
+        return step
+    free = getattr(step.value, "free_symbols", None) or set()
+    if free != {default} or str(default) in text:
+        return step
+    return ParsedStep(kind=step.kind, value=step.value.subs(default, symbol))  # type: ignore[union-attr]

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.exceptions import RecognitionNotFoundError
 from app.functions.recognition_artifact import has_recognition_artifacts
+from app.functions.workspace_reset import clear_directory_contents
 from app.interfaces.extractor import QuestionExtractorPort
 from app.models.question import ExtractResult
 from app.models.recognition import RecognizeResult
@@ -27,8 +28,11 @@ class ExtractController:
         output_dir: Path,
         *,
         force_recognize: bool = False,
+        clear_output: bool = False,
     ) -> ExtractResult:
-        """Raises:
+        """``clear_output`` empties ``output_dir`` only after recognition succeeded.
+
+        Raises:
         ValueError: ``force_recognize`` without a ``recognize_runner`` (wiring bug).
         RecognitionNotFoundError: no recognition JSON and no runner to make it.
         """
@@ -38,4 +42,6 @@ class ExtractController:
             if self._recognize_runner is None:
                 raise RecognitionNotFoundError(recognition_dir)
             self._recognize_runner()
+        if clear_output:
+            clear_directory_contents(output_dir)
         return self._extractor.extract_from_dir(recognition_dir, output_dir)

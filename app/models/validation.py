@@ -49,6 +49,8 @@ class QuestionValidation(BaseModel):
     question_id: str = ""
     steps: list[StepValidation] = Field(default_factory=list)
     final_answer_status: StepValidation | None = None
+    # Hash of the validated student work; empty in artifacts written before it existed.
+    question_fingerprint: str = ""
 
 
 class ValidateResult(BaseModel):

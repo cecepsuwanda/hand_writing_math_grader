@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.exceptions import RubricNotFoundError
+from app.exceptions import RubricInvalidError, RubricNotFoundError
 from app.functions.question_names import question_dir_name
 from app.models.grading import Rubric
 
@@ -25,5 +25,8 @@ class RubricLoader:
             raise RubricNotFoundError(path)
         try:
             return Rubric.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError, ValueError) as exc:
-            raise RubricNotFoundError(path) from exc
+        except ValidationError as exc:
+            detail = "; ".join(err["msg"] for err in exc.errors()) or str(exc)
+            raise RubricInvalidError(path, detail) from exc
+        except (OSError, ValueError) as exc:
+            raise RubricInvalidError(path, str(exc)) from exc

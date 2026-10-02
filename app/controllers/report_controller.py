@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.exceptions import GradingNotFoundError, ReportPdfError, ReportWriteError
+from app.exceptions import (
+    GradingNotFoundError,
+    ReportPdfError,
+    ReportWriteError,
+    RubricNotFoundError,
+)
 from app.functions.artifact_guard import changed_files, snapshot_files
 from app.functions.grading_artifact import load_question_grades, paired_grading_artifact_paths
 from app.functions.question_names import (
+    parse_question_ref,
     report_html_filename,
     report_json_filename,
     summary_csv_filename,
@@ -22,8 +29,17 @@ from app.functions.validation_artifact import question_artifact_paths
 from app.interfaces.latex_compiler import LatexCompiler
 from app.interfaces.reporter import DetailedReporter, GradeReporter
 from app.models.defaults import DEFAULT_STUDENT_ID
-from app.models.grading import QuestionGrade
-from app.models.report import ExamReport, PromptVersions, ReportMetadata, ReportResult
+from app.models.exam_schema import ExamPart, ExamSchema
+from app.models.grading import QuestionGrade, Rubric
+from app.models.report import (
+    MISSING_UNANSWERED,
+    MISSING_UNGRADED,
+    ExamReport,
+    PromptVersions,
+    ReportMetadata,
+    ReportResult,
+)
+from app.services.grading.rubric import RubricLoader
 from app.views.error_view import print_warning
 
 logger = logging.getLogger(__name__)
@@ -40,8 +56,16 @@ class ReportController:
         prompt_versions: PromptVersions | None = None,
         latex_reporter: DetailedReporter | None = None,
         pdf_compiler: LatexCompiler | None = None,
+        exam_schema: ExamSchema | None = None,
+        rubric_loader: RubricLoader | None = None,
+        default_rubric: Callable[[int, list[ExamPart]], Rubric] | None = None,
     ) -> None:
+        """``default_rubric`` (the pack's ``rubric_from_parts``) supplies the maximum
+        of a question whose rubric file is missing."""
         self._reporter = reporter
+        self._exam_schema = exam_schema
+        self._rubrics = rubric_loader
+        self._default_rubric = default_rubric
         self._standard_dir = Path(standard_dir)
         self._vision_model = vision_model
         self._reasoning_model = reasoning_model
@@ -64,8 +88,17 @@ class ReportController:
             raise GradingNotFoundError(questions_dir)
         grades = self._load_grades(grading_paths)
 
-        snapshot = snapshot_files(grading_paths + question_artifact_paths(questions_dir))
-        exam = aggregate_exam_report(grades, self._metadata(questions_dir, student_id))
+        question_paths = question_artifact_paths(questions_dir)
+        snapshot = snapshot_files(grading_paths + question_paths)
+        maximums, labels = self._expected_rows(
+            question_paths, {g.question_number for g in grades}
+        )
+        exam = aggregate_exam_report(
+            grades,
+            self._metadata(questions_dir, student_id),
+            expected_maximums=maximums,
+            missing_labels=labels,
+        )
         written = self._reporter.write(exam, output_dir)
         tex_path = self._write_latex(
             exam,
@@ -103,6 +136,53 @@ class ReportController:
             output_dir,
         )
         return result
+
+    def _expected_rows(
+        self, question_paths: list[Path], graded: set[int]
+    ) -> tuple[dict[int, float], dict[int, str]]:
+        """Maximum + label for every exam question without a grade, so it counts as 0.
+
+        A question folder without ``grading.json`` is ``TIDAK DINILAI``; an exam
+        question with no folder at all is ``TIDAK DIJAWAB``. With an answer key, a
+        folder numbered outside it (a provisional number for an unnumbered crop)
+        is only warned about: it has no key to be graded against.
+        """
+        parts_by_number = {
+            q.number: list(q.parts)
+            for q in (self._exam_schema.questions if self._exam_schema else [])
+        }
+        ungraded = {
+            number
+            for number in (_folder_question_number(p.parent) for p in question_paths)
+            if number is not None and number not in graded
+        }
+        if parts_by_number:
+            for number in sorted(ungraded - set(parts_by_number)):
+                print_warning(
+                    f"Soal {number} (nomor sementara, di luar kunci) tidak dinilai"
+                )
+            ungraded &= set(parts_by_number)
+        maximums: dict[int, float] = {}
+        labels: dict[int, str] = {}
+        for number in sorted((set(parts_by_number) - graded) | ungraded):
+            maximum = self._maximum_for(number, parts_by_number.get(number, []))
+            if maximum is None:
+                continue
+            maximums[number] = maximum
+            labels[number] = MISSING_UNGRADED if number in ungraded else MISSING_UNANSWERED
+        return maximums, labels
+
+    def _maximum_for(self, number: int, parts: list[ExamPart]) -> float | None:
+        if self._rubrics is None:
+            return None
+        try:
+            return self._rubrics.load(number).maximum_score
+        except RubricNotFoundError as exc:
+            if self._default_rubric is not None:
+                print_warning(f"Soal {number}: {exc}; nilai maksimum dari rubric bawaan topik")
+                return self._default_rubric(number, parts).maximum_score
+            print_warning(f"Soal {number} tidak masuk nilai maksimum: {exc}")
+            return None
 
     @staticmethod
     def _load_grades(paths: list[Path]) -> list[QuestionGrade]:
@@ -153,3 +233,10 @@ class ReportController:
             with contextlib.suppress(OSError):
                 tex_path.with_suffix(".pdf").unlink(missing_ok=True)
             return None
+
+
+def _folder_question_number(question_dir: Path) -> int | None:
+    try:
+        return int(parse_question_ref(question_dir.name).removeprefix("question_"))
+    except ValueError:
+        return None

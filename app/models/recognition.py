@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 
 class Region(BaseModel):
@@ -27,6 +27,16 @@ SymbolicKind = Literal[
 
 # Free-form; validated / coalesced by the active TopicPack.
 StepRole = str
+
+
+def _canonical_role(value: object) -> object:
+    if isinstance(value, str):
+        return value.strip().lower() or None
+    return value
+
+
+# Hand-edited roles (" HP ") must match the lowercase ids used by rubric parts.
+OptionalStepRole = Annotated[StepRole | None, BeforeValidator(_canonical_role)]
 
 RegionType = Literal["solution", "figure"]
 
@@ -50,7 +60,7 @@ class RecognizedStep(BaseModel):
     # artifacts); readers still use it when symbolic is missing.
     latex: str = ""
     symbolic: SymbolicPayload | None = None
-    role: StepRole | None = None
+    role: OptionalStepRole = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 

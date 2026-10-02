@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.models.process import ProcessProgress, ProcessResult
+from app.models.report import MISSING_UNANSWERED
 from app.views.result_view import print_report_paths
 from app.views.style import banner, bar, bold, box, cyan, dim, green, rule
 
@@ -35,7 +36,11 @@ def print_process_summary(result: ProcessResult) -> None:
     print(rule("Results"))
     rows: list[str] = []
     for q in result.questions:
-        status = q.review_status.value
+        status = (
+            f"{q.missing_label or MISSING_UNANSWERED}, {q.review_status.value}"
+            if q.missing
+            else q.review_status.value
+        )
         rows.append(
             f"Q{q.question_number:<3}  {q.score:g}/{q.maximum_score:g}  {status}"
         )

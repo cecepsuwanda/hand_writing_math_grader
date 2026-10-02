@@ -10,6 +10,7 @@ from app.functions.artifact_guard import changed_files, snapshot_files
 from app.functions.validation_artifact import (
     load_question_artifact,
     question_artifact_paths,
+    question_fingerprint,
     write_validation_artifact,
 )
 from app.interfaces.validator import StepValidator
@@ -34,7 +35,9 @@ class ValidateController:
         for path in question_paths:
             question = self._load_question(path)
             snapshot = snapshot_files([path])
-            validation = self._validator.validate_question(question)
+            validation = self._validator.validate_question(question).model_copy(
+                update={"question_fingerprint": question_fingerprint(question)}
+            )
             artifact = self._write_validation(path.parent, validation)
             if changed_files(snapshot):
                 raise ValidationWriteError(

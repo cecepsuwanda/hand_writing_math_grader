@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from app.functions.abs_normalize import rewrite_abs_notation
 from app.functions.derivative_normalize import rewrite_derivative_notation
 from app.functions.det_inverse_normalize import rewrite_det_inverse_notation
+from app.functions.indexed_roots_normalize import rewrite_indexed_roots
 from app.functions.integral_normalize import rewrite_integral_notation
 from app.functions.interval_normalize import rewrite_interval_membership
 from app.functions.limit_normalize import rewrite_limit_notation
@@ -42,10 +43,22 @@ _CAPABILITIES: dict[str, Capability] = {
     "transcendental": _FnCapability(
         "transcendental", rewrite_transcendental_notation
     ),
+    "indexed_roots": _FnCapability("indexed_roots", rewrite_indexed_roots),
 }
 
-# Full legacy chain (all registered ids in pipeline order).
-ALL_CAPABILITY_IDS: tuple[str, ...] = tuple(_CAPABILITIES.keys())
+# Legacy chain used without an active pack. ``indexed_roots`` is opt-in per
+# pack: in other topics ``x_0`` is a point (``\lim_{x \to x_0}``), not ``x``.
+ALL_CAPABILITY_IDS: tuple[str, ...] = (
+    "matrix",
+    "det_inverse",
+    "vector",
+    "abs",
+    "interval",
+    "limit",
+    "derivative",
+    "integral",
+    "transcendental",
+)
 
 
 def apply_capabilities(text: str, capability_ids: Sequence[str]) -> str:

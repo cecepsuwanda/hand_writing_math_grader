@@ -17,7 +17,7 @@ from app.models.latex_report import (
     LatexStepRow,
     LatexSummaryRow,
 )
-from app.models.report import ExamReport, QuestionReportDetail
+from app.models.report import MISSING_UNANSWERED, ExamReport, QuestionReportDetail
 from app.models.validation import ValidationStatus
 
 EMPTY_CELL = "---"
@@ -403,7 +403,11 @@ def build_latex_report_context(
                 number=row.question_number,
                 score=format_score(row.score),
                 maximum=format_score(row.maximum_score),
-                status=latex_text(row.review_status.value),
+                status=latex_text(
+                    f"{row.missing_label or MISSING_UNANSWERED}, {row.review_status.value}"
+                    if row.missing
+                    else row.review_status.value
+                ),
             )
             for row in exam.questions
         ],

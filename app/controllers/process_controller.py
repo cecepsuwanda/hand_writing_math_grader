@@ -30,9 +30,11 @@ from app.functions.question_crops import (
     load_question_crops,
     validate_question_crops,
 )
+from app.functions.recognition_artifact import prune_stale_recognition
 from app.functions.validation_artifact import question_artifact_paths
 from app.functions.workspace_reset import (
     clear_directory_contents,
+    ensure_resettable_dir,
     prepare_pipeline_workspace,
 )
 from app.models.defaults import DEFAULT_STUDENT_ID
@@ -160,12 +162,22 @@ class ProcessController:
         student_id: str = DEFAULT_STUDENT_ID,
         crops_dir: Path | None = None,
         force_yes: bool = False,
+        workspace_root: Path | None = None,
     ) -> ProcessResult:
-        """Continue pipeline from existing page images + regions crops (no re-ink)."""
+        """Continue pipeline from existing page images + regions crops (no re-ink).
+
+        Prior recognition/questions are replaced only after recognition succeeds,
+        so a failed rerun keeps them. With ``workspace_root`` both dirs must lie
+        inside it (or be empty) before anything runs.
+        """
         pages_dir = Path(pages_dir)
         recognition_dir = Path(recognition_dir)
         questions_dir = Path(questions_dir)
         crops = self._resolve_crops_dir(crops_dir)
+
+        if workspace_root is not None:
+            ensure_resettable_dir(recognition_dir, run_root=workspace_root, label="recognition")
+            ensure_resettable_dir(questions_dir, run_root=workspace_root, label="questions")
 
         if crops is not None:
             if not crops_regions_present(crops):
@@ -177,11 +189,6 @@ class ProcessController:
         if crops is not None and pages_missing_regions(crops, [p.page_number for p in pages]):
             raise CropsRegionsMissingError(crops)
 
-        # Drop prior recognition/questions so a shorter rerun cannot grade leftovers.
-        # Pages, crops, and standards stay.
-        clear_directory_contents(recognition_dir)
-        clear_directory_contents(questions_dir)
-
         return self._run_from_recognition(
             pages,
             pages_dir=pages_dir,
@@ -192,6 +199,7 @@ class ProcessController:
             crops_dir=crops,
             from_crops=True,
             force_yes=force_yes,
+            replace_artifacts=True,
         )
 
     def process_from_questions(
@@ -233,11 +241,20 @@ class ProcessController:
         crops_dir: Path | None,
         from_crops: bool,
         force_yes: bool,
+        replace_artifacts: bool = False,
     ) -> ProcessResult:
-        """Recognize → extract → (review) → LaTeX → validate → grade → report."""
+        """Recognize → extract → (review) → LaTeX → validate → grade → report.
+
+        ``replace_artifacts`` drops recognition of pages no longer present and
+        empties ``questions_dir`` after recognition, so a shorter rerun cannot
+        grade leftovers.
+        """
         self._recognize.recognize_pages(
             pages, pages_dir, recognition_dir, from_crops=from_crops
         )
+        if replace_artifacts:
+            prune_stale_recognition(recognition_dir, [p.page_number for p in pages])
+            clear_directory_contents(questions_dir)
         self._emit(ProcessStage.RECOGNIZE)
 
         self._extract.extract(
@@ -323,13 +340,15 @@ class ProcessController:
             student_id=student_id,
             questions=[
                 QuestionScoreSummary(
-                    question_id=g.question_id,
-                    question_number=g.question_number,
-                    score=g.score,
-                    maximum_score=g.maximum_score,
-                    review_status=g.review_status,
+                    question_id=row.question_id,
+                    question_number=row.question_number,
+                    score=row.score,
+                    maximum_score=row.maximum_score,
+                    review_status=row.review_status,
+                    missing=row.missing,
+                    missing_label=row.missing_label,
                 )
-                for g in grade_result.grades
+                for row in exam.questions
             ],
             total_score=exam.total_score,
             maximum_total=exam.maximum_total,

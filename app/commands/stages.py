@@ -23,7 +23,7 @@ from app.commands.base import (
 )
 from app.config import load_config, require_vision_model
 from app.functions.run_layout import RunLayout
-from app.functions.workspace_reset import clear_directory_contents
+from app.functions.workspace_reset import ensure_resettable_dir
 from app.models.recognition import RecognizeResult
 from app.services import pipeline_factory
 from app.views.result_view import (
@@ -156,11 +156,12 @@ class ExtractCommand(Command):
         controller = pipeline_factory.build_extract_controller(
             config, standard, topic_id=args.topic, recognize_runner=recognize_runner
         )
-        clear_directory_contents(output_dir)
+        clear_output = ensure_resettable_dir(output_dir, run_root=layout.root, label="questions")
         result = controller.extract(
             recognition_dir=recognition_dir,
             output_dir=output_dir,
             force_recognize=bool(args.force_recognize),
+            clear_output=clear_output,
         )
         print_extract_result(result)
         return 0

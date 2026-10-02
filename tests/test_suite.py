@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 from pydantic import ValidationError
-from sympy import Eq, FiniteSet, Lt, Rational, Symbol
+from sympy import Eq, FiniteSet, Lt, Rational, Symbol, sympify
 from sympy.logic.boolalg import And
 
 from app.capabilities.registry import ALL_CAPABILITY_IDS, apply_capabilities
@@ -34,8 +34,10 @@ from app.controllers.menu_controller import MenuController, exit_code_for
 from app.controllers.question_review_controller import QuestionReviewController
 from app.controllers.recognize_controller import RecognizeController
 from app.controllers.report_controller import ReportController
+from app.controllers.validate_controller import ValidateController
 from app.exceptions import (
     AmbiguousKunciDirError,
+    ConfigInvalidError,
     ConfigNotFoundError,
     CropsRegionsMissingError,
     EmptyExtractionError,
@@ -60,10 +62,14 @@ from app.exceptions import (
     RecognitionPathMismatchError,
     RegionsArtifactMissingError,
     ReportPdfError,
+    RubricInvalidError,
+    RubricNotFoundError,
     RunNotSpecifiedError,
     StandardDirMismatchError,
     UnknownTopicError,
+    UnsafeOutputDirError,
     ValidationNotFoundError,
+    ValidationStaleError,
 )
 from app.functions.json_extract import (
     extract_json_object,
@@ -94,12 +100,14 @@ from app.functions.latex_transforms import (
 )
 from app.functions.latex_compile import latex_error_summary, pdflatex_command
 from app.functions.latex_report import (
+    build_latex_report_context,
     build_question_view,
     graphics_path,
     latex_math_or_text,
     latex_stem,
     latex_text,
 )
+from app.functions.math_normalize import split_implication_clauses
 from app.functions.page_names import page_image_filename, page_recognition_filename
 from app.functions.artifact_guard import changed_files, snapshot_files
 from app.functions.grading_artifact import grading_artifact_paths, load_question_grades
@@ -127,6 +135,7 @@ from app.functions.question_names import parse_question_ref
 from app.functions.question_review import review_flags
 from app.functions.regions_artifact import write_regions_artifact
 from app.functions.question_split import (
+    assign_provisional_by_stem,
     match_schema_final,
     match_schema_stem,
     split_questions_by_exam_schema,
@@ -158,7 +167,12 @@ from app.functions.validation_artifact import (
     question_artifact_paths,
     write_validation_artifact,
 )
-from app.functions.workspace_reset import clear_output_workspace, prepare_pipeline_workspace
+from app.functions.recognition_artifact import prune_stale_recognition
+from app.functions.workspace_reset import (
+    clear_output_workspace,
+    ensure_resettable_dir,
+    prepare_pipeline_workspace,
+)
 from app.interfaces.menu_actions import MenuActions
 from app.interfaces.validator import StepValidator
 from app.models.defaults import DEFAULT_STUDENT_ID
@@ -207,12 +221,27 @@ from app.models.validation import (
 )
 from app.services.grading.latex_report import LatexReportWriter
 from app.services.grading.report import JsonCsvHtmlReporter
+from app.services.grading.rubric import RubricLoader
 from app.services.grading.standard_comparer import StandardFinalComparer
 from app.services.latex.builder import LatexBuilder
-from app.services.math.equivalence import relations_equivalent, relations_form_equivalent
+from app.services.math.equivalence import (
+    is_solved_form,
+    relations_equivalent,
+    relations_form_equivalent,
+)
 from app.services.math.hybrid_validator import HybridStepValidator
-from app.services.math.parser import normalize_math_text, parse_math_step, parse_relation
-from app.services.math.role_checks import numeric_relation_holds, zero_makers
+from app.services.math.parser import (
+    infer_main_symbol,
+    normalize_math_text,
+    parse_math_step,
+    parse_relation,
+    parse_relation_sides,
+)
+from app.services.math.role_checks import (
+    numeric_eval_matches_reference,
+    numeric_relation_holds,
+    zero_makers,
+)
 from app.services.math.sympy_validator import SymPyStepValidator
 from app.services.pdf.renderer import PyMuPdfRenderer
 from app.services.latex.pdflatex_compiler import PdfLatexCompiler, resolve_pdflatex
@@ -251,6 +280,7 @@ from app.views.prompt_view import (
     wait_for_edit,
 )
 from app.views.question_crops_view import print_question_crops_missing
+from app.views.progress_view import print_process_summary
 from app.views.result_view import print_grade_result, print_recognize_result, print_report_result
 from app.views.style import bold, box, for_stream, visible_len
 from tests.support.asserts import assert_all_valid, assert_contains, assert_step_statuses
@@ -312,6 +342,7 @@ class TestConfig:
         assert isinstance(config.output.root_dir, Path)
         assert config.grading.standards_root == Path('data/output/standards')
         assert config.grading.topic_id == '1.5'
+        assert config.grading.llm_min_confidence == 0.7
         assert config.ollama.base_url == 'http://localhost:11434'
         assert config.recognition.ink.min_row_ink_ratio == 0.002
         ink = ink_params_from_config(config)
@@ -337,6 +368,31 @@ class TestConfig:
     def test_cli_typo_in_config_path_exits_with_domain_error(self, tmp_path: Path, capsys) -> None:
         assert main(['--config', str(tmp_path / 'typo.yaml'), 'grade']) == 1
         assert_contains(capsys.readouterr().err, 'Config file not found', 'typo.yaml')
+
+    @pytest.mark.parametrize(
+        ('content', 'expected'),
+        [
+            ('pdf: [dpi: 200\n', 'YAML tidak terbaca'),
+            ('- pdf\n- output\n', 'mapping'),
+            ('pdf:\n  dpi: abc\n', 'pdf.dpi'),
+        ],
+        ids=['broken_yaml', 'list_root', 'wrong_type'],
+    )
+    def test_invalid_config_file_raises_domain_error(
+        self, tmp_path: Path, capsys, content: str, expected: str
+    ) -> None:
+        path = tmp_path / 'config.yaml'
+        path.write_text(content, encoding='utf-8')
+        with pytest.raises(ConfigInvalidError, match=expected):
+            load_config(path)
+        assert main(['--config', str(path), 'grade']) == 1
+        assert_contains(capsys.readouterr().err, 'Config tidak valid', expected)
+
+    @pytest.mark.parametrize('name', ['OLLAMA_TIMEOUT_SECONDS', 'OLLAMA_MAX_RETRIES'])
+    def test_invalid_numeric_env_raises_domain_error(self, monkeypatch, name: str) -> None:
+        monkeypatch.setenv(name, 'abc')
+        with pytest.raises(ConfigInvalidError, match=name):
+            load_config()
 
     def test_legacy_standard_dir_key_is_ignored_with_warning(self, tmp_path: Path, caplog) -> None:
         path = tmp_path / 'config.yaml'
@@ -583,34 +639,85 @@ class TestOutputReset:
         assert clear_output_workspace(root) == []
         assert root.is_dir()
 
-    def test_prepare_pipeline_workspace_clears_dirs_outside_root(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize('existing', [False, True], ids=['missing', 'empty'])
+    def test_prepare_pipeline_workspace_creates_empty_dirs_outside_root(
+        self, tmp_path: Path, existing: bool
+    ) -> None:
         root = tmp_path / 'output'
         root.mkdir()
         (root / 'stale.txt').write_text('x', encoding='utf-8')
         standards = root / 'standards'
         standards.mkdir()
         (standards / 'keep.txt').write_text('keep', encoding='utf-8')
-        pages_dir = tmp_path / 'external_pages'
-        recognition_dir = tmp_path / 'external_recognition'
-        questions_dir = tmp_path / 'external_questions'
-        crops_dir = tmp_path / 'external_crops'
-        for directory in (pages_dir, recognition_dir, questions_dir, crops_dir):
-            directory.mkdir()
-            (directory / 'old.bin').write_bytes(b'old')
+        outside = {
+            label: tmp_path / f'external_{label}'
+            for label in ('pages', 'recognition', 'questions', 'crops')
+        }
+        if existing:
+            for directory in outside.values():
+                directory.mkdir()
         removed = prepare_pipeline_workspace(
             root,
-            pages_dir=pages_dir,
-            recognition_dir=recognition_dir,
-            questions_dir=questions_dir,
-            crops_dir=crops_dir,
+            pages_dir=outside['pages'],
+            recognition_dir=outside['recognition'],
+            questions_dir=outside['questions'],
+            crops_dir=outside['crops'],
         )
-        assert 'stale.txt' in removed
-        assert not (pages_dir / 'old.bin').exists()
-        assert not (recognition_dir / 'old.bin').exists()
-        assert not (questions_dir / 'old.bin').exists()
-        assert not (crops_dir / 'old.bin').exists()
+        assert removed == ['stale.txt']
+        assert all(directory.is_dir() for directory in outside.values())
         assert (standards / 'keep.txt').is_file()
-        assert pages_dir.is_dir()
+
+    @pytest.mark.parametrize('label', ['pages', 'recognition', 'questions', 'crops'])
+    def test_prepare_pipeline_workspace_refuses_filled_dir_outside_root(
+        self, tmp_path: Path, label: str
+    ) -> None:
+        root = tmp_path / 'output'
+        root.mkdir()
+        stale = root / 'stale.txt'
+        stale.write_text('x', encoding='utf-8')
+        dirs = {name: root / name for name in ('pages', 'recognition', 'questions', 'crops')}
+        dirs[label] = tmp_path / 'jawaban'
+        precious = dirs[label] / 'mahasiswa.pdf'
+        precious.parent.mkdir()
+        precious.write_bytes(b'%PDF')
+        with pytest.raises(UnsafeOutputDirError, match=label):
+            prepare_pipeline_workspace(
+                root,
+                pages_dir=dirs['pages'],
+                recognition_dir=dirs['recognition'],
+                questions_dir=dirs['questions'],
+                crops_dir=dirs['crops'],
+            )
+        assert precious.is_file()
+        assert stale.is_file()
+
+    @pytest.mark.parametrize('target', ['root', 'parent'])
+    def test_ensure_resettable_dir_refuses_run_root_and_parents(self, tmp_path: Path, target: str) -> None:
+        root = tmp_path / 'output' / 'answer'
+        root.mkdir(parents=True)
+        path = root if target == 'root' else root.parent
+        with pytest.raises(UnsafeOutputDirError, match='induknya'):
+            ensure_resettable_dir(path, run_root=root, label='questions')
+
+    def test_ensure_resettable_dir_inside_and_outside_root(self, tmp_path: Path) -> None:
+        root = tmp_path / 'output' / 'answer'
+        assert ensure_resettable_dir(root / 'questions', run_root=root, label='questions') is True
+        outside = tmp_path / 'custom'
+        assert ensure_resettable_dir(outside, run_root=root, label='questions') is False
+        assert outside.is_dir()
+        not_a_dir = tmp_path / 'file.txt'
+        not_a_dir.write_text('x', encoding='utf-8')
+        with pytest.raises(UnsafeOutputDirError, match='bukan folder'):
+            ensure_resettable_dir(not_a_dir, run_root=root, label='questions')
+
+    def test_prune_stale_recognition_keeps_current_pages_and_other_files(self, tmp_path: Path) -> None:
+        recognition = tmp_path / 'recognition'
+        recognition.mkdir()
+        for name in ('page_001_recognition.json', 'page_002_recognition.json', 'notes.txt'):
+            (recognition / name).write_text('{}', encoding='utf-8')
+        assert prune_stale_recognition(recognition, [1]) == ['page_002_recognition.json']
+        assert sorted(p.name for p in recognition.iterdir()) == ['notes.txt', 'page_001_recognition.json']
+        assert prune_stale_recognition(tmp_path / 'missing', [1]) == []
 
     def test_prepare_run_workspace_preserve_crops(self, tmp_path: Path) -> None:
         layout = build_run_layout(tmp_path / 'output', 'answer')
@@ -933,6 +1040,15 @@ class TestJsonExtract:
         data = extract_json_object(text)
         assert data['feedback'] == 'use \\frac{1}{2}, not x\\neq 0'
 
+    @pytest.mark.parametrize(
+        'latex',
+        [r'\boxed{[-1,2)}', r'\tfrac{1}{2}', r'x \nleq 2', r'\neg p', r'\tau', r'\rfloor', r'\bigstar{x}'],
+        ids=['boxed', 'tfrac', 'nleq', 'neg', 'tau', 'rfloor', 'brace-arg'],
+    )
+    def test_extract_keeps_latex_commands_colliding_with_json_escapes(self, latex: str) -> None:
+        data = extract_json_object('{"feedback": "HP ' + latex + '"}')
+        assert data['feedback'] == 'HP ' + latex
+
     def test_repair_preserves_real_json_escapes(self) -> None:
         raw = '{"feedback": "line1\\nline2\\tstop"}'
         repaired = repair_json_escapes(raw)
@@ -1193,6 +1309,27 @@ class TestQuestionMergeExtract:
         with pytest.raises(RecognitionNotFoundError):
             ExtractController(extractor=MagicMock()).extract(tmp_path / 'empty', tmp_path / 'q')
 
+    @pytest.mark.parametrize('runner_fails', [False, True], ids=['recognized', 'recognition_failed'])
+    def test_extract_controller_clears_output_only_after_recognition(
+        self, tmp_path: Path, runner_fails: bool
+    ) -> None:
+        questions = tmp_path / 'q'
+        edited = questions / 'question_001' / 'question.json'
+        edited.parent.mkdir(parents=True)
+        edited.write_text('{}', encoding='utf-8')
+        runner = MagicMock(side_effect=OllamaUnavailableError('down') if runner_fails else None)
+        extractor = MagicMock()
+        controller = ExtractController(extractor=extractor, recognize_runner=runner)
+        if runner_fails:
+            with pytest.raises(OllamaUnavailableError):
+                controller.extract(tmp_path / 'recognition', questions, clear_output=True)
+            assert edited.is_file()
+            extractor.extract_from_dir.assert_not_called()
+        else:
+            controller.extract(tmp_path / 'recognition', questions, clear_output=True)
+            assert not edited.exists()
+            extractor.extract_from_dir.assert_called_once_with(tmp_path / 'recognition', questions)
+
     def test_merge_single_page(self) -> None:
         pages = [PageRecognition(page_number=1, questions=[RecognizedQuestion(question_number=1, region=Region(x=1, y=2, width=3, height=4), steps=[RecognizedStep(step_number=1, raw_text='2x-3<5', latex='2x-3<5', confidence=0.9), RecognizedStep(step_number=2, raw_text='x<4', latex='x<4', confidence=0.8)], final_answer='x<4', confidence=0.85)])]
         questions = merge_page_recognitions(pages)
@@ -1220,6 +1357,42 @@ class TestQuestionMergeExtract:
         assert q.student_final_answer == 'x < 4'
         assert len(q.image_regions) == 2
 
+    @pytest.mark.parametrize(
+        ('second_final', 'second_symbolic', 'expected_text', 'expected_repr'),
+        [
+            ('x < 4', None, 'x < 4', None),
+            ('', SymbolicPayload(kind='relation', repr='x < 4'), 'x < 4', 'x < 4'),
+        ],
+        ids=['text-only-later-crop', 'symbolic-only-later-crop'],
+    )
+    def test_merge_final_text_and_symbolic_from_same_crop(
+        self,
+        second_final: str,
+        second_symbolic: SymbolicPayload | None,
+        expected_text: str,
+        expected_repr: str | None,
+    ) -> None:
+        first = RecognizedQuestion(
+            question_number=1,
+            steps=[RecognizedStep(step_number=1, raw_text='start', latex='')],
+            final_answer='x < 5',
+            final_answer_symbolic=SymbolicPayload(kind='relation', repr='x < 5'),
+        )
+        second = RecognizedQuestion(
+            question_number=1,
+            steps=[RecognizedStep(step_number=1, raw_text='end', latex='')],
+            final_answer=second_final,
+            final_answer_symbolic=second_symbolic,
+        )
+        pages = [
+            PageRecognition(page_number=1, questions=[first]),
+            PageRecognition(page_number=2, questions=[second]),
+        ]
+        question = merge_page_recognitions(pages)[0]
+        assert question.student_final_answer == expected_text
+        actual_repr = question.student_final_symbolic.repr if question.student_final_symbolic else None
+        assert actual_repr == expected_repr
+
     def test_merge_two_distinct_questions(self) -> None:
         pages = [PageRecognition(page_number=1, questions=[RecognizedQuestion(question_number=2, steps=[RecognizedStep(step_number=1, raw_text='q2', latex='')], final_answer='a2'), RecognizedQuestion(question_number=1, steps=[RecognizedStep(step_number=1, raw_text='q1', latex='')], final_answer='a1')])]
         questions = merge_page_recognitions(pages)
@@ -1241,6 +1414,103 @@ class TestQuestionMergeExtract:
         latex = collect_latex_documents(pages)
         assert [q.question_number for q in questions] == [1, 2]
         assert latex == {1: 'DOC0', 2: 'DOC1'}
+
+    @staticmethod
+    def _key_pages_with_unnumbered_crop() -> list[PageRecognition]:
+        def recognized(number: int, text: str) -> RecognizedQuestion:
+            return RecognizedQuestion(
+                question_number=number,
+                steps=[RecognizedStep(step_number=1, raw_text=text, latex='')],
+                final_answer=text,
+                latex_document=f'DOC_{text}',
+            )
+
+        return [
+            PageRecognition(page_number=1, questions=[recognized(1, 'q1'), recognized(2, 'q2')]),
+            PageRecognition(page_number=2, questions=[recognized(0, 'frag')]),
+        ]
+
+    def test_provisional_number_skips_answer_key_numbers(self) -> None:
+        pages = self._key_pages_with_unnumbered_crop()
+        questions = merge_page_recognitions(pages, [1, 2, 3])
+        assert [q.question_number for q in questions] == [1, 2, 4]
+        assert questions[-1].segmentation_status == SegmentationStatus.PROVISIONAL
+        assert collect_latex_documents(pages, [1, 2, 3])[4] == 'DOC_frag'
+
+    def test_extractor_reserves_exam_schema_numbers(self, tmp_path: Path) -> None:
+        schema = ExamSchema(
+            source='test',
+            questions=[ExamQuestion(number=n, stem=f'stem {n}', final='x>1') for n in (1, 2, 3)],
+        )
+        output_dir = tmp_path / 'questions'
+        result = QuestionExtractor(schema).extract_from_pages(self._key_pages_with_unnumbered_crop(), output_dir)
+        assert [q.question_number for q in result.questions] == [1, 2, 4]
+        assert not (output_dir / 'question_003').exists()
+        assert (output_dir / 'question_004' / 'latex_source.tex').read_text(encoding='utf-8').strip() == 'DOC_frag'
+
+    _STEMS = {1: '2x-1<5x+2', 2: '3x+4>10', 3: '2-3x<=12'}
+
+    @classmethod
+    def _stem_schema(cls) -> ExamSchema:
+        return ExamSchema(
+            source='test',
+            questions=[ExamQuestion(number=n, stem=stem, final='x>1') for n, stem in cls._STEMS.items()],
+        )
+
+    @classmethod
+    def _stem_pages(cls, read: tuple[int, ...], unnumbered: int) -> list[PageRecognition]:
+        def recognized(number: int, stem: str, tag: str) -> RecognizedQuestion:
+            return RecognizedQuestion(
+                question_number=number,
+                steps=[
+                    RecognizedStep(step_number=1, raw_text=stem, latex=''),
+                    RecognizedStep(step_number=2, raw_text='x>1', latex=''),
+                ],
+                final_answer='x>1',
+                latex_document=f'DOC_{tag}',
+            )
+
+        numbered = [recognized(n, cls._STEMS[n], f'q{n}') for n in read]
+        loose = [recognized(0, cls._STEMS[3], f'frag{i}') for i in range(unnumbered)]
+        return [
+            PageRecognition(page_number=1, questions=numbered),
+            PageRecognition(page_number=2, questions=loose),
+        ]
+
+    @pytest.mark.parametrize(
+        ('read', 'unnumbered', 'expected', 'latex_three'),
+        [
+            ((1, 2), 1, [1, 2, 3], 'DOC_frag0'),
+            ((1, 2, 3), 1, [1, 2, 3, 4], 'DOC_q3'),
+            ((1, 2), 2, [1, 2, 3, 5], 'DOC_frag0'),
+        ],
+        ids=['skipped-number', 'number-already-read', 'second-copy-stays-provisional'],
+    )
+    def test_provisional_crop_takes_unread_stem_number(
+        self, read: tuple[int, ...], unnumbered: int, expected: list[int], latex_three: str
+    ) -> None:
+        pages = self._stem_pages(read, unnumbered)
+        questions, latex = assign_provisional_by_stem(
+            merge_page_recognitions(pages, [1, 2, 3]),
+            self._stem_schema(),
+            collect_latex_documents(pages, [1, 2, 3]),
+        )
+        assert [q.question_number for q in questions] == expected
+        assert [q.question_id for q in questions] == [f'question_{n:03d}' for n in expected]
+        assert latex[3] == latex_three
+        provisional = {q.question_number for q in questions if q.segmentation_status == SegmentationStatus.PROVISIONAL}
+        assert provisional == set(expected) - set(read)
+
+    def test_assign_provisional_without_schema_is_noop(self) -> None:
+        questions = merge_page_recognitions(self._stem_pages((1, 2), 1))
+        assert assign_provisional_by_stem(questions, None, {}) == (questions, {})
+
+    def test_extractor_numbers_unnumbered_crop_by_stem(self, tmp_path: Path) -> None:
+        output_dir = tmp_path / 'questions'
+        result = QuestionExtractor(self._stem_schema()).extract_from_pages(self._stem_pages((1, 2), 1), output_dir)
+        assert [q.question_number for q in result.questions] == [1, 2, 3]
+        assert (output_dir / 'question_003' / 'latex_source.tex').read_text(encoding='utf-8').strip() == 'DOC_frag0'
+        assert not (output_dir / 'question_004').exists()
 
     def test_extractor_writes_latex_for_provisional_questions(self, tmp_path: Path) -> None:
         recognition_dir = tmp_path / 'recognition'
@@ -1527,6 +1797,58 @@ class TestQuestionSchemaSplit:
         assert '1' in (questions[1].student_final_answer or '')
         assert 1 in latex_map and 2 in latex_map
         assert '3x-5' in latex_map[2] or '4x-6' in latex_map[2]
+
+    @pytest.mark.parametrize(
+        ('text', 'matches'),
+        [
+            ('1) 2-3x <= 12', True),
+            ('2-3x <= 12, tentukan HP', True),
+            ('2-3x <= 125', False),
+            ('12-3x <= 12', False),
+            ('2-3x <= 12x + 1', False),
+        ],
+        ids=['label-prefix', 'trailing-prose', 'longer-number', 'leading-digit', 'continued-expression'],
+    )
+    def test_stem_substring_must_be_bounded(self, text: str, matches: bool) -> None:
+        assert match_schema_stem(text, self._mini_schema().questions[0]) is matches
+
+    def test_split_ignores_step_that_only_contains_other_stem(self) -> None:
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(number=1, stem='2x-1<5x+2', final='(-1, oo)'),
+                ExamQuestion(number=2, stem='2x-1<5', final='(-oo, 3)'),
+            ],
+        )
+        question = make_question(
+            number=1,
+            steps=[
+                make_step(1, raw_text='2x-1<5x+2', symbolic_repr='2*x - 1 < 5*x + 2'),
+                make_step(2, raw_text='-3x<3', symbolic_repr='-3*x < 3'),
+            ],
+        )
+        questions, _ = split_questions_by_exam_schema([question], schema, {})
+        assert [q.question_number for q in questions] == [1]
+        assert len(questions[0].student_steps) == 2
+
+    def test_split_assigns_final_and_figures_to_owning_part(self) -> None:
+        schema = self._mini_schema()
+        schema.questions[1].expects_figure = True
+        merged = self._merged_q1_q2().model_copy(
+            update={
+                'student_final_answer': r'HP = (1, \infty)',
+                'student_final_symbolic': SymbolicPayload(kind='expression', repr='HP = (1, oo)'),
+                'figure_refs': [make_figure('NUMBER_LINE((1,oo))')],
+            }
+        )
+        questions, _ = split_questions_by_exam_schema([merged], schema, {})
+        first, second = questions
+        assert second.student_final_answer == r'HP = (1, \infty)'
+        assert second.student_final_symbolic is not None
+        assert second.student_final_symbolic.repr == 'HP = (1, oo)'
+        assert '10/3' in first.student_final_answer
+        assert first.figure_refs == []
+        assert len(second.figure_refs) == 1
 
     def test_split_noop_without_schema(self) -> None:
         merged = self._merged_q1_q2()
@@ -1827,6 +2149,65 @@ class TestMathInequality:
             step = parse_math_step('HP(1,oo)', x)
             assert step.kind == 'relation'
 
+    @pytest.mark.parametrize(
+        ('factored', 'expanded'),
+        [
+            ('(x-1)(x+2) < 0', '(x-1)*(x+2) < 0'),
+            ('x(x-1)(x-2) > 0', 'x*(x-1)*(x-2) > 0'),
+            ('(2x+1)(x-3) = 0', '(2*x+1)*(x-3) = 0'),
+            ('(x-1)(x) = 0', 'x*(x-1) = 0'),
+            ('(x+1)/((x-2)(x+3)) >= 0', '(x+1)/((x-2)*(x+3)) >= 0'),
+        ],
+        ids=['two-factors', 'three-factors', 'equation', 'not-function-call', 'rational'],
+    )
+    def test_juxtaposed_factors_parse_as_product(self, factored: str, expanded: str) -> None:
+        from sympy.utilities.exceptions import SymPyDeprecationWarning
+
+        import warnings
+
+        x = Symbol('x')
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', SymPyDeprecationWarning)
+            step = parse_math_step(factored, x)
+        assert step.kind == 'relation'
+        assert relations_equivalent(step.value, parse_relation(expanded, x), x) is True
+
+    @pytest.mark.parametrize(
+        ('left', 'right', 'expected'),
+        [
+            ('2*x > 1', 'x > 0.5', True),
+            ('(0.5, oo)', '(1/2, oo)', True),
+            ('x < -1.5 or x > 2', '(-oo, -3/2) U (2, oo)', True),
+            ('2.5x < 5', 'x < 2', True),
+            ('x < 1/3', 'x < 0.33', False),
+        ],
+        ids=['decimal-bound', 'decimal-interval', 'decimal-union', 'decimal-coefficient', 'approximation'],
+    )
+    def test_decimals_compare_as_exact_fractions(self, left: str, right: str, expected: bool) -> None:
+        x = Symbol('x')
+        assert relations_equivalent(parse_relation(left, x), parse_relation(right, x), x) is expected
+
+    @pytest.mark.parametrize(
+        ('written', 'ascii_form'),
+        [
+            ('x ≤ 3', 'x <= 3'),
+            ('x ≥ -2', 'x >= -2'),
+            ('(-∞, 1) ∪ (2, ∞)', 'x < 1 or x > 2'),
+            ('−2 < x', '-2 < x'),
+            ('x < -2 atau x > 3', 'x < -2 or x > 3'),
+            ('x > -1 DAN x < 2', '-1 < x < 2'),
+            (r'x \leq -2 \quad \text{atau} \quad x \geq 1', 'x <= -2 or x >= 1'),
+            ('x < 0,5', 'x < 1/2'),
+            ('x < 0{,}5', 'x < 1/2'),
+            ('(0,5)', '0 < x < 5'),
+        ],
+        ids=['le', 'ge', 'unicode-union', 'unicode-minus', 'atau', 'dan', 'text-atau', 'decimal-comma',
+             'braced-decimal-comma', 'interval-comma-kept'],
+    )
+    def test_unicode_and_indonesian_notation(self, written: str, ascii_form: str) -> None:
+        x = Symbol('x')
+        assert relations_equivalent(parse_relation(written, x), parse_relation(ascii_form, x), x) is True
+
     def test_domain_neq_equivalent_to_or(self) -> None:
         x = Symbol('x')
         neq = parse_relation('x \\neq 1', x)
@@ -1875,6 +2256,126 @@ class TestMathInequality:
         result = SymPyStepValidator().validate_question(make_question('|x|<2', 'x<2', number=2))
         assert_step_statuses(result, ValidationStatus.VALID, ValidationStatus.INVALID)
 
+    @staticmethod
+    def _symbolic_question(*reprs: str, final: str = '') -> Question:
+        steps = [make_step(i, symbolic_repr=repr_) for i, repr_ in enumerate(reprs, start=1)]
+        return make_question(steps=steps, final=final)
+
+    @pytest.mark.parametrize(
+        ('reprs', 'final', 'statuses', 'final_status'),
+        [
+            (('2*t-1<5', '2*t<6', 't<3'), 't<3', ('valid', 'valid', 'valid'), 'valid'),
+            (('2*t-1<5', '2*t<6', 't<4'), 't<4', ('valid', 'valid', 'invalid'), 'valid'),
+            (('2*y+1>3', 'y>1'), '(1, oo)', ('valid', 'valid'), 'valid'),
+            (('2*y+1>3', 'y>1'), '(2, oo)', ('valid', 'valid'), 'invalid'),
+        ],
+        ids=['t-valid', 't-wrong-step', 'y-interval-final', 'y-wrong-interval'],
+    )
+    def test_validator_uses_question_variable(
+        self, reprs: tuple[str, ...], final: str, statuses: tuple[str, ...], final_status: str
+    ) -> None:
+        result = SymPyStepValidator().validate_question(self._symbolic_question(*reprs, final=final))
+        assert [s.status.value for s in result.steps] == list(statuses)
+        assert result.final_answer_status is not None
+        assert result.final_answer_status.status.value == final_status
+
+    @pytest.mark.parametrize(
+        ('texts', 'expected'),
+        [
+            (['2*t - 1 < 5', 't < 3'], 't'),
+            (['2*x - 1 < 5', '(-oo, 3)'], 'x'),
+            (['t > 2', '(2, oo)'], 't'),
+            (['x > 1', 'y > 1'], 'x'),
+            (['no math here'], 'x'),
+        ],
+        ids=['t', 'x', 'interval-not-counted', 'tie-prefers-x', 'fallback'],
+    )
+    def test_infer_main_symbol(self, texts: list[str], expected: str) -> None:
+        assert infer_main_symbol(texts) == Symbol(expected)
+
+    @pytest.mark.parametrize(
+        ('reprs', 'statuses'),
+        [
+            (('x^2<4 => x<2',), ('invalid',)),
+            (('x^2<4 => -2<x<2',), ('valid',)),
+            (('2*x-1<5', '2*x<6 => x<3'), ('valid', 'valid')),
+            (('2*x-1<5', '2*x<6 => x<4'), ('valid', 'invalid')),
+            (('2*x-1<5', '2*x<7 => x<3.5'), ('valid', 'invalid')),
+        ],
+        ids=['wrong-conclusion', 'right-conclusion', 'chain-ok', 'chain-bad-link', 'chain-bad-head'],
+    )
+    def test_validator_checks_each_implication_link(
+        self, reprs: tuple[str, ...], statuses: tuple[str, ...]
+    ) -> None:
+        result = SymPyStepValidator().validate_question(self._symbolic_question(*reprs))
+        assert [s.status.value for s in result.steps] == list(statuses)
+
+    @pytest.mark.parametrize(
+        ('raw', 'clauses'),
+        [
+            (r'x^2<4 \implies x<2', [r'x^2<4', 'x<2']),
+            ('a => b => c', ['a', 'b', 'c']),
+            ('x^2<4 <=> -2<x<2', ['x^2<4', '-2<x<2']),
+            (r'x \geq 1', [r'x \geq 1']),
+        ],
+        ids=['implies', 'chain', 'iff', 'none'],
+    )
+    def test_split_implication_clauses(self, raw: str, clauses: list[str]) -> None:
+        assert split_implication_clauses(raw) == clauses
+
+    @pytest.mark.parametrize(
+        ('latex', 'expected'),
+        [
+            (r'x \leqslant 3', 'x <= 3'),
+            (r'x \geqslant -1', 'x >= -1'),
+            (r'2-3x\leq12', '2-3x<=12'),
+            (r'x \neq 2', 'x != 2'),
+        ],
+        ids=['leqslant', 'geqslant', 'leq-digit', 'neq'],
+    )
+    def test_normalize_relation_commands(self, latex: str, expected: str) -> None:
+        assert normalize_math_text(latex) == expected
+
+    @pytest.mark.parametrize(
+        ('text', 'solved'),
+        [
+            ('x<2', True),
+            ('2>x', True),
+            ('-2<x<2', True),
+            ('x<=-1 or x>=2', True),
+            ('x = 1 or x = 2', True),
+            ('[-1, 6]', True),
+            ('HP = \\emptyset', True),
+            ('x \\in \\mathbb{R}', True),
+            ('2*x-1<5', False),
+            ('x^2<4', False),
+        ],
+    )
+    def test_is_solved_form(self, text: str, solved: bool) -> None:
+        x = Symbol('x')
+        step = parse_math_step(text, x)
+        assert is_solved_form(step.kind, step.value, x) is solved
+
+    @pytest.mark.parametrize(
+        ('text', 'kind', 'expected'),
+        [
+            ('y = 2 or y = 3', 'relation', 'Eq(y, 2) | Eq(y, 3)'),
+            ('y = 3', 'relation', 'Eq(y, 3)'),
+            ('y = 2*x + 1', 'expression', '2*x + 1'),
+            ('f(x) = x^2 - 1', 'expression', 'x**2 - 1'),
+        ],
+        ids=['roots-or', 'single-root', 'function-of-x', 'named-function'],
+    )
+    def test_assignment_needs_other_symbol(self, text: str, kind: str, expected: str) -> None:
+        step = parse_math_step(text, Symbol('x'))
+        assert step.kind == kind
+        assert sympify(str(step.value)) == sympify(expected)
+
+    def test_value_claim_keeps_function_call_opaque(self) -> None:
+        step = parse_math_step('f(0) = -1/2 < 0', Symbol('x'))
+        assert step.kind == 'relation'
+        assert {s.name for s in step.value.free_symbols} == {'f(0)'}
+
 class TestLlmHybrid:
 
     @pytest.mark.parametrize(
@@ -1891,6 +2392,26 @@ class TestLlmHybrid:
         assert_step_statuses(result, expected)
         assert result.steps[0].method == ValidationMethod.LLM
         assert judge.calls
+
+    @pytest.mark.parametrize(
+        ('verdict', 'expected'),
+        [
+            ({'status': 'valid', 'reason': 'ok', 'confidence': 0.9}, ValidationStatus.VALID),
+            ({'status': 'valid', 'reason': 'ok', 'confidence': 0.5}, ValidationStatus.UNCERTAIN),
+            ({'status': 'invalid', 'reason': 'bad', 'confidence': 0.5}, ValidationStatus.UNCERTAIN),
+            ({'status': 'valid', 'reason': 'ok'}, ValidationStatus.UNCERTAIN),
+        ],
+        ids=['confident', 'low-valid', 'low-invalid', 'unstated'],
+    )
+    def test_hybrid_low_confidence_llm_goes_to_review(self, verdict: dict, expected: ValidationStatus) -> None:
+        judge = RecordingJudge(verdict)
+        question = make_question('', raw_text='not parseable', final='??')
+        result = HybridStepValidator(SymPyStepValidator(), judge, min_confidence=0.7).validate_question(question)
+        assert_step_statuses(result, expected)
+        assert result.final_answer_status is not None
+        assert result.final_answer_status.status == expected
+        if expected == ValidationStatus.UNCERTAIN:
+            assert 'below 0.7' in result.steps[0].reason
 
     def test_hybrid_does_not_overwrite_sympy_invalid(self) -> None:
         judge = RecordingJudge({'status': 'valid', 'reason': 'should not be used', 'confidence': 0.9})
@@ -1992,6 +2513,73 @@ class TestRoleAwareValidation:
     def _validate(self, question: Question) -> QuestionValidation:
         return SymPyStepValidator(step_checks=get_pack('1.5').step_checks).validate_question(question)
 
+    def _role_step_status(self, repr_: str, role: str) -> ValidationStatus:
+        """Status of one role step checked against ``(x-1)/(x+2) < 0`` under pack 1.5."""
+        question = make_question(steps=[
+            make_step(1, symbolic_repr='(x-1)/(x+2) < 0', role='algebra'),
+            make_step(2, symbolic_repr=repr_, role=role),
+        ])
+        with using_pack(get_pack('1.5')):
+            return self._validate(question).steps[1].status
+
+    @pytest.mark.parametrize(
+        ('repr_', 'expected'),
+        [
+            ('x_1 = 1 or x_2 = -2', ValidationStatus.VALID),
+            ('x_{1} = 1 or x_{2} = -2', ValidationStatus.VALID),
+            ('x_1 = 1 or x_2 = 2', ValidationStatus.INVALID),
+        ],
+        ids=['underscore', 'braces', 'wrong-root'],
+    )
+    def test_indexed_critical_points(self, repr_: str, expected: ValidationStatus) -> None:
+        assert self._role_step_status(repr_, 'critical_points') == expected
+
+    @pytest.mark.parametrize(
+        ('repr_', 'expected'),
+        [
+            ('x = 0 => (0-1)/(0+2) < 0', ValidationStatus.VALID),
+            ('x = 0 => (0-1)/(0+2) > 0', ValidationStatus.INVALID),
+        ],
+        ids=['correct-sign', 'wrong-sign'],
+    )
+    def test_sign_test_written_as_implication(self, repr_: str, expected: ValidationStatus) -> None:
+        assert self._role_step_status(repr_, 'sign_chart') == expected
+
+    @pytest.mark.parametrize(
+        ('repr_', 'expected'),
+        [
+            ('(-3*(-5))/((-5+4)*(-5-2)) = 15/7 > 0', ValidationStatus.VALID),
+            ('(-3*(-5))/((-5+4)*(-5-2)) = 15/7 < 0', ValidationStatus.INVALID),
+        ],
+        ids=['value-then-sign', 'wrong-sign'],
+    )
+    def test_sign_test_chain_with_value_and_sign(self, repr_: str, expected: ValidationStatus) -> None:
+        result = self._validate(make_rational_inequality_question(replace={11: repr_}))
+        assert result.steps[10].status == expected
+        assert result.steps[10].reason.startswith('numeric_eval:')
+
+    @pytest.mark.parametrize(
+        ('algebra', 'hp', 'expected'),
+        [
+            ('x**2 + 1 < 0', 'HP = \\emptyset', ValidationStatus.VALID),
+            ('x**2 + 1 > 0', 'x \\in \\mathbb{R}', ValidationStatus.VALID),
+            ('2*x < 6', 'HP = \\{x \\mid x < 3\\}', ValidationStatus.VALID),
+            ('x**2 + 1 < 0', 'x \\in \\mathbb{R}', ValidationStatus.INVALID),
+            ('|x-1| < 3', '-2 < x < 4', ValidationStatus.VALID),
+        ],
+        ids=['empty-set', 'all-reals', 'set-builder', 'wrong-reals', 'abs-unchanged'],
+    )
+    def test_hp_written_as_set(self, algebra: str, hp: str, expected: ValidationStatus) -> None:
+        question = make_question(
+            steps=[make_step(1, symbolic_repr=algebra, role='algebra'), make_step(2, symbolic_repr=hp, role='hp')],
+            final=hp,
+        )
+        with using_pack(get_pack('1.5')):
+            result = self._validate(question)
+        assert result.steps[1].status == expected
+        assert result.final_answer_status is not None
+        assert result.final_answer_status.status == expected
+
     def test_reference_indices_skip_role_steps(self) -> None:
         roles = ['algebra', 'algebra', 'critical_points', 'critical_points', 'hp', 'sign_chart', 'figure']
         checks = step_checks_for(roles, get_pack('1.5').step_checks)
@@ -2018,6 +2606,36 @@ class TestRoleAwareValidation:
         assert numeric_relation_holds(parse_relation('(-3*3)/((3+4)*(3-2)) = -9/7', x)) is True
         assert numeric_relation_holds(parse_relation('(-3*3)/((3+4)*(3-2)) = -6/7', x)) is False
         assert numeric_relation_holds(parse_relation('x < -4', x)) is None
+
+    @pytest.mark.parametrize(
+        ('text', 'expected'),
+        [
+            ('(-3*(-5))/((-5+4)*(-5-2)) = 15/7', True),
+            ('(-3*1)/((1+4)*(1-2)) > 0', True),
+            ('-5/7 < 0', False),
+            ('2 > 1', False),
+        ],
+        ids=['substituted', 'sign-only', 'bare-value', 'unrelated'],
+    )
+    def test_numeric_eval_matches_reference(self, text: str, expected: bool) -> None:
+        x = Symbol('x')
+        reference = parse_relation('-3*x/((x+4)*(x-2)) < 0', x)
+        sides = parse_relation_sides(text, x)
+        assert numeric_eval_matches_reference(sides, reference, x) is expected
+
+    def test_numeric_eval_without_symbolic_reference_is_undecided(self) -> None:
+        x = Symbol('x')
+        sides = parse_relation_sides('2 > 1', x)
+        assert numeric_eval_matches_reference(sides, parse_relation('1 < 2', x), x) is None
+        assert numeric_eval_matches_reference([], parse_relation('x < 2', x), x) is None
+
+    def test_unrelated_true_numeric_step_is_uncertain(self) -> None:
+        result = self._validate(make_rational_inequality_question(replace={11: '2 > 1'}))
+        step = result.steps[10]
+        assert step.status == ValidationStatus.UNCERTAIN
+        assert step.reason == 'numeric_eval: numeric evaluation not linked to the reference expression'
+        others = [s.status for s in result.steps if s.step_number != 11]
+        assert set(others) == {ValidationStatus.VALID}
 
     def test_rational_inequality_solution_is_valid(self) -> None:
         result = self._validate(make_rational_inequality_question())
@@ -2200,6 +2818,112 @@ class TestScoreAggregate:
         # algebra 3 + critical 2*(1/3) rounded + figure 2 + final 3
         assert partial.score == pytest.approx(8.6667, abs=1e-4)
 
+    @staticmethod
+    def _pack_rubric() -> Rubric:
+        return get_pack('1.5').rubric_from_parts(
+            1,
+            [
+                ExamPart(kind=kind, order=i)
+                for i, kind in enumerate(('algebra', 'critical_points', 'figure', 'hp'), start=1)
+            ],
+        )
+
+    def test_algebra_pool_skips_steps_scored_under_parts(self) -> None:
+        roles = {1: 'algebra', 2: 'algebra', 3: 'critical_points', 4: 'sign_chart', 5: 'figure', 6: 'hp'}
+        grade = self._grade(
+            make_validation(*[ValidationStatus.VALID] * 6),
+            self._pack_rubric(),
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses={
+                'critical_points': (ValidationStatus.VALID, 'ok'),
+                'figure': (ValidationStatus.VALID, 'ok'),
+            },
+            step_roles=roles,
+            role_rubric_parts=get_pack('1.5').role_rubric_parts,
+        )
+        per_step = {s.step_number: s.max_score for s in grade.steps if s.step_number > 0}
+        assert per_step[1] + per_step[2] == pytest.approx(3.0)
+        assert all(per_step[n] == 0.0 for n in (3, 4, 5, 6))
+        assert 'scored under part:critical_points' in grade.steps[3].feedback
+        assert 'scored under part:final_answer' in grade.steps[5].feedback
+        assert grade.score == pytest.approx(10.0)
+
+    def test_algebra_pool_without_matching_parts_spreads_over_all_steps(self) -> None:
+        grade = self._grade(
+            make_validation(*[ValidationStatus.VALID] * 4),
+            step_roles={1: 'algebra', 2: 'critical_points', 3: 'figure', 4: 'algebra'},
+            role_rubric_parts=get_pack('1.5').role_rubric_parts,
+        )
+        assert [s.max_score for s in grade.steps] == pytest.approx([2.0, 2.0, 2.0, 2.0])
+        assert grade.score == pytest.approx(10.0)
+
+    def test_hand_edited_roles_are_canonical_for_part_scoring(self) -> None:
+        steps = [make_step(1, 'x<3', role=' Algebra '), make_step(2, 'x<3', role='HP')]
+        assert [s.role for s in steps] == ['algebra', 'hp']
+        assert RecognizedStep(step_number=1, raw_text='', role='  ').role is None
+        grade = self._grade(
+            make_validation(ValidationStatus.VALID, ValidationStatus.VALID),
+            self._pack_rubric(),
+            step_roles={s.step_number: s.role for s in steps},
+            role_rubric_parts=get_pack('1.5').role_rubric_parts,
+        )
+        per_step = [s.max_score for s in grade.steps if s.step_number > 0]
+        assert per_step == pytest.approx([3.0, 0.0])
+
+    def test_uncertain_part_step_still_requires_review(self) -> None:
+        grade = self._grade(
+            make_validation(ValidationStatus.VALID, (ValidationStatus.UNCERTAIN, 'unclear')),
+            self._pack_rubric(),
+            step_roles={1: 'algebra', 2: 'critical_points'},
+            role_rubric_parts=get_pack('1.5').role_rubric_parts,
+        )
+        assert grade.steps[1].max_score == 0.0
+        assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
+
+    def test_allocate_all_part_steps_moves_pool_to_algebra_part(self) -> None:
+        per_step, _, part_max = allocate_step_max_scores(self._pack_rubric(), 2, [True, True])
+        assert per_step == [0.0, 0.0]
+        assert part_max['algebra'] == pytest.approx(3.0)
+
+    def test_no_algebra_steps_gets_half_pool_for_review(self) -> None:
+        grade = self._grade(
+            make_validation(*[ValidationStatus.VALID] * 3),
+            self._pack_rubric(),
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses={
+                'critical_points': (ValidationStatus.VALID, 'ok'),
+                'figure': (ValidationStatus.VALID, 'ok'),
+            },
+            step_roles={1: 'critical_points', 2: 'sign_chart', 3: 'hp'},
+            role_rubric_parts=get_pack('1.5').role_rubric_parts,
+        )
+        assert all(s.max_score == 0.0 for s in grade.steps if s.step_number > 0)
+        algebra = next(s for s in grade.steps if s.feedback.startswith('part:algebra'))
+        assert algebra.max_score == pytest.approx(3.0)
+        assert algebra.score == pytest.approx(1.5)
+        assert algebra.validation_status == ValidationStatus.UNCERTAIN
+        assert grade.part_statuses is not None and grade.part_statuses['algebra'] == 'uncertain'
+        assert grade.score == pytest.approx(8.5)
+        assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
+
+    def test_step_override_only_downgrades_valid(self) -> None:
+        override = (ValidationStatus.UNCERTAIN, 'first step does not keep the stem')
+        grade = self._grade(
+            make_validation(ValidationStatus.VALID, ValidationStatus.VALID),
+            step_overrides={1: override},
+        )
+        assert grade.steps[0].validation_status == ValidationStatus.UNCERTAIN
+        assert 'does not keep the stem' in grade.steps[0].feedback
+        assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
+        assert grade.score < 10.0
+
+        invalid = self._grade(
+            make_validation((ValidationStatus.INVALID, 'bad'), ValidationStatus.VALID),
+            step_overrides={1: override},
+        )
+        assert invalid.steps[0].validation_status == ValidationStatus.INVALID
+        assert invalid.steps[0].score == pytest.approx(0.0)
+
 class TestStepGrader:
 
     def test_step_grader_writes_grading_json_without_mutating_question(self, tmp_path: Path) -> None:
@@ -2214,6 +2938,68 @@ class TestStepGrader:
         assert grade.grades[0].score == pytest.approx(10.0)
         assert qpath.read_text(encoding='utf-8') == original
         assert 'keep' in original
+
+    def test_missing_rubric_skips_question_and_removes_old_grading(self, tmp_path: Path, capsys) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        workspace.add_question(make_question('x-4<0', 'x<4', final='x<4'), make_validation(ValidationStatus.VALID, ValidationStatus.VALID))
+        q2 = workspace.add_question(
+            make_question('x<1', number=2, final='x<1'), make_validation(ValidationStatus.VALID, number=2)
+        )
+        stale = q2.parent / 'grading.json'
+        stale.write_text(make_report_question_grade(2, 10.0, 10.0).model_dump_json(), encoding='utf-8')
+        result = workspace.grade()
+        assert [g.question_number for g in result.grades] == [1]
+        assert result.skipped == ['question_002']
+        assert not stale.exists()
+        assert 'question_002 tidak dinilai' in capsys.readouterr().err
+        print_grade_result(result)
+        assert 'question_002' in capsys.readouterr().err
+
+    def test_rubric_points_must_sum_to_maximum(self, tmp_path: Path, capsys) -> None:
+        with pytest.raises(ValidationError, match='sum to 9'):
+            Rubric(
+                question=1,
+                maximum_score=10,
+                criteria=[RubricCriterion(id='algebra', points=6), RubricCriterion(id='final_answer', points=3)],
+            )
+        assert TestScoreAggregate._pack_rubric().maximum_score == 10
+        workspace = GradingWorkspace(tmp_path)
+        bad = workspace.standard / 'rubrics' / 'question_002.json'
+        bad.write_text(
+            '{"question": 2, "maximum_score": 10, "criteria": [{"id": "algebra", "points": 6}, '
+            '{"id": "final_answer", "points": 3}]}',
+            encoding='utf-8',
+        )
+        with pytest.raises(RubricInvalidError, match='sum to 9') as raised:
+            RubricLoader(workspace.standard).load(2)
+        assert isinstance(raised.value, RubricNotFoundError)
+        workspace.add_question(make_question('x-4<0', 'x<4', final='x<4'), make_validation(ValidationStatus.VALID, ValidationStatus.VALID))
+        workspace.add_question(make_question('x<1', number=2, final='x<1'), make_validation(ValidationStatus.VALID, number=2))
+        result = workspace.grade()
+        assert result.skipped == ['question_002']
+        assert 'sum to 9' in capsys.readouterr().err
+
+    def test_all_rubrics_missing_raises(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        workspace.add_question(
+            make_question('x<1', number=2, final='x<1'), make_validation(ValidationStatus.VALID, number=2)
+        )
+        with pytest.raises(RubricNotFoundError):
+            workspace.grade()
+
+    def test_stale_validation_is_rejected(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        qpath = workspace.add_question(make_question('x-4<0', 'x<4', final='x<4'))
+        ValidateController(SymPyStepValidator()).validate(workspace.questions_dir)
+        validation = QuestionValidation.model_validate_json(
+            (qpath.parent / 'validation.json').read_text(encoding='utf-8')
+        )
+        assert len(validation.question_fingerprint) == 64
+        assert workspace.grade().grades[0].score == pytest.approx(10.0)
+
+        qpath.write_text(make_question('x-4<0', 'x<5', final='x<5').model_dump_json(indent=2), encoding='utf-8')
+        with pytest.raises(ValidationStaleError, match='validate'):
+            workspace.grade()
 
     def test_step_grader_missing_validation_errors(self, tmp_path: Path) -> None:
         workspace = GradingWorkspace(tmp_path)
@@ -2243,6 +3029,67 @@ class TestStepGrader:
         assert grade.final_answer is not None
         assert grade.final_answer.score == pytest.approx(final_score)
         assert grade.score == pytest.approx(score)
+
+    def test_copied_stem_requires_review(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        workspace.add_solution()
+        workspace.add_question(
+            make_question('2x-3<5', final='2x-3<5'),
+            make_validation(ValidationStatus.VALID),
+        )
+        grade = workspace.grade(with_comparer=True).grades[0]
+        assert grade.standard_final_status == ValidationStatus.UNCERTAIN
+        assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
+        assert grade.score < grade.maximum_score
+
+    def test_miscopied_first_step_requires_review(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        q1_standard(tmp_path)
+        workspace.add_rubric(sample_rubric())
+        workspace.add_question(
+            make_question(r'2-3x\leq10', r'x\geq-\frac{8}{3}', final=r'x\geq-\frac{8}{3}'),
+            make_validation(ValidationStatus.VALID, ValidationStatus.VALID),
+        )
+        grade = workspace.grade(with_comparer=True).grades[0]
+        assert grade.steps[0].validation_status == ValidationStatus.UNCERTAIN
+        assert 'stem' in grade.steps[0].feedback
+        assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
+
+    def test_step_grader_sends_step_roles_to_pool(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path, TestScoreAggregate._pack_rubric())
+        steps = [
+            make_step(1, 'x-4<0', role='algebra'),
+            make_step(2, 'x=4', role='critical_points'),
+            make_step(3, 'x<4', role='hp'),
+        ]
+        workspace.add_question(
+            make_question(steps=steps, final='x<4'),
+            make_validation(*[ValidationStatus.VALID] * 3),
+        )
+        grade = workspace.grade(role_rubric_parts=get_pack('1.5').role_rubric_parts).grades[0]
+        per_step = [s.max_score for s in grade.steps if s.step_number > 0]
+        assert per_step == pytest.approx([3.0, 0.0, 0.0])
+
+    @pytest.mark.parametrize(
+        ('figures', 'status', 'figure_score'),
+        [([make_figure(caption='garis bilangan')], 'uncertain', 1.0), ([], 'invalid', 0.0)],
+        ids=['drawn-needs-review', 'missing'],
+    )
+    def test_figure_without_comparer_is_not_auto_valid(
+        self, tmp_path: Path, figures: list, status: str, figure_score: float
+    ) -> None:
+        workspace = GradingWorkspace(tmp_path, TestScoreAggregate._pack_rubric())
+        workspace.add_question(
+            make_question('x-4<0', 'x<4', final='x<4', figures=figures),
+            make_validation(ValidationStatus.VALID, ValidationStatus.VALID),
+        )
+        grade = workspace.grade().grades[0]
+        assert grade.part_statuses is not None
+        assert grade.part_statuses['figure'] == status
+        figure_step = next(s for s in grade.steps if 'part:figure' in s.feedback)
+        assert figure_step.score == pytest.approx(figure_score)
+        if status == 'uncertain':
+            assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
 
 class TestStandardExtract:
 
@@ -2351,6 +3198,75 @@ class TestStandardComparer:
         assert result is not None
         assert result[0] == ValidationStatus.INVALID
 
+    @pytest.mark.parametrize(
+        ('question', 'reason'),
+        [
+            (make_question(r'2-3x\leq12', final=r'2-3x\leq12'), 'repeats the problem stem'),
+            (make_question(r'2-3x\leq12'), 'repeats the problem stem'),
+            (make_question(r'2-3x\leq12', r'-3x\leq10'), 'not in solved form'),
+        ],
+        ids=['copied-final', 'stem-only-no-final', 'stopped-midway'],
+    )
+    def test_comparer_unsolved_final_is_uncertain(
+        self, tmp_path: Path, question: Question, reason: str
+    ) -> None:
+        result = StandardFinalComparer(q1_standard(tmp_path)).compare(question)
+        assert result is not None
+        assert result[0] == ValidationStatus.UNCERTAIN
+        assert reason in result[1]
+
+    @pytest.mark.parametrize(
+        ('steps', 'expected'),
+        [
+            ((r'2-3x\leq12', r'-3x\leq10'), None),
+            ((r'x\geq-\frac{10}{3}',), None),
+            ((r'2-3x\leq10', r'x\geq-\frac{8}{3}'), 'does not keep'),
+        ],
+        ids=['copied-stem', 'equivalent-rewrite', 'miscopied-stem'],
+    )
+    def test_compare_first_step_against_stem(
+        self, tmp_path: Path, steps: tuple[str, ...], expected: str | None
+    ) -> None:
+        result = StandardFinalComparer(q1_standard(tmp_path)).compare_first_step(make_question(*steps))
+        if expected is None:
+            assert result is None
+        else:
+            assert result is not None
+            step_number, status, reason = result
+            assert (step_number, status) == (1, ValidationStatus.UNCERTAIN)
+            assert expected in reason
+
+    @pytest.mark.parametrize(
+        ('final', 'status'),
+        [
+            ('(-oo, 3)', ValidationStatus.VALID),
+            ('t < 3', ValidationStatus.VALID),
+            ('t < 4', ValidationStatus.INVALID),
+        ],
+        ids=['interval', 'relation', 'wrong'],
+    )
+    def test_comparer_uses_question_variable(
+        self, tmp_path: Path, final: str, status: ValidationStatus
+    ) -> None:
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='2t-1<5',
+                    stem_symbolic=SymbolicPayload(kind='relation', repr='2*t - 1 < 5'),
+                    final='t<3',
+                    final_symbolic=SymbolicPayload(kind='relation', repr='t < 3'),
+                )
+            ],
+        )
+        question = make_question(steps=[make_step(1, symbolic_repr='2*t - 1 < 5')], final=final)
+        comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
+        result = comparer.compare(question)
+        assert result is not None
+        assert result[0] == status
+        assert comparer.compare_first_step(question) is None
+
     def test_comparer_missing_solution_returns_none(self, tmp_path: Path) -> None:
         standard = tmp_path / 'exam'
         (standard / 'solutions').mkdir(parents=True)
@@ -2439,6 +3355,102 @@ class TestStandardComparer:
         full = comparer.compare_milestones(covered)
         assert full['critical_points'][0] == ValidationStatus.VALID
         assert full['critical_points'][2] == pytest.approx(1.0)
+
+    @pytest.mark.parametrize(
+        ('key_steps', 'student', 'status', 'fraction'),
+        [
+            (['x = 0', 'x = 1', 'x = 2'], ['x = 0 or x = 1 or x = 2'], ValidationStatus.VALID, 1.0),
+            (['x = 0 or x = 1 or x = 2'], ['x = 0', 'x = 1', 'x = 2'], ValidationStatus.VALID, 1.0),
+            (['x = 0', 'x = 1', 'x = 2'], ['x*(x-1)*(x-2) = 0'], ValidationStatus.VALID, 1.0),
+            (['x = 0', 'x = 1', 'x = 2'], ['x = 0', 'x = 1', 'x = 2', 'x = 5'], ValidationStatus.INVALID, 3 / 4),
+            (['x = 0', 'x = 1', 'x = 2'], ['x = 0', 'x = 1'], ValidationStatus.INVALID, 2 / 3),
+        ],
+        ids=['student-joined', 'key-joined', 'factored', 'extra-wrong-point', 'missing-point'],
+    )
+    def test_critical_points_compared_as_point_set(
+        self, tmp_path: Path, key_steps: list[str], student: list[str], status: ValidationStatus, fraction: float
+    ) -> None:
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='s',
+                    milestones=[ExamMilestone(role='critical_points', steps=key_steps)],
+                )
+            ],
+        )
+        question = make_question(steps=[
+            make_step(1, raw_text='x(x-1)(x-2) > 0', symbolic_repr='x*(x-1)*(x-2) > 0', role='algebra'),
+            *[
+                make_step(i, raw_text=text, symbolic_repr=text, role='critical_points')
+                for i, text in enumerate(student, start=2)
+            ],
+        ])
+        mark = StandardFinalComparer(tmp_path, exam_schema=schema).compare_milestones(question)['critical_points']
+        assert mark[0] == status
+        assert mark[2] == pytest.approx(fraction)
+        if fraction < 1 and len(student) > len(key_steps):
+            assert 'extra point' in mark[1]
+
+    @pytest.mark.parametrize(
+        ('student', 'status', 'fraction'),
+        [
+            (['x = 0', 'x = 1', 'x = 2', 'x = 5'], ValidationStatus.VALID, 1.0),
+            (['x = 0', 'x = 5'], ValidationStatus.INVALID, 1 / 3),
+        ],
+        ids=['extra-equation-ignored', 'missing-points-still-count'],
+    )
+    def test_untagged_point_steps_only_count_hits(
+        self, tmp_path: Path, student: list[str], status: ValidationStatus, fraction: float
+    ) -> None:
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='s',
+                    milestones=[ExamMilestone(role='critical_points', steps=['x = 0', 'x = 1', 'x = 2'])],
+                )
+            ],
+        )
+        question = make_question(steps=[
+            make_step(i, raw_text=text, symbolic_repr=text, role='algebra')
+            for i, text in enumerate(student, start=1)
+        ])
+        mark = StandardFinalComparer(tmp_path, exam_schema=schema).compare_milestones(question)['critical_points']
+        assert mark[0] == status
+        assert mark[2] == pytest.approx(fraction)
+        assert '(untagged steps)' in mark[1]
+        assert 'extra point' not in mark[1]
+
+    def test_undecided_milestone_atom_requires_review(self, tmp_path: Path) -> None:
+        schema = ExamSchema(
+            source='test',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='s',
+                    milestones=[ExamMilestone(role='sign_chart', steps=['x < 0', r'\text{tanda} ??', 'x > 2'])],
+                )
+            ],
+        )
+        question = make_question(steps=[make_step(1, raw_text='x<0', symbolic_repr='x < 0')])
+        status, reason, fraction = StandardFinalComparer(tmp_path, exam_schema=schema).compare_milestones(question)[
+            'critical_points'
+        ]
+        # x<0 matches, the prose atom is undecided, x>2 misses: (1 + 0.5) / 3
+        assert status == ValidationStatus.UNCERTAIN
+        assert fraction == pytest.approx(0.5)
+        assert 'undecided' in reason
+        grade = aggregate_question_grade(
+            question_id='question_001',
+            question_number=1,
+            validation=make_validation(ValidationStatus.VALID),
+            rubric=TestScoreAggregate._pack_rubric(),
+            part_statuses={'critical_points': (status, reason, fraction)},
+        )
+        assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
 
     def test_compare_steps_none_without_algebra_bank(self, tmp_path: Path) -> None:
         schema = ExamSchema(source='test', questions=[ExamQuestion(number=1, stem='s', final='x>1')])
@@ -2675,7 +3687,8 @@ x_1 &= 3
         payload = latex_to_symbolic_payload(r'-3x = 0 \implies x = 0')
         assert payload is not None
         assert payload.kind == 'relation'
-        assert 'and' in payload.repr
+        assert ' => ' in payload.repr
+        assert ' and ' not in payload.repr
         assert '-3' in payload.repr.replace(' ', '')
         assert 'x = 0' in payload.repr or 'x=0' in payload.repr.replace(' ', '')
 
@@ -2683,7 +3696,7 @@ x_1 &= 3
         fixed = coalesce_step_symbolic(r'-3x = 0 \implies x = 0', truncated)
         assert fixed is not None
         assert fixed.kind == 'relation'
-        assert 'and' in fixed.repr
+        assert ' => ' in fixed.repr
         assert 'x = 0' in fixed.repr or 'x=0' in fixed.repr.replace(' ', '')
 
         kind_only = coalesce_step_symbolic(
@@ -2991,6 +4004,143 @@ class TestReport:
         assert row[2] == '5'
         assert row[3] == '15'
         assert row[4] == 'REVIEW_REQUIRED'
+
+    def test_aggregate_counts_unanswered_questions(self, tmp_path: Path) -> None:
+        report = aggregate_exam_report(
+            [make_report_question_grade(2, 10.0, 10.0), make_report_question_grade(1, 10.0, 10.0)],
+            make_report_metadata(tmp_path),
+            expected_maximums={1: 10.0, 2: 10.0, 3: 10.0},
+        )
+        assert [q.question_number for q in report.questions] == [1, 2, 3]
+        missing = report.questions[2]
+        assert missing.missing is True
+        assert missing.score == 0.0
+        assert missing.question_id == 'question_003'
+        assert report.total_score == pytest.approx(20.0)
+        assert report.maximum_total == pytest.approx(30.0)
+        assert report.overall_status == ReviewStatus.REVIEW_REQUIRED
+        _, row = summary_csv_rows(report)
+        assert row[3] == '0'
+
+    def test_controller_uses_schema_rubrics_for_maximum(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        workspace.add_rubric(sample_rubric(), number=2)
+        questions = tmp_path / 'questions'
+        (questions / 'question_001').mkdir(parents=True)
+        (questions / 'question_001' / 'grading.json').write_text(
+            make_report_question_grade(1, 10.0, 10.0).model_dump_json(), encoding='utf-8'
+        )
+        (questions / 'question_001' / 'question.json').write_text('{}', encoding='utf-8')
+        schema = ExamSchema(
+            source='test',
+            questions=[ExamQuestion(number=n, stem='x>0') for n in (1, 2, 3)],
+        )
+        result = ReportController(
+            JsonCsvHtmlReporter(),
+            standard_dir=workspace.standard,
+            exam_schema=schema,
+            rubric_loader=RubricLoader(workspace.standard),
+        ).report(questions, tmp_path / 'out')
+        exam = result.exam_report
+        # Q3 has no rubric: warned and left out instead of guessing a maximum.
+        assert [(q.question_number, q.missing) for q in exam.questions] == [(1, False), (2, True)]
+        assert exam.maximum_total == pytest.approx(20.0)
+        assert 'TIDAK DIJAWAB' in result.report_html_path.read_text(encoding='utf-8')
+
+    def test_controller_labels_ungraded_and_uses_pack_default_maximum(self, tmp_path: Path, capsys) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        questions = tmp_path / 'questions'
+        (questions / 'question_001').mkdir(parents=True)
+        (questions / 'question_001' / 'grading.json').write_text(
+            make_report_question_grade(1, 10.0, 10.0).model_dump_json(), encoding='utf-8'
+        )
+        (questions / 'question_001' / 'question.json').write_text('{}', encoding='utf-8')
+        (questions / 'question_002').mkdir()
+        (questions / 'question_002' / 'question.json').write_text('{}', encoding='utf-8')
+        schema = ExamSchema(
+            source='test',
+            questions=[ExamQuestion(number=n, stem='x>0') for n in (1, 2, 3)],
+        )
+        result = ReportController(
+            JsonCsvHtmlReporter(),
+            standard_dir=workspace.standard,
+            exam_schema=schema,
+            rubric_loader=RubricLoader(workspace.standard),
+            default_rubric=get_pack('1.5').rubric_from_parts,
+        ).report(questions, tmp_path / 'out')
+        exam = result.exam_report
+        labels = [(q.question_number, q.missing_label) for q in exam.questions]
+        assert labels == [(1, ''), (2, 'TIDAK DINILAI'), (3, 'TIDAK DIJAWAB')]
+        assert exam.maximum_total == pytest.approx(30.0)
+        assert exam.overall_status == ReviewStatus.REVIEW_REQUIRED
+        html = result.report_html_path.read_text(encoding='utf-8')
+        assert 'TIDAK DINILAI' in html and 'TIDAK DIJAWAB' in html
+        assert 'rubric bawaan topik' in capsys.readouterr().err
+
+    def test_controller_skips_provisional_folder_outside_key(self, tmp_path: Path, capsys) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        questions = tmp_path / 'questions'
+        for number in (1, 2):
+            folder = questions / f'question_{number:03d}'
+            folder.mkdir(parents=True)
+            (folder / 'grading.json').write_text(
+                make_report_question_grade(number, 10.0, 10.0).model_dump_json(), encoding='utf-8'
+            )
+            (folder / 'question.json').write_text('{}', encoding='utf-8')
+        (questions / 'question_004').mkdir()
+        (questions / 'question_004' / 'question.json').write_text('{}', encoding='utf-8')
+        schema = ExamSchema(
+            source='test',
+            questions=[ExamQuestion(number=n, stem='x>0') for n in (1, 2)],
+        )
+        exam = ReportController(
+            JsonCsvHtmlReporter(),
+            standard_dir=workspace.standard,
+            exam_schema=schema,
+            rubric_loader=RubricLoader(workspace.standard),
+            default_rubric=get_pack('1.5').rubric_from_parts,
+        ).report(questions, tmp_path / 'out').exam_report
+        assert [q.question_number for q in exam.questions] == [1, 2]
+        assert exam.maximum_total == pytest.approx(20.0)
+        assert exam.total_score == pytest.approx(20.0)
+        assert 'Soal 4 (nomor sementara, di luar kunci) tidak dinilai' in capsys.readouterr().err
+
+    def test_missing_label_in_cli_and_latex_summary(self, tmp_path: Path, capsys) -> None:
+        report = aggregate_exam_report(
+            [make_report_question_grade(1, 5.0, 10.0)],
+            make_report_metadata(tmp_path),
+            expected_maximums={2: 10.0},
+            missing_labels={2: 'TIDAK DINILAI'},
+        )
+        view = build_latex_report_context(report, [], tmp_path)
+        assert 'TIDAK DINILAI' in view.summary[1].status
+        row = report.questions[1]
+        print_process_summary(
+            make_process_result(
+                tmp_path,
+                questions=[
+                    QuestionScoreSummary(
+                        question_id=row.question_id,
+                        question_number=row.question_number,
+                        score=row.score,
+                        maximum_score=row.maximum_score,
+                        review_status=row.review_status,
+                        missing=True,
+                        missing_label=row.missing_label,
+                    )
+                ],
+            )
+        )
+        assert 'TIDAK DINILAI' in capsys.readouterr().out
+
+    def test_aggregate_missing_label_defaults_to_unanswered(self, tmp_path: Path) -> None:
+        report = aggregate_exam_report(
+            [make_report_question_grade(1, 5.0, 10.0)],
+            make_report_metadata(tmp_path),
+            expected_maximums={2: 10.0, 3: 10.0},
+            missing_labels={3: 'TIDAK DINILAI'},
+        )
+        assert [q.missing_label for q in report.questions] == ['', 'TIDAK DIJAWAB', 'TIDAK DINILAI']
 
     def test_reporter_writes_three_formats(self, tmp_path: Path) -> None:
         report = aggregate_exam_report([make_report_question_grade(1, 10.0, 10.0)], make_report_metadata(tmp_path))
@@ -3525,7 +4675,7 @@ class TestCliProcess:
         ]
         assert harness.cleared and harness.cleared[0][0] == harness.output_dir
         assert 'pages' in harness.cleared[0][1]
-        assert not stale.exists()
+        assert not (stale / 'old.png').exists()
         assert (standards / 'keep.txt').is_file()
         assert result.total_score == pytest.approx(8.0)
         assert result.maximum_total == pytest.approx(10.0)
@@ -3629,7 +4779,7 @@ class TestCliProcess:
 
     def test_process_from_crops_requires_regions(self, tmp_path: Path) -> None:
         harness = ProcessHarness(tmp_path)
-        harness.crops_dir.mkdir()
+        harness.crops_dir.mkdir(parents=True)
         with pytest.raises(CropsRegionsMissingError, match='menu 3'):
             harness.process_from_crops()
         harness.recognize.recognize_pages.assert_not_called()
@@ -3677,6 +4827,67 @@ class TestCliProcess:
         harness.recognize.recognize_pages.assert_called_once()
         assert harness.recognize.recognize_pages.call_args.kwargs.get('from_crops') is True
         assert result.total_score == pytest.approx(8.0)
+
+    def test_process_from_crops_failed_recognition_keeps_prior_artifacts(self, tmp_path: Path) -> None:
+        harness = ProcessHarness(tmp_path)
+        write_crop_workspace(harness.pages_dir, harness.crops_dir)
+        harness.recognition_dir.mkdir()
+        prior_recognition = harness.recognition_dir / 'page_009_recognition.json'
+        prior_recognition.write_text('{}', encoding='utf-8')
+        edited = harness.questions_dir / 'question_001' / 'question.json'
+        edited.parent.mkdir(parents=True)
+        edited.write_text('{"edited": true}', encoding='utf-8')
+        harness.recognize.recognize_pages.side_effect = OllamaUnavailableError('down')
+        with pytest.raises(OllamaUnavailableError):
+            harness.process_from_crops(workspace_root=harness.output_dir)
+        assert prior_recognition.is_file()
+        assert edited.read_text(encoding='utf-8') == '{"edited": true}'
+        harness.extract.extract.assert_not_called()
+
+    def test_process_from_crops_refuses_filled_dir_outside_run(self, tmp_path: Path) -> None:
+        harness = ProcessHarness(tmp_path)
+        write_crop_workspace(harness.pages_dir, harness.crops_dir)
+        outside = tmp_path / 'elsewhere'
+        outside.mkdir()
+        keep = outside / 'notes.txt'
+        keep.write_text('keep', encoding='utf-8')
+        with pytest.raises(UnsafeOutputDirError, match='questions'):
+            harness.process_from_crops(questions_dir=outside, workspace_root=harness.output_dir)
+        assert keep.is_file()
+        harness.recognize.recognize_pages.assert_not_called()
+
+    def test_recognize_from_crops_failure_keeps_prior_recognition(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        config = AppConfig(ollama=OllamaConfig(vision_model='v'))
+        layout = build_run_layout(tmp_path / 'out', 'answer')
+        render = MagicMock()
+        render.render.return_value = RenderResult(
+            pages=[make_page()], output_dir=layout.pages_dir, metadata_path=layout.pages_dir / 'pages.json'
+        )
+        recognize = MagicMock()
+        recognize.recognize_pages.side_effect = OllamaUnavailableError('down')
+        monkeypatch.setattr('app.services.pipeline_factory.build_render_controller', lambda: render)
+        monkeypatch.setattr(
+            'app.services.pipeline_factory.build_crop_controller', lambda *_a, **_kw: MagicMock()
+        )
+        monkeypatch.setattr(
+            'app.services.pipeline_factory.build_recognize_controller', lambda *_a, **_kw: recognize
+        )
+        prior = layout.recognition_dir / 'page_009_recognition.json'
+        prior.parent.mkdir(parents=True)
+        prior.write_text('{}', encoding='utf-8')
+        with pytest.raises(OllamaUnavailableError):
+            flows.recognize_from_crops(
+                config,
+                layout,
+                tmp_path / 'a.pdf',
+                pages_dir=layout.pages_dir,
+                recognition_dir=layout.recognition_dir,
+                dpi=150,
+                force_yes=True,
+            )
+        assert prior.is_file()
 
     def test_process_controller_skip_reset_leaves_workspace(self, tmp_path: Path) -> None:
         harness = ProcessHarness(tmp_path)
@@ -4005,9 +5216,11 @@ class TestCliProcess:
             'app.services.pipeline_factory.build_recognize_controller',
             lambda _config, _recognition, **kw: builder_kwargs.append(kw) or recognize,
         )
-        stale = layout.recognition_dir / 'old.json'
+        stale = layout.recognition_dir / 'page_009_recognition.json'
         stale.parent.mkdir(parents=True)
         stale.write_text('{}', encoding='utf-8')
+        current = layout.recognition_dir / 'page_001_recognition.json'
+        current.write_text('{}', encoding='utf-8')
         flows.recognize_from_crops(
             config,
             layout,
@@ -4026,6 +5239,7 @@ class TestCliProcess:
             pages, layout.pages_dir, layout.recognition_dir, from_crops=True
         )
         assert not stale.exists()
+        assert current.is_file()
         assert [kw['topic_id'] for kw in builder_kwargs] == ['2', '2']
 
     def test_cli_process_writes_under_pdf_named_folder(self, tmp_path: Path, monkeypatch) -> None:
@@ -4240,6 +5454,58 @@ class TestCliCommands:
         monkeypatch.setattr('app.cli.configure_console_streams', lambda: calls.append(1))
         main(['--config', str(tmp_path / 'typo.yaml'), 'grade'])
         assert calls == [1]
+
+    @staticmethod
+    def _patch_extract(monkeypatch, runner_error: Exception | None = None) -> MagicMock:
+        extractor = MagicMock()
+        extractor.extract_from_dir.return_value = ExtractResult(questions=[], output_dir=Path('q'))
+
+        def fake_recognize(*_args, **_kwargs):
+            if runner_error is not None:
+                raise runner_error
+
+        monkeypatch.setattr('app.commands.flows.recognize_from_crops', fake_recognize)
+        monkeypatch.setattr(
+            'app.services.pipeline_factory.build_extract_controller',
+            lambda config, standard_dir=None, *, topic_id=None, recognize_runner=None: ExtractController(
+                extractor=extractor, recognize_runner=recognize_runner
+            ),
+        )
+        return extractor
+
+    def test_cli_extract_refuses_filled_output_outside_run(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        cli = CliHarness(tmp_path, monkeypatch)
+        cli.pdf('answer.pdf')
+        extractor = self._patch_extract(monkeypatch)
+        outside = tmp_path / 'documents'
+        outside.mkdir()
+        keep = outside / 'skripsi.docx'
+        keep.write_bytes(b'x')
+        assert cli.run('extract', 'answer.pdf', '--output', str(outside), '--force-recognize') == 1
+        assert keep.is_file()
+        extractor.extract_from_dir.assert_not_called()
+        assert_contains(capsys.readouterr().err, 'tidak boleh dikosongkan', 'documents')
+
+    def test_cli_extract_failed_recognition_keeps_questions(self, tmp_path: Path, monkeypatch) -> None:
+        cli = CliHarness(tmp_path, monkeypatch)
+        cli.pdf('answer.pdf')
+        extractor = self._patch_extract(monkeypatch, OllamaUnavailableError('down'))
+        layout = build_run_layout(cli.output_root, 'answer')
+        edited = layout.questions_dir / 'question_001' / 'question.json'
+        edited.parent.mkdir(parents=True)
+        edited.write_text('{}', encoding='utf-8')
+        assert cli.run('extract', 'answer.pdf', '--force-recognize') == 1
+        assert edited.is_file()
+        extractor.extract_from_dir.assert_not_called()
+
+    def test_cli_process_refuses_input_folder_as_pages_dir(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        cli = CliHarness(tmp_path, monkeypatch)
+        pdf = cli.pdf('answer.pdf')
+        cli.controller()
+        assert cli.run('process', 'answer.pdf', '--pages-dir', str(cli.jawaban_dir)) == 1
+        assert pdf.is_file()
+        assert cli.calls == []
+        assert_contains(capsys.readouterr().err, 'Folder pages tidak boleh dikosongkan')
 
 class TestMenuController:
 
@@ -4462,6 +5728,24 @@ class TestTopicPackBehavior:
         assert rubric.maximum_score == 10.0
         assert pack.coalesce_step_role('HP = (1, oo)', None, None) == 'hp'
 
+    @pytest.mark.parametrize(
+        ('raw_text', 'symbolic', 'role', 'expected'),
+        [
+            ('HP = (1, oo) (lihat garis bilangan)', None, None, 'hp'),
+            ('jadi (-1,1) pada garis bilangan', SymbolicPayload(kind='expression', repr='(-1, 1)'), None, 'hp'),
+            ('lihat garis bilangan', SymbolicPayload(kind='relation', repr='x > 1'), 'hp', 'hp'),
+            ('garis bilangan', SymbolicPayload(kind='figure', repr='NUMBER_LINE((1,oo))'), 'hp', 'figure'),
+            ('gambar', SymbolicPayload(kind='relation', repr='NUMBER_LINE((1,oo))'), None, 'figure'),
+            ('garis bilangan', None, None, 'figure'),
+        ],
+        ids=['strong-hp', 'interval-with-keyword', 'model-role-hp', 'figure-kind', 'number-line-token', 'keyword-only'],
+    )
+    def test_hp_step_mentioning_number_line_stays_hp(
+        self, raw_text: str, symbolic: SymbolicPayload | None, role: str | None, expected: str
+    ) -> None:
+        for pack_id in ('1.5', '2'):
+            assert get_pack(pack_id).coalesce_step_role(raw_text, symbolic, role) == expected
+
     def test_abs_pack_reuses_roles(self) -> None:
         pack = get_pack('2')
         role = pack.coalesce_step_role(
@@ -4501,3 +5785,22 @@ class TestCapabilityDispatch:
 
     def test_apply_capabilities_skips_unknown(self) -> None:
         assert apply_capabilities('x+1', ('nope', 'abs')) == 'x+1'
+
+    @pytest.mark.parametrize(
+        ('text', 'expected'),
+        [
+            ('x_1 = 1 or x_{2} = -2', 'x = 1 or x = -2'),
+            ('x₁ = 1', 'x = 1'),
+            (r'\log_2 x = 3', r'\log_2 x = 3'),
+            ('x1 = 2', 'x1 = 2'),
+        ],
+        ids=['underscore-and-braces', 'unicode-subscript', 'command-subscript', 'bare-digit'],
+    )
+    def test_indexed_roots_capability(self, text: str, expected: str) -> None:
+        assert apply_capabilities(text, ('indexed_roots',)) == expected
+
+    def test_indexed_roots_only_in_inequality_packs(self) -> None:
+        assert 'indexed_roots' in get_pack('1.5').capability_ids
+        assert 'indexed_roots' in get_pack('2').capability_ids
+        assert 'indexed_roots' not in ALL_CAPABILITY_IDS
+        assert normalize_math_text('x_0 + 1', capability_ids=ALL_CAPABILITY_IDS) == 'x_0 + 1'

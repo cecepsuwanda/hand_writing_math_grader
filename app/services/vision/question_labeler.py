@@ -32,17 +32,21 @@ class OllamaQuestionLabeler:
             "{{expected_questions}}", format_recognition_question_block(exam_schema)
         )
 
-    def detect(self, crop_path: Path) -> list[int]:
-        """Question numbers whose label starts in ``crop_path``; ``[]`` if none/unclear."""
+    def detect(self, crop_path: Path) -> list[int] | None:
+        """Question numbers whose label starts in ``crop_path``; ``[]`` if none.
+
+        ``None`` when the model reply is unreadable (no JSON / no number list).
+        """
         raw = self._client.generate_with_image(self._prompt, Path(crop_path), self._model)
         try:
             payload = extract_json_object(raw)
         except ValueError as exc:
             logger.warning("crop_label JSON parse failed for %s: %s", crop_path, exc)
-            return []
+            return None
         values = payload.get("question_numbers")
         if not isinstance(values, list):
-            return []
+            logger.warning("crop_label reply for %s has no question_numbers list", crop_path)
+            return None
         numbers: list[int] = []
         for value in values:
             try:

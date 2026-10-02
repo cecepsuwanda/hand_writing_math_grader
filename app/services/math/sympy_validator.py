@@ -10,6 +10,7 @@ from sympy.core.relational import Relational
 from sympy.logic.boolalg import Boolean
 
 from app.exceptions import MathParseError
+from app.functions.math_normalize import split_implication_clauses
 from app.functions.step_references import (
     final_reference_index,
     reference_indices,
@@ -41,18 +42,37 @@ from app.services.math.parser import (
     MatrixClaim,
     ParsedStep,
     default_symbol,
+    infer_main_symbol,
     parse_math_step,
+    parse_relation_sides,
+    rebind_default_symbol,
     try_parse_function_value_eq,
 )
 from app.services.math.role_checks import (
     finite_solutions,
+    numeric_eval_matches_reference,
     numeric_relation_holds,
     values_are_zero_makers,
 )
 
 logger = logging.getLogger(__name__)
 
+_STATUS_SEVERITY = {
+    ValidationStatus.VALID: 0,
+    ValidationStatus.UNCERTAIN: 1,
+    ValidationStatus.INVALID: 2,
+}
+
 _StepChecker = Callable[[StudentStep, ParsedStep | None, ParsedStep | None], StepValidation]
+
+
+def _is_closed(item: ParsedStep | None) -> bool:
+    """A relation with no free symbols (a numeric statement)."""
+    return (
+        item is not None
+        and item.kind == "relation"
+        and not getattr(item.value, "free_symbols", None)
+    )
 
 
 class SymPyStepValidator(StepValidator):
@@ -61,6 +81,7 @@ class SymPyStepValidator(StepValidator):
         symbol: Symbol | None = None,
         step_checks: Mapping[str, StepCheck] | None = None,
     ) -> None:
+        self._fixed_symbol = symbol
         self._symbol = symbol or default_symbol()
         self._step_checks = dict(step_checks or {})
         self._checkers: dict[StepCheck, _StepChecker] = {
@@ -74,21 +95,7 @@ class SymPyStepValidator(StepValidator):
     def validate_question(self, question: Question) -> QuestionValidation:
         steps = sorted(question.student_steps, key=lambda s: s.step_number)
         checks = step_checks_for([step.role for step in steps], self._step_checks)
-        parsed = [self._try_parse(step) for step in steps]
-        step_results = [
-            self._validate_step(
-                step,
-                check,
-                reference=None if ref is None else parsed[ref],
-                current=parsed[index],
-                has_reference=ref is not None,
-            )
-            for index, (step, check, ref) in enumerate(
-                zip(steps, checks, reference_indices(checks))
-            )
-        ]
 
-        final_status = None
         final_text = ""
         if (
             question.student_final_symbolic is not None
@@ -97,6 +104,28 @@ class SymPyStepValidator(StepValidator):
             final_text = question.student_final_symbolic.repr.strip()
         elif (question.student_final_answer or "").strip():
             final_text = question.student_final_answer.strip()
+
+        self._symbol = self._fixed_symbol or infer_main_symbol(
+            clause
+            for text in [*(self._step_expression(step) for step in steps), final_text]
+            for clause in split_implication_clauses(text)
+        )
+        chains = [self._parse_chain(step) for step in steps]
+        parsed = [chain[-1] if chain else None for chain in chains]
+        step_results = [
+            self._validate_chained_step(
+                step,
+                check,
+                reference=None if ref is None else parsed[ref],
+                chain=chains[index],
+                has_reference=ref is not None,
+            )
+            for index, (step, check, ref) in enumerate(
+                zip(steps, checks, reference_indices(checks))
+            )
+        ]
+
+        final_status = None
         if final_text and steps:
             final_ref = final_reference_index(checks)
             final_status = self._validate_final_answer(
@@ -126,16 +155,60 @@ class SymPyStepValidator(StepValidator):
             return latex
         return (step.raw_text or "").strip()
 
-    def _try_parse(self, step: StudentStep) -> ParsedStep | None:
-        if step.symbolic is not None and step.symbolic.kind == "figure":
-            return None
-        expression = self._step_expression(step)
-        if not expression:
-            return None
+    def _parse_text(self, text: str) -> ParsedStep | None:
         try:
-            return parse_math_step(expression, self._symbol)
+            parsed = parse_math_step(text, self._symbol)
         except MathParseError:
             return None
+        return rebind_default_symbol(parsed, text, self._symbol)
+
+    def _parse_chain(self, step: StudentStep) -> list[ParsedStep | None]:
+        """One parsed entry per implication clause (``A => B``); empty if unparseable input."""
+        if step.symbolic is not None and step.symbolic.kind == "figure":
+            return []
+        expression = self._step_expression(step)
+        if not expression:
+            return []
+        clauses = split_implication_clauses(expression)
+        if len(clauses) <= 1:
+            return [self._parse_text(expression)]
+        return [self._parse_text(clause) for clause in clauses]
+
+    def _validate_chained_step(
+        self,
+        step: StudentStep,
+        check: StepCheck,
+        *,
+        reference: ParsedStep | None,
+        chain: list[ParsedStep | None],
+        has_reference: bool,
+    ) -> StepValidation:
+        """``A => B`` must reach ``A`` from the reference and keep the solution set across ``=>``."""
+        if len(chain) <= 1:
+            return self._validate_step(
+                step,
+                check,
+                reference=reference,
+                current=chain[0] if chain else None,
+                has_reference=has_reference,
+            )
+        head = self._validate_step(
+            step,
+            check,
+            reference=reference,
+            current=chain[0] if check == StepCheck.TRANSITION else chain[-1],
+            has_reference=has_reference,
+        )
+        results = [head]
+        for previous, current in zip(chain, chain[1:]):
+            if check == StepCheck.NUMERIC_EVAL and _is_closed(current):
+                # ``x = 0 => f(0) < 0`` substitutes a point; it is not an equivalence.
+                continue
+            link = self._validate_transition(step, previous, current)
+            results.append(
+                link.model_copy(update={"reason": f"implication: {link.reason}"})
+            )
+        return max(results, key=lambda result: _STATUS_SEVERITY[result.status])
 
     def _validate_first(
         self,
@@ -219,12 +292,34 @@ class SymPyStepValidator(StepValidator):
         if current is None or current.kind != "relation":
             return self._uncertain(step, "could not parse numeric evaluation")
         assert isinstance(current.value, Boolean)
+        holds = numeric_relation_holds(current.value)
+        if holds is True and not self._numeric_eval_linked(step, reference):
+            # A true but unrelated statement (``2 > 1``) is not a sign test.
+            return self._uncertain(
+                step, "numeric evaluation not linked to the reference expression"
+            )
         return self._status_from_bool(
             step.step_number,
-            numeric_relation_holds(current.value),
+            holds,
             ok="numeric evaluation is correct",
             bad="numeric evaluation is wrong",
             unsure="step is not a closed numeric evaluation",
+        )
+
+    def _numeric_eval_linked(
+        self, step: StudentStep, reference: ParsedStep | None
+    ) -> bool:
+        if reference is None or reference.kind != "relation":
+            return False
+        assert isinstance(reference.value, Boolean)
+        clause = split_implication_clauses(self._step_expression(step))[-1]
+        try:
+            sides = parse_relation_sides(clause, self._symbol)
+        except MathParseError:
+            return False
+        return (
+            numeric_eval_matches_reference(sides, reference.value, self._symbol)
+            is True
         )
 
     def _check_solution_set(
@@ -541,9 +636,9 @@ class SymPyStepValidator(StepValidator):
         reference_item: ParsedStep | None,
         last_step_number: int,
     ) -> StepValidation:
-        try:
-            final_item = parse_math_step(final_answer, self._symbol)
-        except MathParseError:
+        clauses = split_implication_clauses(final_answer)
+        final_item = self._parse_text(clauses[-1] if clauses else final_answer)
+        if final_item is None:
             return StepValidation(
                 step_number=last_step_number,
                 status=ValidationStatus.UNCERTAIN,

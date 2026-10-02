@@ -8,6 +8,7 @@ from sympy import EmptySet, Interval, Union, oo, parse_expr
 from sympy.parsing.sympy_parser import (
     convert_xor,
     implicit_multiplication_application,
+    rationalize,
     standard_transformations,
 )
 
@@ -28,7 +29,7 @@ _NUMBER_LINE_RE = re.compile(
 _INTERVAL_ATOM = r"[\[(]\s*[^,]+?\s*,\s*[^)\]]+?\s*[\])]"
 _INTERVAL_FIND_RE = re.compile(_INTERVAL_ATOM)
 _INTERVAL_PIECE_RE = re.compile(
-    rf"(?P<left>[\[(])\s*(?P<a>[^,]+?)\s*,\s*(?P<b>[^)\]]+?)\s*(?P<right>[\])])"
+    r"(?P<left>[\[(])\s*(?P<a>[^,]+?)\s*,\s*(?P<b>[^)\]]+?)\s*(?P<right>[\])])"
 )
 
 _UNION_U_RE = re.compile(r"\)\s*U\s*\(", re.IGNORECASE)
@@ -70,6 +71,7 @@ _OO_ALIASES = {
 _TRANSFORMATIONS = standard_transformations + (
     implicit_multiplication_application,
     convert_xor,
+    rationalize,
 )
 
 

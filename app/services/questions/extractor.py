@@ -20,7 +20,10 @@ from app.functions.question_names import (
     question_artifact_filename,
     question_dir_name,
 )
-from app.functions.question_split import split_questions_by_exam_schema
+from app.functions.question_split import (
+    assign_provisional_by_stem,
+    split_questions_by_exam_schema,
+)
 from app.functions.recognition_artifact import PAGE_RECOGNITION_GLOB
 from app.models.exam_schema import ExamSchema
 from app.models.question import ExtractResult, Question
@@ -48,11 +51,25 @@ class QuestionExtractor:
         pages: list[PageRecognition],
         output_dir: Path,
     ) -> ExtractResult:
-        questions = merge_page_recognitions(pages)
+        key_numbers = (
+            [question.number for question in self._exam_schema.questions]
+            if self._exam_schema is not None
+            else []
+        )
+        questions = merge_page_recognitions(pages, key_numbers)
         if not questions:
             raise EmptyExtractionError()
 
-        latex_by_number = collect_latex_documents(pages)
+        latex_by_number = collect_latex_documents(pages, key_numbers)
+        read_numbers = {q.question_number for q in questions}
+        questions, latex_by_number = assign_provisional_by_stem(
+            questions, self._exam_schema, latex_by_number
+        )
+        for number in sorted({q.question_number for q in questions} - read_numbers):
+            logger.warning(
+                "Unnumbered crop matched the stem of question %s; check the assignment",
+                number,
+            )
         questions, latex_by_number = split_questions_by_exam_schema(
             questions,
             self._exam_schema,

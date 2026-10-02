@@ -68,9 +68,11 @@ PROMPT_VERSION = _prompt_version_from_file(CROP_MATH_PROMPT, "crop-math-v7")
 
 def _coerce_step_number(value: object, fallback: int) -> int:
     """Accept an int step index; fall back when the model emits junk."""
+    if not isinstance(value, (int, float, str)):
+        return fallback
     try:
-        number = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        number = int(value)
+    except (OverflowError, ValueError):
         return fallback
     if number < 1:
         return fallback

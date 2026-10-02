@@ -54,7 +54,7 @@ _MATH_WORDS = frozenset(
 )
 
 _WORD_RE = re.compile(r"[A-Za-z]+")
-_PROSE_WORD_RE = re.compile(r"\b[A-Za-z]{4,}\b")
+_PROSE_WORD_RE = re.compile(r"(?<!\\)\b[A-Za-z]{4,}\b")
 
 
 def infer_symbolic_kind(repr_text: str) -> SymbolicKind:
@@ -79,7 +79,7 @@ def latex_to_symbolic_payload(latex: str) -> SymbolicPayload | None:
     stripped = _DOLLAR_RE.sub("", raw).strip()
     if not stripped or _TEXT_ONLY_RE.match(stripped):
         return None
-    normalized = normalize_math_text(stripped)
+    normalized = normalize_math_text(stripped, keep_implication=True)
     if not normalized:
         return None
     # After normalize, pure narrative leftovers (no math tokens) are useless.
@@ -104,6 +104,9 @@ def _strip_prose(text: str) -> str:
 
     def word(match: re.Match[str]) -> str:
         token = match.group(0)
+        start = match.start()
+        if start > 0 and match.string[start - 1] == "\\":
+            return token
         if token.lower() in _MATH_WORDS:
             return token
         if len(token) >= 3 and token.isalpha():

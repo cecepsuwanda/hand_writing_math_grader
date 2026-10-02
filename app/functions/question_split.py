@@ -19,6 +19,8 @@ _HP_PREFIX_RE = re.compile(
 _NUMBERED_LINE_RE = re.compile(
     r"(?m)^(?P<label>\d+)\s*\)\s*",
 )
+# Characters that extend an expression in ``normalize_for_match`` output.
+_EXPR_CONTINUATION = frozenset("abcdefghijklmnopqrstuvwxyz0123456789.+-/^<>=(!|")
 
 
 def normalize_for_match(text: str) -> str:
@@ -74,6 +76,15 @@ def schema_final_text(exam_question: ExamQuestion) -> str:
     return (exam_question.final or "").strip()
 
 
+def _is_bounded_at(haystack: str, start: int, end: int) -> bool:
+    """Embedded match must not continue an expression (``2x-1<5`` inside ``2x-1<5x+2``)."""
+    before = haystack[start - 1] if start > 0 else ""
+    after = haystack[end] if end < len(haystack) else ""
+    return (not before or before not in _EXPR_CONTINUATION) and (
+        not after or after not in _EXPR_CONTINUATION
+    )
+
+
 def match_schema_stem(text: str, exam_question: ExamQuestion) -> bool:
     """True if ``text`` looks like the problem stem (not an intermediate step)."""
     a = normalize_for_match(text)
@@ -83,8 +94,13 @@ def match_schema_stem(text: str, exam_question: ExamQuestion) -> bool:
     if a == b:
         return True
     # Allow stem embedded in longer LLM raw (e.g. "1) 2-3x<=12")
-    if b in a and len(b) >= 5:
-        return True
+    if len(b) < 5:
+        return False
+    start = a.find(b)
+    while start >= 0:
+        if _is_bounded_at(a, start, start + len(b)):
+            return True
+        start = a.find(b, start + 1)
     return False
 
 
@@ -200,6 +216,8 @@ def _build_split_question(
     steps: list[StudentStep],
     source: Question,
     exam_question: ExamQuestion | None,
+    owns_source_final: bool,
+    owns_figures: bool,
 ) -> Question:
     renumbered: list[StudentStep] = []
     for index, step in enumerate(steps, start=1):
@@ -207,7 +225,10 @@ def _build_split_question(
 
     final_answer = ""
     final_symbolic: SymbolicPayload | None = None
-    if exam_question is not None:
+    if owns_source_final:
+        final_answer = source.student_final_answer
+        final_symbolic = source.student_final_symbolic
+    elif exam_question is not None:
         for step in reversed(renumbered):
             if _is_figure_step(step):
                 continue
@@ -230,10 +251,53 @@ def _build_split_question(
         student_steps=renumbered,
         student_final_answer=final_answer,
         student_final_symbolic=final_symbolic,
-        figure_refs=list(source.figure_refs),
+        figure_refs=list(source.figure_refs) if owns_figures else [],
         confidence=source.confidence,
         segmentation_status=SegmentationStatus.MERGED,
     )
+
+
+def _source_final_owner(source: Question, buckets: dict[int, list[StudentStep]]) -> int | None:
+    """Bucket whose steps contain the recognized final answer (None if not found)."""
+    final = (source.student_final_answer or "").strip()
+    symbolic = source.student_final_symbolic
+    targets = {
+        normalize_for_match(_strip_hp_prefix(text))
+        for text in (final, symbolic.repr if symbolic is not None else "")
+        if (text or "").strip()
+    }
+    targets.discard("")
+    if not targets:
+        return None
+    owners = [
+        number
+        for number, steps in buckets.items()
+        if any(
+            normalize_for_match(_strip_hp_prefix(text)) in targets
+            for step in steps
+            for text in (step_text(step), step.raw_text or "")
+            if text
+        )
+    ]
+    return owners[-1] if owners else None
+
+
+def _figure_owner(
+    buckets: dict[int, list[StudentStep]],
+    by_schema: dict[int, ExamQuestion],
+    default_number: int,
+) -> int:
+    """The only part expecting a figure; otherwise the source's own number (or the first part)."""
+    expecting = [
+        number
+        for number in buckets
+        if (exam := by_schema.get(number)) is not None and exam.expects_figure
+    ]
+    if len(expecting) == 1:
+        return expecting[0]
+    if default_number in buckets:
+        return default_number
+    return min(buckets)
 
 
 def _split_one_question(
@@ -263,6 +327,8 @@ def _split_one_question(
         return [question]
 
     by_schema = {q.number: q for q in schema_questions}
+    final_owner = _source_final_owner(question, buckets)
+    figure_owner = _figure_owner(buckets, by_schema, default_number)
     result: list[Question] = []
     for number in sorted(buckets):
         result.append(
@@ -271,6 +337,8 @@ def _split_one_question(
                 steps=buckets[number],
                 source=question,
                 exam_question=by_schema.get(number),
+                owns_source_final=number == final_owner,
+                owns_figures=number == figure_owner,
             )
         )
     return result
@@ -288,6 +356,61 @@ def _store_latex(store: dict[int, str], question_number: int, chunk: str) -> Non
     if body in previous:
         return
     store[question_number] = f"{previous}\n\n{body}"
+
+
+def assign_provisional_by_stem(
+    questions: list[Question],
+    schema: ExamSchema | None,
+    latex_by_number: dict[int, str] | None = None,
+) -> tuple[list[Question], dict[int, str]]:
+    """Give an unnumbered crop the key number whose stem its first step copies.
+
+    Only a provisional question outside the key is renumbered, and only to a
+    number no numbered crop was read as and no earlier provisional crop took;
+    otherwise it keeps its provisional number. The status stays ``PROVISIONAL``
+    so the assignment can still be checked.
+    """
+    latex = dict(latex_by_number or {})
+    if schema is None or not schema.questions:
+        return list(questions), latex
+
+    key_numbers = {q.number for q in schema.questions}
+    taken = {
+        q.question_number
+        for q in questions
+        if q.segmentation_status != SegmentationStatus.PROVISIONAL
+    }
+    result: list[Question] = []
+    for question in questions:
+        number = question.question_number
+        if (
+            question.segmentation_status != SegmentationStatus.PROVISIONAL
+            or number in key_numbers
+        ):
+            result.append(question)
+            continue
+        first = next((s for s in question.student_steps if not _is_figure_step(s)), None)
+        stem_number = (
+            _find_stem_number(step_text(first), schema.questions)
+            if first is not None
+            else None
+        )
+        if stem_number is None or stem_number in taken:
+            result.append(question)
+            continue
+        taken.add(stem_number)
+        if number in latex:
+            latex[stem_number] = latex.pop(number)
+        result.append(
+            question.model_copy(
+                update={
+                    "question_number": stem_number,
+                    "question_id": question_dir_name(stem_number),
+                }
+            )
+        )
+    result.sort(key=lambda q: q.question_number)
+    return result, latex
 
 
 def split_questions_by_exam_schema(

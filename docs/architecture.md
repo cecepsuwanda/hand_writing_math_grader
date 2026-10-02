@@ -162,7 +162,7 @@ grade                        [--run] [--questions-dir] [--standard] [--topic]
 report                       [--run] [--questions-dir] [--output] [--student-id] [--standard]
 ```
 
-Subcommand tipis: parse → controller (dari `pipeline_factory.build_*`) → view → exit code. Exit code: `0` sukses, `1` `MathGraderError`, `2` error tak terduga (di-log dengan traceback lewat `logger.exception`). `menu` tanpa terminal interaktif → `InteractiveTerminalRequiredError` (exit 1).
+Subcommand tipis: parse → controller (dari `pipeline_factory.build_*`) → view → exit code. Exit code: `0` sukses, `1` `MathGraderError`, `2` error tak terduga (di-log dengan traceback lewat `logger.exception`). `config.yaml` yang rusak (YAML tidak terbaca, isi teratas bukan mapping, tipe salah) dan env `OLLAMA_TIMEOUT_SECONDS` / `OLLAMA_MAX_RETRIES` yang bukan angka → `ConfigInvalidError` (exit 1). Path override di luar folder run yang sudah berisi file → `UnsafeOutputDirError` (exit 1); pengecekannya ada di `functions/workspace_reset.ensure_resettable_dir`. `menu` tanpa terminal interaktif → `InteractiveTerminalRequiredError` (exit 1).
 
 ## API (opsional)
 

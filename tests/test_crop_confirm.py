@@ -76,11 +76,11 @@ def _write_regions(crops_dir: Path, page_number: int, count: int) -> list[str]:
 
 
 class _FakeLabeler:
-    def __init__(self, labels: dict[str, list[int]]) -> None:
+    def __init__(self, labels: dict[str, list[int] | None]) -> None:
         self._labels = labels
         self.seen: list[Path] = []
 
-    def detect(self, crop_path: Path) -> list[int]:
+    def detect(self, crop_path: Path) -> list[int] | None:
         self.seen.append(crop_path)
         return self._labels.get(Path(crop_path).name, [])
 
@@ -545,11 +545,22 @@ class TestQuestionCrops:
         assert "{{expected_questions}}" not in prompt
         assert model == "vision-test"
 
-    def test_labeler_returns_empty_on_bad_json(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        ("reply", "expected"),
+        [
+            ("no json here", None),
+            ('{"labels": [1]}', None),
+            ('{"question_numbers": []}', []),
+        ],
+        ids=["bad-json", "no-number-list", "continuation"],
+    )
+    def test_labeler_separates_unreadable_from_continuation(
+        self, tmp_path: Path, reply: str, expected: list[int] | None
+    ) -> None:
         labeler = OllamaQuestionLabeler(
-            client=FakeClient("no json here"), model="vision-test", exam_schema=_schema(3)
+            client=FakeClient(reply), model="vision-test", exam_schema=_schema(3)
         )
-        assert labeler.detect(tmp_path / "crop.png") == []
+        assert labeler.detect(tmp_path / "crop.png") == expected
 
 
 class TestQuestionLabelController:
@@ -581,6 +592,18 @@ class TestQuestionLabelController:
         assert len(files) == 7
         assert json.loads(files[0].read_text(encoding="utf-8"))["stem"] == "soal 1"
         assert load_question_crops(tmp_path) == result.mapping
+
+    def test_label_all_reports_unreadable_labels(self, tmp_path: Path, capsys) -> None:
+        names = _write_regions(tmp_path, 1, 3)
+        labeler = _FakeLabeler({names[0]: [1], names[1]: None, names[2]: [2]})
+        result = QuestionLabelController(
+            crops_dir=tmp_path, exam_schema=_schema(2), labeler=labeler
+        ).label_all()
+        assert result.source == "vision"
+        assert result.mapping == {1: [names[0], names[1]], 2: [names[2]]}
+        assert result.report.ok
+        assert result.report.unreadable_crops == [names[1]]
+        assert "label tidak terbaca (ikut soal sebelumnya)" in capsys.readouterr().err
 
     def test_label_all_without_labeler_is_sequential(self, tmp_path: Path) -> None:
         names = _write_regions(tmp_path, 1, 2)

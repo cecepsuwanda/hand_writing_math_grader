@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 
 from app.functions.question_names import question_dir_name
 from app.models.question import (
@@ -20,11 +21,16 @@ from app.models.recognition import (
 )
 
 
-def merge_page_recognitions(pages: list[PageRecognition]) -> list[Question]:
+def merge_page_recognitions(
+    pages: list[PageRecognition],
+    reserved_numbers: Iterable[int] = (),
+) -> list[Question]:
     """Merge page-scoped recognition into multi-page Question objects.
 
     Groups by question_number when valid (> 0). Fragments with invalid numbers
-    become provisional questions with sequential numbers after known ones.
+    become provisional questions with sequential numbers after both the read
+    numbers and ``reserved_numbers`` (the answer-key numbers), so an unnumbered
+    crop never takes the slot of a key question the student skipped.
     """
     sorted_pages = sorted(pages, key=lambda p: p.page_number)
     numbered: dict[int, list[tuple[int, RecognizedQuestion]]] = defaultdict(list)
@@ -47,7 +53,7 @@ def merge_page_recognitions(pages: list[PageRecognition]) -> list[Question]:
             )
         )
 
-    next_provisional = (max(numbered.keys()) if numbered else 0) + 1
+    next_provisional = _first_provisional_number(numbered.keys(), reserved_numbers)
     for page_number, fragment in provisional:
         questions.append(
             _build_question(
@@ -61,11 +67,14 @@ def merge_page_recognitions(pages: list[PageRecognition]) -> list[Question]:
     return questions
 
 
-def collect_latex_documents(pages: list[PageRecognition]) -> dict[int, str]:
+def collect_latex_documents(
+    pages: list[PageRecognition],
+    reserved_numbers: Iterable[int] = (),
+) -> dict[int, str]:
     """Map assigned question_number → latex (same numbering as ``merge_page_recognitions``).
 
     Unnumbered crops (``question_number=0``) become provisional keys
-    ``max(known)+1, …`` — one slot per fragment — so extract can find
+    ``max(known ∪ reserved)+1, …`` — one slot per fragment — so extract can find
     ``latex_source.tex`` after merge renumbers them.
     """
     sorted_pages = sorted(pages, key=lambda p: p.page_number)
@@ -87,12 +96,18 @@ def collect_latex_documents(pages: list[PageRecognition]) -> dict[int, str]:
     result = {
         qnum: "\n\n".join(parts) for qnum, parts in numbered.items() if parts
     }
-    next_provisional = (max(known_numbers) if known_numbers else 0) + 1
+    next_provisional = _first_provisional_number(known_numbers, reserved_numbers)
     for doc in provisional:
         if doc:
             result[next_provisional] = doc
         next_provisional += 1
     return result
+
+
+def _first_provisional_number(
+    read_numbers: Iterable[int], reserved_numbers: Iterable[int]
+) -> int:
+    return max({*read_numbers, *reserved_numbers}, default=0) + 1
 
 
 def _build_question(
@@ -165,26 +180,31 @@ def _build_question(
                     page_number=page_number,
                 )
             )
-        if recognized.final_answer.strip():
+        # Text and symbolic must come from the same crop (a later crop wins as a pair).
+        if recognized.final_answer.strip() or recognized.final_answer_symbolic is not None:
             final_answer = recognized.final_answer
-        if recognized.final_answer_symbolic is not None:
             final_symbolic = recognized.final_answer_symbolic
+
+    if not (final_answer or "").strip() and final_symbolic is not None:
+        final_answer = (final_symbolic.repr or "").strip()
 
     if not (final_answer or "").strip():
         # Prefer the last HP step (earlier membership / uji-selang must not win).
-        for step in reversed(student_steps):
-            if step.role != "hp":
+        for student_step in reversed(student_steps):
+            if student_step.role != "hp":
                 continue
-            if step.symbolic is not None and (step.symbolic.repr or "").strip():
-                final_answer = step.symbolic.repr.strip()
-                final_symbolic = step.symbolic
+            symbolic = student_step.symbolic
+            if symbolic is not None and (symbolic.repr or "").strip():
+                final_answer = symbolic.repr.strip()
+                final_symbolic = symbolic
                 break
-            if (step.raw_text or "").strip():
-                final_answer = step.raw_text.strip()
+            if (student_step.raw_text or "").strip():
+                final_answer = student_step.raw_text.strip()
+                final_symbolic = None
                 break
 
-    for index, step in enumerate(student_steps, start=1):
-        student_steps[index - 1] = step.model_copy(update={"step_number": index})
+    for index, student_step in enumerate(student_steps, start=1):
+        student_steps[index - 1] = student_step.model_copy(update={"step_number": index})
 
     confidence = min(confidences) if confidences else None
     return Question(

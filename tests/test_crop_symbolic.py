@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 from pathlib import Path
+import pytest
 from PIL import Image
 from app.functions.image_crop import (
     clamp_region,
@@ -91,6 +92,26 @@ class TestCropHelpers:
 
 
 class TestSymbolicMerge:
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (r"maka 2x - 1 \leq 5 \implies x \leq 3", "2x - 1 <= 5 => x <= 3"),
+            (r"jadi x \geq 1 \Rightarrow x \geq 1", "x >= 1 => x >= 1"),
+            (r"sehingga x < 2 \implies x \in (-\infty, 2)", "x < 2 => -oo < x < 2"),
+        ],
+        ids=["leq", "geq", "infty"],
+    )
+    def test_rebuild_from_prose_keeps_latex_relations(self, raw: str, expected: str) -> None:
+        rebuilt = coalesce_step_symbolic(raw, None)
+        assert rebuilt is not None
+        assert rebuilt.kind == "relation"
+        assert rebuilt.repr == expected
+
+    def test_rebuild_from_prose_keeps_union(self) -> None:
+        rebuilt = coalesce_step_symbolic(r"Jadi HP = (-\infty, 2) \cup (3, \infty)", None)
+        assert rebuilt is not None
+        assert rebuilt.repr == "-oo < x < 2 or 3 < x < oo"
 
     def test_merge_symbolic_and_inline_figures(self) -> None:
         pages = [

@@ -41,7 +41,8 @@ from app.functions.run_layout import (
     list_run_dirs,
     resolve_run_name,
 )
-from app.functions.workspace_reset import clear_directory_contents
+from app.functions.recognition_artifact import prune_stale_recognition
+from app.functions.workspace_reset import ensure_resettable_dir
 from app.models.defaults import DEFAULT_STUDENT_ID
 from app.models.question_crops import LabelMode
 from app.models.recognition import RecognizeResult
@@ -272,8 +273,13 @@ def recognize_from_crops(
     standard_dir: Path | None = None,
     topic_id: str | None = None,
 ) -> RecognizeResult:
-    """Render → confirm crops → recognize each page from its approved crops."""
+    """Render → confirm crops → recognize each page from its approved crops.
+
+    Recognition of pages no longer in the PDF is dropped only after recognition
+    succeeds, so a failed rerun keeps the prior JSON.
+    """
     require_vision_model(config)
+    ensure_resettable_dir(recognition_dir, run_root=layout.root, label="recognition")
     render_result = pipeline_factory.build_render_controller().render(
         pdf_path, pages_dir, dpi
     )
@@ -290,8 +296,7 @@ def recognize_from_crops(
         use_existing=use_existing_crops,
         force_yes=force_yes,
     )
-    clear_directory_contents(recognition_dir)
-    return pipeline_factory.build_recognize_controller(
+    result = pipeline_factory.build_recognize_controller(
         config,
         recognition_dir,
         crops_dir=layout.crops_dir,
@@ -303,6 +308,8 @@ def recognize_from_crops(
         recognition_dir,
         from_crops=True,
     )
+    prune_stale_recognition(recognition_dir, [p.page_number for p in render_result.pages])
+    return result
 
 
 def label(
@@ -343,6 +350,7 @@ def finish_from_crops(
         output_dir=layout.report_dir,
         student_id=DEFAULT_STUDENT_ID,
         crops_dir=layout.crops_dir,
+        workspace_root=layout.root,
     )
     print_process_summary(result)
 

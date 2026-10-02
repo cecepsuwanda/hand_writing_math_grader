@@ -31,6 +31,9 @@ def print_question_crops_summary(
     if report.unassigned_crops:
         loose = ", ".join(crop_display_name(n) for n in report.unassigned_crops)
         print_warning(f"  Peringatan: crop tanpa soal: {loose}")
+    if report.unreadable_crops:
+        unread = ", ".join(crop_display_name(n) for n in report.unreadable_crops)
+        print_warning(f"  Peringatan: label tidak terbaca (ikut soal sebelumnya): {unread}")
     print(dim(f"  JSON: {json_dir}"))
     print()
 

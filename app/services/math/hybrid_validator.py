@@ -29,10 +29,13 @@ class HybridStepValidator(StepValidator):
         sympy_validator: StepValidator,
         llm_judge: LlmStepJudge,
         step_checks: Mapping[str, StepCheck] | None = None,
+        min_confidence: float = 0.0,
     ) -> None:
+        """``min_confidence`` > 0 turns weaker (or unstated) LLM verdicts into UNCERTAIN."""
         self._sympy = sympy_validator
         self._llm = llm_judge
         self._step_checks = dict(step_checks or {})
+        self._min_confidence = min_confidence
 
     def validate_question(self, question: Question) -> QuestionValidation:
         base = self._sympy.validate_question(question)
@@ -59,6 +62,7 @@ class HybridStepValidator(StepValidator):
                     f"Check kind: {check.value}\nSymPy reason: {step_result.reason}"
                 ),
             )
+            judged = self._gate(judged)
             refined_steps.append(judged)
             logger.info(
                 "LLM fallback question=%s step=%s check=%s status=%s",
@@ -82,10 +86,12 @@ class HybridStepValidator(StepValidator):
                 final_text = question.student_final_symbolic.repr.strip()
             else:
                 final_text = (question.student_final_answer or "").strip()
-            final_status = self._llm.judge_final_answer(
-                step_number=final_status.step_number,
-                last_step=self._step_at(ordered, final_reference_index(checks)),
-                final_answer=final_text,
+            final_status = self._gate(
+                self._llm.judge_final_answer(
+                    step_number=final_status.step_number,
+                    last_step=self._step_at(ordered, final_reference_index(checks)),
+                    final_answer=final_text,
+                )
             )
 
         return QuestionValidation(
@@ -93,6 +99,23 @@ class HybridStepValidator(StepValidator):
             question_id=base.question_id,
             steps=refined_steps,
             final_answer_status=final_status,
+        )
+
+    def _gate(self, judged: StepValidation) -> StepValidation:
+        if self._min_confidence <= 0 or judged.status == ValidationStatus.UNCERTAIN:
+            return judged
+        confidence = judged.confidence
+        if confidence is not None and confidence >= self._min_confidence:
+            return judged
+        shown = "unstated" if confidence is None else f"{confidence:g}"
+        return judged.model_copy(
+            update={
+                "status": ValidationStatus.UNCERTAIN,
+                "reason": (
+                    f"LLM confidence {shown} below {self._min_confidence:g} "
+                    f"({judged.status.value}): {judged.reason}"
+                ),
+            }
         )
 
     def _step_at(self, ordered: list[StudentStep], index: int | None) -> StudentStep | None:

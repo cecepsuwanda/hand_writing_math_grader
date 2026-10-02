@@ -1,7 +1,7 @@
 """Controller harnesses: wire fakes + a temp workspace, then drive the code under test."""
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -160,11 +160,12 @@ class ProcessHarness:
     """``ProcessController`` wired to seven ``MagicMock`` stages with canned results."""
 
     def __init__(self, tmp_path: Path) -> None:
-        self.pages_dir = tmp_path / "pages"
-        self.recognition_dir = tmp_path / "recognition"
-        self.questions_dir = tmp_path / "questions"
+        # Mirrors RunLayout: artifact dirs live inside the run root (= workspace_root).
         self.output_dir = tmp_path / "output"
-        self.crops_dir = tmp_path / "crops"
+        self.pages_dir = self.output_dir / "pages"
+        self.recognition_dir = self.output_dir / "recognition"
+        self.questions_dir = self.output_dir / "questions"
+        self.crops_dir = self.output_dir / "crops"
         self.pdf = tmp_path / "answer.pdf"
         self.pdf.write_bytes(b"%PDF")
         self.progress: list[ProcessStage] = []
@@ -302,7 +303,16 @@ class GradingWorkspace:
             )
         return qpath
 
-    def grade(self, *, with_comparer: bool = False) -> GradeResult:
+    def grade(
+        self,
+        *,
+        with_comparer: bool = False,
+        role_rubric_parts: Mapping[str, str] | None = None,
+    ) -> GradeResult:
         comparer = StandardFinalComparer(self.standard) if with_comparer else None
-        grader = StepGrader(RubricLoader(self.standard), standard_comparer=comparer)
+        grader = StepGrader(
+            RubricLoader(self.standard),
+            standard_comparer=comparer,
+            role_rubric_parts=role_rubric_parts,
+        )
         return GradeController(grader, self.standard).grade(self.questions_dir)

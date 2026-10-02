@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.validation import ValidationStatus
 
@@ -41,6 +41,17 @@ class Rubric(BaseModel):
     maximum_score: float = Field(gt=0)
     criteria: list[RubricCriterion] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _criteria_sum_to_maximum(self) -> Rubric:
+        if self.criteria:
+            total = sum(c.points for c in self.criteria)
+            if abs(total - self.maximum_score) > 1e-6:
+                raise ValueError(
+                    f"criteria points sum to {total:g}, "
+                    f"but maximum_score is {self.maximum_score:g}"
+                )
+        return self
+
 
 class StepGrade(BaseModel):
     step_number: int
@@ -70,6 +81,8 @@ class GradeResult(BaseModel):
     questions_dir: Path
     standard_dir: Path
     artifact_paths: list[Path] = Field(default_factory=list)
+    # Question ids left ungraded because their rubric is missing or invalid.
+    skipped: list[str] = Field(default_factory=list)
 
 
 class FeedbackAnnotation(BaseModel):

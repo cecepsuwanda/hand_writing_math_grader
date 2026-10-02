@@ -53,6 +53,39 @@ _LATEX_JSON_COLLISIONS = frozenset(
         "times",
         "to",
         "triangle",
+        "backslash",
+        "because",
+        "bf",
+        "bmod",
+        "boldsymbol",
+        "bot",
+        "boxed",
+        "bullet",
+        "ncong",
+        "neg",
+        "ngeq",
+        "ngtr",
+        "nleftarrow",
+        "nleq",
+        "nless",
+        "nparallel",
+        "nrightarrow",
+        "nsubseteq",
+        "nsupseteq",
+        "rVert",
+        "rbrace",
+        "rbrack",
+        "rfloor",
+        "rm",
+        "rvert",
+        "tau",
+        "tbinom",
+        "textbf",
+        "textit",
+        "texttt",
+        "tfrac",
+        "tilde",
+        "top",
     }
 )
 
@@ -112,7 +145,10 @@ def repair_json_escapes(text: str) -> str:
             while end < length and text[end].isalpha():
                 end += 1
             run = text[i + 1 : end]
-            if run in _LATEX_JSON_COLLISIONS:
+            # A command taking a brace argument (``\boxed{``) is LaTeX, not ``\b`` + text.
+            if run in _LATEX_JSON_COLLISIONS or (
+                len(run) > 1 and end < length and text[end] == "{"
+            ):
                 result.append("\\\\")
                 i += 1
                 continue

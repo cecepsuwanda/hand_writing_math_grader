@@ -62,11 +62,13 @@ class QuestionLabelController:
             raise NoRegionsForLabelingError(self._crops_dir)
 
         labels: dict[str, list[int]] = {}
+        unreadable: list[str] = []
         if self._labeler is not None:
             for crop in crops:
-                labels[crop.name] = self._labeler.detect(
-                    crop_png_path(self._crops_dir, crop)
-                )
+                detected = self._labeler.detect(crop_png_path(self._crops_dir, crop))
+                if detected is None:
+                    unreadable.append(crop.name)
+                labels[crop.name] = detected or []
 
         if any(labels.values()):
             mapping = assign_by_labels(crops, labels, self._numbers)
@@ -79,7 +81,7 @@ class QuestionLabelController:
         write_question_crops(self._crops_dir, mapping, stems=stems)
         report = validate_question_crops(
             mapping, self._numbers, [c.name for c in crops]
-        )
+        ).model_copy(update={"unreadable_crops": unreadable})
         return self._result(mapping, report, source)
 
     def reload_all(self) -> QuestionLabelResult:

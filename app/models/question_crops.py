@@ -32,6 +32,8 @@ class QuestionCropsReport(BaseModel):
     errors: list[str] = Field(default_factory=list)
     missing_questions: list[int] = Field(default_factory=list)
     unassigned_crops: list[str] = Field(default_factory=list)
+    # Warning only: the crop followed the previous question.
+    unreadable_crops: list[str] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:

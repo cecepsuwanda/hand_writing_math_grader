@@ -23,7 +23,7 @@ from app.models.recognition import (
     SymbolicPayload,
 )
 from app.models.validation import ValidationStatus
-from app.services.grading.standard_comparer import StandardFinalComparer
+from app.services.grading.standard_comparer import FIGURE_UNCOMPARED_REASON, StandardFinalComparer
 from tests.support.builders import make_figure, make_question
 
 _MINI_WITH_TIKZ = r"""
@@ -128,6 +128,13 @@ class TestNumberLineCompare:
         assert status == ValidationStatus.VALID
         assert "matches" in reason
 
+    def test_decimal_endpoint_matches_fraction(self) -> None:
+        expected = parse_number_line_repr("NUMBER_LINE((1/2,oo))")
+        decimal = parse_number_line_repr("NUMBER_LINE((0.5,oo))")
+        assert expected is not None and decimal is not None
+        status, _ = compare_number_lines(expected, decimal)
+        assert status == ValidationStatus.VALID
+
 
 class TestNumberLineIngest:
 
@@ -206,10 +213,10 @@ class TestCompareFigure:
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
         drawn = make_question(figures=[make_figure("NUMBER_LINE((-10/3,oo))", caption="open ray")])
         status, reason = comparer.compare_figure(drawn)
-        assert status == ValidationStatus.VALID
-        assert reason == "figure step present"
+        assert status == ValidationStatus.UNCERTAIN
+        assert reason == FIGURE_UNCOMPARED_REASON
 
-    def test_compare_figure_presence_fallback_without_number_line(self, 
+    def test_compare_figure_without_key_number_line_needs_review(self, 
         tmp_path: Path,
     ) -> None:
         schema = ExamSchema(
@@ -226,8 +233,10 @@ class TestCompareFigure:
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
         q = make_question(figures=[make_figure(caption="diagram", path="f.png")])
         status, reason = comparer.compare_figure(q)
-        assert status == ValidationStatus.VALID
-        assert reason == "figure step present"
+        assert status == ValidationStatus.UNCERTAIN
+        assert reason == FIGURE_UNCOMPARED_REASON
+        status, _ = comparer.compare_figure(make_question('x>1'))
+        assert status == ValidationStatus.INVALID
 
     def test_caption_inequality_does_not_override_number_line_symbolic(self, 
         tmp_path: Path,

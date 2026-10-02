@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from app.models.recognition import Region, RegionType, StepRole, SymbolicPayload
+from app.models.recognition import OptionalStepRole, Region, RegionType, SymbolicPayload
 
 
 class SegmentationStatus(str, Enum):
@@ -22,7 +22,7 @@ class StudentStep(BaseModel):
     # readers still use it when symbolic is missing.
     latex: str = ""
     symbolic: SymbolicPayload | None = None
-    role: StepRole | None = None
+    role: OptionalStepRole = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     page_number: int | None = None
 

@@ -34,6 +34,8 @@ grading:
   # Ingest + grading per topic: <standards_root>/topik_<bab> (1.5 → topik_1, 2 → topik_2).
   standards_root: data/output/standards
   topic_id: "1.5"
+  # LLM fallback verdicts below this confidence (or without one) need human review.
+  llm_min_confidence: 0.7
 
 report:
   # report.tex → report.pdf right after grading (failure only warns).

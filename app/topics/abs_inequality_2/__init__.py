@@ -12,6 +12,7 @@ _CAPABILITY_IDS: tuple[str, ...] = (
     "matrix",
     "det_inverse",
     "vector",
+    "indexed_roots",
     "abs",
     "interval",
     "limit",
@@ -30,6 +31,7 @@ class AbsInequalityPack:
     part_kinds = INEQUALITY_15.part_kinds
     roles = INEQUALITY_15.roles
     step_checks = INEQUALITY_15.step_checks
+    role_rubric_parts = INEQUALITY_15.role_rubric_parts
     # Figure optional via kunci expects_figure; not required by pack.
     figure_kinds = ("number_line", "none")
     capability_ids = _CAPABILITY_IDS

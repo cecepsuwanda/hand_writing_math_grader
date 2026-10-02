@@ -16,6 +16,26 @@ class ConfigNotFoundError(MathGraderError):
         )
 
 
+class ConfigInvalidError(MathGraderError):
+    def __init__(self, source: str, detail: str) -> None:
+        self.source = source
+        self.detail = detail
+        super().__init__(f"Config tidak valid ({source}): {detail}")
+
+
+class UnsafeOutputDirError(MathGraderError):
+    def __init__(self, label: str, path: Path, run_root: Path, reason: str) -> None:
+        self.label = label
+        self.path = path
+        self.run_root = run_root
+        super().__init__(
+            f"Folder {label} tidak boleh dikosongkan: {path}\n"
+            f"{reason} (folder run: {run_root}).\n"
+            "Kosongkan folder itu secara manual, pakai folder kosong, "
+            "atau hapus opsi path agar memakai folder default di dalam run."
+        )
+
+
 class PdfNotFoundError(MathGraderError):
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -339,10 +359,28 @@ class ValidationNotFoundError(MathGraderError):
         )
 
 
+class ValidationStaleError(MathGraderError):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(
+            f"validation.json at {path} is older than question.json (student work changed). "
+            "Run `python -m app.cli validate` again."
+        )
+
+
 class RubricNotFoundError(MathGraderError):
     def __init__(self, path: Path) -> None:
         self.path = path
         super().__init__(f"Rubric not found: {path}")
+
+
+class RubricInvalidError(RubricNotFoundError):
+    """Rubric file exists but is unreadable or inconsistent (skipped like a missing one)."""
+
+    def __init__(self, path: Path, detail: str) -> None:
+        self.path = path
+        self.detail = detail
+        Exception.__init__(self, f"Rubric invalid: {path}: {detail}")
 
 
 class GradingError(MathGraderError):

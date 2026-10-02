@@ -10,6 +10,7 @@ from app.models.recognition import RecognizeResult
 from app.models.report import ReportResult
 from app.models.standards import IngestKunciResult
 from app.models.validation import ValidateResult
+from app.views.error_view import print_warning
 from app.views.style import bold, dim, green
 
 
@@ -102,6 +103,8 @@ def print_grade_result(result: GradeResult) -> None:
                 for part_id, status in sorted(grade.part_statuses.items())
             )
             print(dim(f"    parts={parts}"))
+    if result.skipped:
+        print_warning(f"  Tidak dinilai (rubric hilang/tidak valid): {', '.join(result.skipped)}")
 
 
 def print_ingest_kunci_result(result: IngestKunciResult) -> None:

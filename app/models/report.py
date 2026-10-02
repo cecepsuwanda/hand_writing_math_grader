@@ -10,6 +10,10 @@ from app.models.grading import QuestionGrade, ReviewStatus
 from app.models.question import Question
 
 
+MISSING_UNANSWERED = "TIDAK DIJAWAB"
+MISSING_UNGRADED = "TIDAK DINILAI"
+
+
 class PromptVersions(BaseModel):
     recognition: str = ""
     validation: str = ""
@@ -34,6 +38,9 @@ class QuestionReportRow(BaseModel):
     review_status: ReviewStatus
     step_count: int = 0
     part_statuses: dict[str, str] = Field(default_factory=dict)
+    missing: bool = False
+    # Why a missing row has no grade (e.g. TIDAK DIJAWAB / TIDAK DINILAI).
+    missing_label: str = ""
 
 
 class ExamReport(BaseModel):

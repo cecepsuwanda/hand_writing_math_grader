@@ -130,6 +130,7 @@ def build_validator(config: AppConfig, pack: TopicPack | None = None) -> StepVal
                 model=config.ollama.reasoning_model,
             ),
             step_checks=step_checks,
+            min_confidence=config.grading.llm_min_confidence,
         )
     return validator
 
@@ -168,6 +169,7 @@ def build_grade_controller(
             standard,
             exam_schema=load_exam_schema(standard),
         ),
+        role_rubric_parts=pack.role_rubric_parts,
     )
     return GradeController(grader=grader, standard_dir=standard)
 
@@ -179,6 +181,7 @@ def build_report_controller(
     topic_id: str | None = None,
 ) -> ReportController:
     standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
+    pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)
     return ReportController(
         reporter=JsonCsvHtmlReporter(),
         standard_dir=standard,
@@ -187,6 +190,9 @@ def build_report_controller(
         prompt_versions=current_prompt_versions(),
         latex_reporter=LatexReportWriter(),
         pdf_compiler=build_pdf_compiler(config),
+        exam_schema=load_exam_schema(standard),
+        rubric_loader=RubricLoader(standard),
+        default_rubric=pack.rubric_from_parts,
     )
 
 

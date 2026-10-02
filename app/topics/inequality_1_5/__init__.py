@@ -26,6 +26,15 @@ _STEP_CHECKS = MappingProxyType(
     }
 )
 
+_ROLE_RUBRIC_PARTS = MappingProxyType(
+    {
+        "critical_points": "critical_points",
+        "sign_chart": "critical_points",
+        "figure": "figure",
+        "hp": "final_answer",
+    }
+)
+
 _HP_RE = re.compile(
     r"(?:^|\b(?:jadi|maka|sehingga|diperoleh)\s+)"
     r"(?:HP|himpunan\s+penyelesaian)\b",
@@ -68,6 +77,7 @@ _CAPABILITY_IDS: tuple[str, ...] = (
     "matrix",
     "det_inverse",
     "vector",
+    "indexed_roots",
     "abs",
     "interval",
     "limit",
@@ -99,13 +109,11 @@ def _blob(raw_text: str, symbolic: SymbolicPayload | None) -> str:
     )
 
 
-def _strong_figure(raw_text: str, symbolic: SymbolicPayload | None) -> bool:
+def _definite_figure(raw_text: str, symbolic: SymbolicPayload | None) -> bool:
     if symbolic is not None and symbolic.kind == "figure":
         return True
     repr_text = (symbolic.repr if symbolic is not None else "") or ""
-    if _NUMBER_LINE_RE.search(repr_text) or _NUMBER_LINE_RE.search(raw_text or ""):
-        return True
-    return bool(_FIGURE_RE.search(_blob(raw_text, symbolic)))
+    return bool(_NUMBER_LINE_RE.search(repr_text) or _NUMBER_LINE_RE.search(raw_text or ""))
 
 
 def _strong_hp(raw_text: str, symbolic: SymbolicPayload | None) -> bool:
@@ -141,6 +149,7 @@ class Inequality15Pack:
     part_kinds = ("algebra", "critical_points", "sign_chart", "figure", "hp")
     roles = ("algebra", "critical_points", "sign_chart", "figure", "hp")
     step_checks = _STEP_CHECKS
+    role_rubric_parts = _ROLE_RUBRIC_PARTS
     figure_kinds = ("number_line",)
     capability_ids = _CAPABILITY_IDS
     recognition_role_instructions = _ROLE_INSTRUCTIONS
@@ -199,15 +208,21 @@ class Inequality15Pack:
         symbolic: SymbolicPayload | None,
         role: str | None,
     ) -> str:
-        if _strong_figure(raw_text, symbolic):
+        if _definite_figure(raw_text, symbolic):
             return "figure"
         if _strong_hp(raw_text, symbolic):
             return "hp"
+        normalized = role.strip().lower() if isinstance(role, str) else ""
+        # "lihat garis bilangan" next to an answer set is still the HP step.
+        if (
+            _FIGURE_RE.search(_blob(raw_text, symbolic))
+            and normalized != "hp"
+            and not _weak_hp(raw_text, symbolic)
+        ):
+            return "figure"
 
-        if isinstance(role, str):
-            normalized = role.strip().lower()
-            if normalized in _VALID_ROLES and normalized != "algebra":
-                return normalized
+        if normalized in _VALID_ROLES and normalized != "algebra":
+            return normalized
 
         blob = _blob(raw_text, symbolic)
         if blob:

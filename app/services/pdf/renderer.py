@@ -61,7 +61,8 @@ class PyMuPdfRenderer(PdfRenderer):
 
         output_dir.mkdir(parents=True, exist_ok=True)
         pages: list[Page] = []
-        for index, page in enumerate(document):
+        for index in range(document.page_count):
+            page = document[index]
             page_number = index + 1
             filename = page_image_filename(page_number)
             image_path = output_dir / filename

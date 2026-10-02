@@ -1,0 +1,18 @@
+{
+  "question": 3,
+  "maximum_score": 10.0,
+  "criteria": [
+    {
+      "id": "algebra",
+      "points": 4.0
+    },
+    {
+      "id": "figure",
+      "points": 2.0
+    },
+    {
+      "id": "final_answer",
+      "points": 4.0
+    }
+  ]
+}

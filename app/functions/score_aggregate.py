@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from app.models.grading import (
     ErrorType,
     QuestionGrade,
@@ -14,16 +16,23 @@ from app.models.validation import QuestionValidation, StepValidation, Validation
 
 # Rubric ids scored outside the per-step algebra pool.
 _PART_CRITERION_IDS = frozenset({"critical_points", "figure", "final_answer"})
+# Algebra pool when every step is already scored under another rubric part.
+ALGEBRA_POOL_PART = "algebra"
 
 
 def allocate_step_max_scores(
     rubric: Rubric,
     step_count: int,
+    part_steps: Sequence[bool] | None = None,
 ) -> tuple[list[float], float, dict[str, float]]:
     """Split algebra pool across steps; return (per_step_max, final_max, part_max).
 
     ``part_max`` holds points for ``critical_points`` / ``figure`` (and any
     other reserved part ids except ``final_answer``, which is ``final_max``).
+    ``part_steps[i]`` marks a step already scored by a rubric part: it gets
+    max 0. When every step is marked there is no algebra step to carry the
+    pool, so it moves to ``part_max["algebra"]`` (judged for review instead of
+    paying the same steps twice).
     """
     final_points = 0.0
     pool = 0.0
@@ -42,12 +51,35 @@ def allocate_step_max_scores(
     if step_count <= 0:
         return [], final_points, part_max
 
-    per = pool / step_count
-    scores = [round(per, 4) for _ in range(step_count)]
-    if scores:
-        diff = round(pool - sum(scores), 4)
-        scores[-1] = round(scores[-1] + diff, 4)
+    flags = list(part_steps or [])[:step_count]
+    flags += [False] * (step_count - len(flags))
+    if all(flags):
+        if pool > 0:
+            part_max[ALGEBRA_POOL_PART] = part_max.get(ALGEBRA_POOL_PART, 0.0) + pool
+        return [0.0] * step_count, final_points, part_max
+    receivers = [i for i, flagged in enumerate(flags) if not flagged]
+    per = pool / len(receivers)
+    scores = [0.0 if flagged else round(per, 4) for flagged in flags]
+    diff = round(pool - sum(scores), 4)
+    scores[receivers[-1]] = round(scores[receivers[-1]] + diff, 4)
     return scores, final_points, part_max
+
+
+def part_step_flags(
+    rubric: Rubric,
+    step_numbers: Sequence[int],
+    step_roles: Mapping[int, str | None] | None,
+    role_rubric_parts: Mapping[str, str] | None,
+) -> list[str | None]:
+    """Rubric part id that already scores each step (``None`` = algebra pool)."""
+    if not step_roles or not role_rubric_parts:
+        return [None] * len(step_numbers)
+    present = {criterion.id for criterion in rubric.criteria if criterion.points > 0}
+    flags: list[str | None] = []
+    for number in step_numbers:
+        part_id = role_rubric_parts.get(step_roles.get(number) or "")
+        flags.append(part_id if part_id in present else None)
+    return flags
 
 
 def score_fraction(status: ValidationStatus) -> float:
@@ -137,6 +169,24 @@ def _part_step_grade(
     )
 
 
+def _apply_step_override(
+    step: StepValidation,
+    override: tuple[ValidationStatus, str] | None,
+) -> StepValidation:
+    if (
+        override is None
+        or step.status != ValidationStatus.VALID
+        or override[0] != ValidationStatus.UNCERTAIN
+    ):
+        return step
+    return step.model_copy(
+        update={
+            "status": ValidationStatus.UNCERTAIN,
+            "reason": f"{step.reason}; {override[1]}" if step.reason else override[1],
+        }
+    )
+
+
 def aggregate_question_grade(
     *,
     question_id: str,
@@ -147,10 +197,24 @@ def aggregate_question_grade(
     standard_final_reason: str = "",
     standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None,
     part_statuses: dict[str, tuple] | None = None,
+    step_overrides: dict[int, tuple[ValidationStatus, str]] | None = None,
+    step_roles: Mapping[int, str | None] | None = None,
+    role_rubric_parts: Mapping[str, str] | None = None,
 ) -> QuestionGrade:
-    steps = sorted(validation.steps, key=lambda s: s.step_number)
+    """``step_overrides`` may only downgrade a VALID step to UNCERTAIN (never raise a score).
+
+    Steps whose role maps (via ``role_rubric_parts``) to a part present in the
+    rubric get no share of the algebra pool; that part scores them instead.
+    """
+    steps = [
+        _apply_step_override(step, (step_overrides or {}).get(step.step_number))
+        for step in sorted(validation.steps, key=lambda s: s.step_number)
+    ]
+    scored_under = part_step_flags(
+        rubric, [s.step_number for s in steps], step_roles, role_rubric_parts
+    )
     per_step_max, final_max, part_max = allocate_step_max_scores(
-        rubric, len(steps)
+        rubric, len(steps), [part_id is not None for part_id in scored_under]
     )
 
     step_grades: list[StepGrade] = []
@@ -185,6 +249,8 @@ def aggregate_question_grade(
         feedback = deterministic_feedback(step_val, error_type)
         if standard_step_results is not None and std_reason:
             feedback = f"{feedback}; standard: {std_reason}"
+        if scored_under[index] is not None and maximum <= 0:
+            feedback = f"{feedback}; scored under part:{scored_under[index]}"
 
         step_grades.append(
             StepGrade(
@@ -203,9 +269,14 @@ def aggregate_question_grade(
     for part_id, maximum in part_max.items():
         if maximum <= 0:
             continue
-        fraction: float | None = None
+        part_fraction: float | None = None
         if part_id in parts:
-            status, reason, fraction = _part_mark(parts[part_id])
+            status, reason, part_fraction = _part_mark(parts[part_id])
+        elif part_id == ALGEBRA_POOL_PART:
+            status, reason = (
+                ValidationStatus.UNCERTAIN,
+                "no algebra steps; all steps scored under rubric parts",
+            )
         else:
             status, reason = (
                 ValidationStatus.INVALID,
@@ -220,39 +291,38 @@ def aggregate_question_grade(
                 maximum=maximum,
                 status=status,
                 reason=reason,
-                fraction=fraction,
+                fraction=part_fraction,
             )
         )
 
     final_grade: StepGrade | None = None
     consistency = validation.final_answer_status
     if consistency is not None or standard_final_status is not None:
+        final_consistency: float | None = None
         if consistency is not None:
-            consistency_fraction = score_fraction(consistency.status)
+            final_consistency = score_fraction(consistency.status)
             if consistency.status == ValidationStatus.UNCERTAIN:
                 review_required = True
-        else:
-            # No student-side consistency check: do not invent a full score.
-            # Score from standard alone when present.
-            consistency_fraction = None
+        # Without a student-side consistency check, do not invent a full score:
+        # score from the standard alone when present.
 
         if standard_final_status is not None:
             standard_fraction = score_fraction(standard_final_status)
             if standard_final_status == ValidationStatus.UNCERTAIN:
                 review_required = True
-            if consistency_fraction is None:
+            if consistency is None or final_consistency is None:
                 fraction = standard_fraction
                 label_status = standard_final_status
             else:
-                fraction = min(consistency_fraction, standard_fraction)
+                fraction = min(final_consistency, standard_fraction)
                 label_status = (
                     standard_final_status
-                    if standard_fraction <= consistency_fraction
-                    else consistency.status  # type: ignore[union-attr]
+                    if standard_fraction <= final_consistency
+                    else consistency.status
                 )
         else:
-            assert consistency is not None and consistency_fraction is not None
-            fraction = consistency_fraction
+            assert consistency is not None and final_consistency is not None
+            fraction = final_consistency
             label_status = consistency.status
 
         earned = round(final_max * fraction, 4)

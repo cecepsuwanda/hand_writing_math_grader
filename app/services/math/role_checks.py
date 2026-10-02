@@ -2,7 +2,23 @@
 
 from __future__ import annotations
 
-from sympy import FiniteSet, S, Symbol, Union, fraction, simplify, solveset, together
+from collections.abc import Sequence
+
+from sympy import (
+    Expr,
+    FiniteSet,
+    Number,
+    S,
+    Symbol,
+    Union,
+    fraction,
+    nan,
+    oo,
+    simplify,
+    solveset,
+    together,
+    zoo,
+)
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import Boolean
 from sympy.sets.sets import Set
@@ -51,6 +67,48 @@ def values_are_zero_makers(
         return bool(values.is_subset(targets))
     except Exception:
         return None
+
+
+def numeric_eval_matches_reference(
+    sides: Sequence[Expr],
+    reference: Boolean,
+    symbol: Symbol,
+) -> bool | None:
+    """Whether a written side equals the reference expression at a number the student wrote.
+
+    ``sides`` are the unevaluated operands of the student's closed relation.
+    Candidate expressions are ``lhs - rhs``, ``lhs`` and ``rhs`` of the reference
+    (those containing ``symbol``); test points are the numbers written (and their
+    negations). ``None`` when there is nothing to compare against.
+    """
+    if not isinstance(reference, Relational) or not sides:
+        return None
+    candidates = [
+        expr
+        for expr in (reference.lhs - reference.rhs, reference.lhs, reference.rhs)
+        if symbol in expr.free_symbols
+    ]
+    if not candidates:
+        return None
+    points: set[Expr] = set()
+    for side in sides:
+        for atom in side.atoms(Number):
+            points.update((atom, -atom))
+    try:
+        # A literal ``0`` is just the comparison bound and would match ``f(0) = 0``.
+        values = [
+            simplify(side) for side in sides if not (side.is_Number and side == 0)
+        ]
+        for expr in candidates:
+            for point in points:
+                image = simplify(expr.subs(symbol, point))
+                if image.has(zoo, nan, oo, -oo):
+                    continue
+                if any(simplify(value - image) == 0 for value in values):
+                    return True
+    except Exception:
+        return None
+    return False
 
 
 def numeric_relation_holds(proposition: Boolean) -> bool | None:

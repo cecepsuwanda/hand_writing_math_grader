@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -19,7 +19,7 @@ from app.functions.question_names import (
     question_artifact_filename,
     validation_filename,
 )
-from app.functions.score_aggregate import aggregate_question_grade
+from app.functions.score_aggregate import aggregate_question_grade, fold_role_marks
 from app.functions.validation_artifact import question_fingerprint
 from app.models.grading import QuestionGrade
 from app.models.question import Question
@@ -40,7 +40,7 @@ class StepGrader:
         rubric_loader: RubricLoader,
         feedback_annotator: FeedbackAnnotator | None = None,
         standard_comparer: StandardFinalComparer | None = None,
-        role_rubric_parts: Mapping[str, str] | None = None,
+        role_rubric_parts: Mapping[str, Sequence[str]] | None = None,
     ) -> None:
         self._rubrics = rubric_loader
         self._annotator = feedback_annotator
@@ -88,7 +88,11 @@ class StepGrader:
                 step_overrides[step_number] = (status, reason)
             standard_step_results = self._standard_comparer.compare_steps(question)
             part_statuses.update(
-                self._standard_comparer.compare_milestones(question)
+                fold_role_marks(
+                    self._standard_comparer.compare_milestones(question),
+                    rubric,
+                    self._role_rubric_parts,
+                )
             )
             if rubric_has_figure:
                 part_statuses["figure"] = self._standard_comparer.compare_figure(

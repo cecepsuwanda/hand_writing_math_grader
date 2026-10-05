@@ -26,12 +26,15 @@ _STEP_CHECKS = MappingProxyType(
     }
 )
 
+# Role → rubric buckets, best first. ``sign_chart`` prefers its own bucket but
+# falls back to ``critical_points`` so standards ingested before that split keep
+# scoring the two roles together (see ``fold_role_marks``).
 _ROLE_RUBRIC_PARTS = MappingProxyType(
     {
-        "critical_points": "critical_points",
-        "sign_chart": "critical_points",
-        "figure": "figure",
-        "hp": "final_answer",
+        "critical_points": ("critical_points",),
+        "sign_chart": ("sign_chart", "critical_points"),
+        "figure": ("figure",),
+        "hp": ("final_answer",),
     }
 )
 
@@ -159,8 +162,15 @@ class Inequality15Pack:
         weights: dict[str, float] = {}
         if "algebra" in kinds:
             weights["algebra"] = 3.0
-        if "critical_points" in kinds or "sign_chart" in kinds:
+        if "critical_points" in kinds and "sign_chart" in kinds:
+            # Roots and the sign chart are separate milestones with separate
+            # evidence, so give each its own bucket instead of one shared one.
+            weights["critical_points"] = 1.0
+            weights["sign_chart"] = 1.0
+        elif "critical_points" in kinds:
             weights["critical_points"] = 2.0
+        elif "sign_chart" in kinds:
+            weights["sign_chart"] = 2.0
         if "figure" in kinds:
             weights["figure"] = 2.0
         if "hp" in kinds:
@@ -186,7 +196,7 @@ class Inequality15Pack:
             else:
                 weights["final_answer"] = deficit
 
-        order = ("algebra", "critical_points", "figure", "final_answer")
+        order = ("algebra", "critical_points", "sign_chart", "figure", "final_answer")
         criteria = [
             RubricCriterion(id=cid, points=weights[cid])
             for cid in order

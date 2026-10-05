@@ -1,7 +1,7 @@
 """Controller harnesses: wire fakes + a temp workspace, then drive the code under test."""
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -307,7 +307,7 @@ class GradingWorkspace:
         self,
         *,
         with_comparer: bool = False,
-        role_rubric_parts: Mapping[str, str] | None = None,
+        role_rubric_parts: Mapping[str, Sequence[str]] | None = None,
     ) -> GradeResult:
         comparer = StandardFinalComparer(self.standard) if with_comparer else None
         grader = StepGrader(

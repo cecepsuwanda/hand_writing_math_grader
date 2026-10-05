@@ -31,7 +31,7 @@ Output LLM **wajib** divalidasi terhadap schema Pydantic. Pengecualian yang disa
 ## Grading
 
 - Skor langkah = konsistensi; soft-align ke `exam_schema` / solutions = audit saja.
-- Skor `final_answer` = **min(konsistensi, standard SymPy)**. Bucket `critical_points` / `figure` di-score terpisah (set-equivalence).
+- Skor `final_answer` = **min(konsistensi, standard SymPy)**, kecuali HP yang cocok kunci sedangkan rantai langkahnya tidak: itu di-skor penuh dari kunci + review. Bucket `critical_points` / `sign_chart` / `figure` di-score terpisah (set-equivalence).
 - Partial credit; jangan nolkan seluruh skor hanya karena final answer salah.
 - Error type deterministik dari grader: `calculation` / `carry_forward` / `transcription` / `uncertain`. `conceptual` hanya dari annotator LLM (feedback, tidak mengubah skor).
 - Audit: status + metode + alasan per langkah di `validation.json`; skor, error type, feedback di `grading.json`; page reference di `question.json`.

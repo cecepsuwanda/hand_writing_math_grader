@@ -61,7 +61,7 @@ Setiap perubahan: implementasi → tulis/perluas tes → jalankan `pytest -q` �
 
 - Rubric, skor per langkah, partial credit, feedback (`grading.txt`, annotator LLM opsional).
 - Ingest kunci (`ingest-kunci`) → `exam_schema.json`, `solutions/`, `rubrics/`.
-- Aturan skor (konsistensi, soft-align audit, `final_answer` = min(konsistensi, standar), bucket `critical_points` / `figure`): [`conventions.md`](conventions.md#validasi-dan-grading) dan [`conventions.md`](conventions.md#kunci-jawaban-ingest).
+- Aturan skor (konsistensi, soft-align audit, `final_answer` = min(konsistensi, standar) kecuali HP yang cocok kunci, bucket `critical_points` / `sign_chart` / `figure`): [`conventions.md`](conventions.md#validasi-dan-grading) dan [`conventions.md`](conventions.md#kunci-jawaban-ingest).
 - Acceptance: dataset uji menghasilkan rentang skor yang diharapkan; jalur alternatif valid tidak dipotong.
 
 ## Phase 8 — Report

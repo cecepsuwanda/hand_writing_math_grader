@@ -76,28 +76,6 @@ def _mark_fraction(
     return 0.0
 
 
-def _average_marks(
-    left: tuple[ValidationStatus, str, float | None],
-    right: tuple[ValidationStatus, str, float | None],
-) -> tuple[ValidationStatus, str, float | None]:
-    """Mean of two milestone marks. Both roles count toward one rubric bucket."""
-    mean = (_mark_fraction(left) + _mark_fraction(right)) / 2
-    undecided = (
-        left[0] == ValidationStatus.UNCERTAIN
-        or right[0] == ValidationStatus.UNCERTAIN
-    )
-    reason = f"{left[1]}; {right[1]}"
-    if mean >= 1.0 - 1e-9:
-        return ValidationStatus.VALID, reason, 1.0
-    if undecided and left[2] is None and right[2] is None and mean <= 0.5 + 1e-9:
-        return ValidationStatus.UNCERTAIN, reason, None
-    if mean <= 1e-9:
-        return ValidationStatus.INVALID, reason, 0.0
-    if undecided:
-        return ValidationStatus.UNCERTAIN, reason, mean
-    return ValidationStatus.INVALID, reason, mean
-
-
 def _milestone_atom_texts(milestone: ExamMilestone) -> list[str]:
     """Positional milestone claims. Prefer step lists over a joined blob."""
     raw: list[str] = []
@@ -379,11 +357,11 @@ class StandardFinalComparer:
         self,
         question: Question,
     ) -> dict[str, tuple[ValidationStatus, str, float | None]]:
-        """Coverage of student work vs schema milestones.
+        """Coverage of student work vs schema milestones, keyed by milestone role.
 
-        Returns keys used by part scoring. When both ``critical_points``
-        and ``sign_chart`` exist, their score fractions are averaged into
-        the single ``critical_points`` rubric bucket.
+        Scoring is keyed by rubric id, not by role: :func:`fold_role_marks`
+        decides how roles land in buckets, so a rubric may give ``sign_chart``
+        its own score or fold it back into ``critical_points``.
         """
         schema_q = self._bind_symbol(question)
         if schema_q is None or not schema_q.milestones:
@@ -397,18 +375,7 @@ class StandardFinalComparer:
             prev = role_results.get(milestone.role)
             if prev is None or _mark_fraction(mark) > _mark_fraction(prev):
                 role_results[milestone.role] = mark
-
-        out: dict[str, tuple[ValidationStatus, str, float | None]] = {}
-        cp = role_results.get("critical_points")
-        sc = role_results.get("sign_chart")
-        if cp is not None and sc is not None:
-            # Rubric folds both roles into one bucket; both must contribute.
-            out["critical_points"] = _average_marks(cp, sc)
-        elif cp is not None:
-            out["critical_points"] = cp
-        elif sc is not None:
-            out["critical_points"] = sc
-        return out
+        return role_results
 
     def compare_figure(
         self,

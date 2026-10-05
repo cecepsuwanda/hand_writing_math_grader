@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from app.models.exam_schema import ExamPart
@@ -40,8 +40,12 @@ class TopicPack(Protocol):
         """Step role → validation check; unmapped roles use ``TRANSITION``."""
 
     @property
-    def role_rubric_parts(self) -> Mapping[str, str]:
-        """Step role → rubric part id that scores it (outside the algebra pool)."""
+    def role_rubric_parts(self) -> Mapping[str, Sequence[str]]:
+        """Step role → rubric part ids that score it, best first.
+
+        The first id the rubric defines wins; an empty list or an unmatched role
+        leaves the step in the algebra pool.
+        """
 
     @property
     def figure_kinds(self) -> tuple[str, ...]:

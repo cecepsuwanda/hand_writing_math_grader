@@ -15,9 +15,35 @@ from app.models.grading import (
 from app.models.validation import QuestionValidation, StepValidation, ValidationStatus
 
 # Rubric ids scored outside the per-step algebra pool.
-_PART_CRITERION_IDS = frozenset({"critical_points", "figure", "final_answer"})
+_PART_CRITERION_IDS = frozenset(
+    {"critical_points", "sign_chart", "figure", "final_answer"}
+)
 # Algebra pool when every step is already scored under another rubric part.
 ALGEBRA_POOL_PART = "algebra"
+
+# Machine-readable feedback tails. The feedback annotator rewrites the human
+# part of a feedback string, so it carries these through verbatim; both sides
+# read the markers from here so they cannot drift apart.
+_STANDARD_MARKER = "; standard: "
+_PART_MARKER = "; scored under part:"
+# Marks a final answer that the key scored although the student's own chain
+# disagreed. This is a decision record, so the annotator leaves the wording of
+# such a row alone rather than paraphrasing the score away.
+KEY_OVERRIDE_MARKER = "; key override: "
+KEY_OVERRIDE_NOTE = (
+    "final answer matches the key, so it is scored from the key and marked "
+    "for human review"
+)
+
+
+def split_feedback_markers(feedback: str) -> tuple[str, str]:
+    """Split ``text; standard: …; scored under part:…`` into (text, markers)."""
+    index = len(feedback)
+    for marker in (_STANDARD_MARKER, _PART_MARKER, KEY_OVERRIDE_MARKER):
+        found = feedback.find(marker)
+        if found != -1:
+            index = min(index, found)
+    return feedback[:index], feedback[index:]
 
 
 def allocate_step_max_scores(
@@ -65,21 +91,96 @@ def allocate_step_max_scores(
     return scores, final_points, part_max
 
 
+def _part_buckets(rubric: Rubric) -> set[str]:
+    """Rubric ids that can hold points (a zero-point id scores nothing)."""
+    return {criterion.id for criterion in rubric.criteria if criterion.points > 0}
+
+
+def _resolve_part_bucket(
+    role: str,
+    present: set[str],
+    role_rubric_parts: Mapping[str, Sequence[str]],
+) -> str | None:
+    """First bucket the rubric grants ``role``; ``None`` means the algebra pool.
+
+    A role lists its candidate buckets in order. Rubrics ingested before
+    ``sign_chart`` became its own bucket define only ``critical_points``, so the
+    ``sign_chart`` role still resolves there and keeps its old score.
+    """
+    for candidate in role_rubric_parts.get(role) or ():
+        if candidate in present:
+            return candidate
+    return None
+
+
 def part_step_flags(
     rubric: Rubric,
     step_numbers: Sequence[int],
     step_roles: Mapping[int, str | None] | None,
-    role_rubric_parts: Mapping[str, str] | None,
+    role_rubric_parts: Mapping[str, Sequence[str]] | None,
 ) -> list[str | None]:
     """Rubric part id that already scores each step (``None`` = algebra pool)."""
     if not step_roles or not role_rubric_parts:
         return [None] * len(step_numbers)
-    present = {criterion.id for criterion in rubric.criteria if criterion.points > 0}
-    flags: list[str | None] = []
-    for number in step_numbers:
-        part_id = role_rubric_parts.get(step_roles.get(number) or "")
-        flags.append(part_id if part_id in present else None)
-    return flags
+    present = _part_buckets(rubric)
+    return [
+        _resolve_part_bucket(step_roles.get(number) or "", present, role_rubric_parts)
+        for number in step_numbers
+    ]
+
+
+def _mark_fraction(mark: tuple) -> float:
+    fraction = mark[2]
+    if fraction is not None:
+        return float(fraction)
+    return score_fraction(mark[0])
+
+
+def _average_marks(left: tuple, right: tuple) -> tuple[ValidationStatus, str, float | None]:
+    """Mean of two marks that share one rubric bucket (both must contribute)."""
+    mean = (_mark_fraction(left) + _mark_fraction(right)) / 2
+    undecided = (
+        left[0] == ValidationStatus.UNCERTAIN or right[0] == ValidationStatus.UNCERTAIN
+    )
+    reason = f"{left[1]}; {right[1]}"
+    if mean >= 1.0 - 1e-9:
+        return ValidationStatus.VALID, reason, 1.0
+    if undecided and left[2] is None and right[2] is None and mean <= 0.5 + 1e-9:
+        return ValidationStatus.UNCERTAIN, reason, None
+    if mean <= 1e-9:
+        return ValidationStatus.INVALID, reason, 0.0
+    if undecided:
+        return ValidationStatus.UNCERTAIN, reason, mean
+    return ValidationStatus.INVALID, reason, mean
+
+
+def fold_role_marks(
+    marks: Mapping[str, tuple],
+    rubric: Rubric,
+    role_rubric_parts: Mapping[str, Sequence[str]] | None,
+) -> dict[str, tuple[ValidationStatus, str, float | None]]:
+    """Fold milestone marks (keyed by role) into the rubric's part buckets.
+
+    Marks are keyed by milestone role, but scoring is keyed by rubric id. When a
+    rubric gives ``critical_points`` and ``sign_chart`` their own buckets each
+    keeps its own score; when it predates that split both roles resolve to
+    ``critical_points`` and are averaged exactly as they were before.
+    """
+    if not marks or not role_rubric_parts:
+        return {}
+    present = _part_buckets(rubric)
+    grouped: dict[str, list[tuple]] = {}
+    for role, mark in marks.items():
+        bucket = _resolve_part_bucket(role, present, role_rubric_parts)
+        if bucket is not None:
+            grouped.setdefault(bucket, []).append(mark)
+    folded: dict[str, tuple[ValidationStatus, str, float | None]] = {}
+    for bucket, bucket_marks in grouped.items():
+        combined = bucket_marks[0]
+        for mark in bucket_marks[1:]:
+            combined = _average_marks(combined, mark)
+        folded[bucket] = combined
+    return folded
 
 
 def score_fraction(status: ValidationStatus) -> float:
@@ -200,7 +301,7 @@ def aggregate_question_grade(
     part_statuses: dict[str, tuple] | None = None,
     step_overrides: dict[int, tuple[ValidationStatus, str]] | None = None,
     step_roles: Mapping[int, str | None] | None = None,
-    role_rubric_parts: Mapping[str, str] | None = None,
+    role_rubric_parts: Mapping[str, Sequence[str]] | None = None,
 ) -> QuestionGrade:
     """``step_overrides`` may only downgrade a VALID step to UNCERTAIN (never raise a score).
 
@@ -249,9 +350,9 @@ def aggregate_question_grade(
         error_type = infer_error_type(step_val, previous=prev)
         feedback = deterministic_feedback(step_val, error_type)
         if standard_step_results is not None and std_reason:
-            feedback = f"{feedback}; standard: {std_reason}"
+            feedback = f"{feedback}{_STANDARD_MARKER}{std_reason}"
         if scored_under[index] is not None and maximum <= 0:
-            feedback = f"{feedback}; scored under part:{scored_under[index]}"
+            feedback = f"{feedback}{_PART_MARKER}{scored_under[index]}"
 
         step_grades.append(
             StepGrade(
@@ -307,6 +408,7 @@ def aggregate_question_grade(
         # Without a student-side consistency check, do not invent a full score:
         # score from the standard alone when present.
 
+        key_overrides_chain = False
         if standard_final_status is not None:
             standard_fraction = score_fraction(standard_final_status)
             if standard_final_status == ValidationStatus.UNCERTAIN:
@@ -314,13 +416,18 @@ def aggregate_question_grade(
             if consistency is None or final_consistency is None:
                 fraction = standard_fraction
                 label_status = standard_final_status
+            elif standard_fraction > final_consistency:
+                # The key matches but the student's own chain disagrees. Zeroing
+                # a final answer that matches the key punishes one bad link
+                # mid-chain, so pay from the key and hand the disagreement to a
+                # human instead of displaying a correct answer as 0.
+                fraction = standard_fraction
+                label_status = ValidationStatus.UNCERTAIN
+                key_overrides_chain = True
+                review_required = True
             else:
-                fraction = min(final_consistency, standard_fraction)
-                label_status = (
-                    standard_final_status
-                    if standard_fraction <= final_consistency
-                    else consistency.status
-                )
+                fraction = standard_fraction
+                label_status = standard_final_status
         else:
             assert consistency is not None and final_consistency is not None
             fraction = final_consistency
@@ -335,6 +442,13 @@ def aggregate_question_grade(
             base_feedback = deterministic_feedback(consistency, error_type)
             step_number = consistency.step_number
             reported_status = consistency.status
+            if key_overrides_chain:
+                error_type = ErrorType.UNCERTAIN
+                reported_status = standard_final_status or ValidationStatus.VALID
+                base_feedback = (
+                    f"{consistency.reason or consistency.status.value}"
+                    f"{KEY_OVERRIDE_MARKER}{KEY_OVERRIDE_NOTE}"
+                )
         else:
             error_type = ErrorType.NONE
             base_feedback = (
@@ -345,7 +459,7 @@ def aggregate_question_grade(
             reported_status = standard_final_status or ValidationStatus.INVALID
 
         if standard_final_status is not None and standard_final_reason:
-            feedback = f"{base_feedback}; standard: {standard_final_reason}"
+            feedback = f"{base_feedback}{_STANDARD_MARKER}{standard_final_reason}"
         else:
             feedback = base_feedback
 

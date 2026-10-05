@@ -151,7 +151,13 @@ from app.functions.run_layout import (
     safe_run_name,
     sanitize_run_name,
 )
-from app.functions.score_aggregate import aggregate_question_grade, allocate_step_max_scores
+from app.functions.score_aggregate import (
+    aggregate_question_grade,
+    allocate_step_max_scores,
+    fold_role_marks,
+    part_step_flags,
+    split_feedback_markers,
+)
 from app.functions.standards_layout import standards_folder_name
 from app.functions.standard_extract import (
     exam_schema_path,
@@ -2936,6 +2942,130 @@ class TestScoreAggregate:
         assert grade.steps[1].max_score == 0.0
         assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
 
+    @staticmethod
+    def _split_rubric() -> Rubric:
+        """The same 10 points, but sign_chart owns a bucket of its own."""
+        return get_pack('1.5').rubric_from_parts(
+            1,
+            [
+                ExamPart(kind=kind, order=i)
+                for i, kind in enumerate(
+                    ('algebra', 'critical_points', 'sign_chart', 'figure', 'hp'), start=1
+                )
+            ],
+        )
+
+    def test_fold_role_marks_keeps_sign_chart_out_of_critical_points(self) -> None:
+        rubric = self._split_rubric()
+        points = {c.id: c.points for c in rubric.criteria}
+        assert points['critical_points'] == pytest.approx(1.0)
+        assert points['sign_chart'] == pytest.approx(1.0)
+        marks = {
+            'critical_points': (ValidationStatus.VALID, 'roots ok', 1.0),
+            'sign_chart': (ValidationStatus.INVALID, 'sign chart missed', 0.25),
+        }
+        folded = fold_role_marks(marks, rubric, get_pack('1.5').role_rubric_parts)
+        assert folded['critical_points'][2] == pytest.approx(1.0)
+        assert folded['sign_chart'][2] == pytest.approx(0.25)
+        assert 'sign chart missed' not in folded['critical_points'][1]
+
+        grade = self._grade(
+            make_validation(ValidationStatus.VALID),
+            rubric,
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses=folded,
+        )
+        by_part = {s.part_id: s for s in grade.steps if s.part_id}
+        assert by_part['critical_points'].score == pytest.approx(1.0)
+        assert by_part['sign_chart'].score == pytest.approx(0.25)
+
+    def test_fold_role_marks_averages_when_the_rubric_shares_one_bucket(self) -> None:
+        # Standards ingested before the split define only critical_points; both
+        # roles must land there again, and the total must not move.
+        legacy = self._pack_rubric()
+        marks = {
+            'critical_points': (ValidationStatus.VALID, 'roots ok', 1.0),
+            'sign_chart': (ValidationStatus.INVALID, 'sign chart missed', 0.25),
+        }
+        folded = fold_role_marks(marks, legacy, get_pack('1.5').role_rubric_parts)
+        assert set(folded) == {'critical_points'}
+        assert folded['critical_points'][2] == pytest.approx((1.0 + 0.25) / 2)
+
+        shared = self._grade(
+            make_validation(ValidationStatus.VALID),
+            legacy,
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses=folded,
+        )
+        split = self._grade(
+            make_validation(ValidationStatus.VALID),
+            self._split_rubric(),
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses=fold_role_marks(
+                marks, self._split_rubric(), get_pack('1.5').role_rubric_parts
+            ),
+        )
+        assert shared.score == pytest.approx(split.score)
+
+    def test_part_step_flags_prefers_the_split_bucket_then_falls_back(self) -> None:
+        flags = part_step_flags(
+            self._split_rubric(),
+            [1, 2],
+            {1: 'critical_points', 2: 'sign_chart'},
+            get_pack('1.5').role_rubric_parts,
+        )
+        assert flags == ['critical_points', 'sign_chart']
+        # A rubric without the sign_chart bucket still scores those steps there.
+        fallback = part_step_flags(
+            self._pack_rubric(),
+            [1, 2],
+            {1: 'critical_points', 2: 'sign_chart'},
+            get_pack('1.5').role_rubric_parts,
+        )
+        assert fallback == ['critical_points', 'critical_points']
+
+    def test_final_answer_matching_the_key_survives_a_bad_chain(self) -> None:
+        grade = self._grade(
+            make_validation(
+                ValidationStatus.INVALID,
+                final=(ValidationStatus.INVALID, 'solution set differs'),
+            ),
+            self._pack_rubric(),
+            standard_final_status=ValidationStatus.VALID,
+            standard_final_reason='final answer matches standard',
+        )
+        final = grade.final_answer
+        assert final is not None
+        assert final.max_score > 0
+        assert final.score == pytest.approx(final.max_score)
+        assert final.validation_status == ValidationStatus.VALID
+        assert final.status == StepGradeStatus.REVIEW
+        assert 'matches the key' in final.feedback
+        assert 'standard: final answer matches standard' in final.feedback
+        assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
+
+    def test_final_answer_that_misses_the_key_is_still_zeroed(self) -> None:
+        grade = self._grade(
+            make_validation(ValidationStatus.VALID),
+            self._pack_rubric(),
+            standard_final_status=ValidationStatus.INVALID,
+            standard_final_reason='final answer differs',
+        )
+        final = grade.final_answer
+        assert final is not None
+        assert final.score == pytest.approx(0.0)
+        assert final.validation_status == ValidationStatus.VALID
+
+    def test_split_feedback_markers(self) -> None:
+        text, markers = split_feedback_markers(
+            'x<4 valid; standard: matches step 3; scored under part:critical_points'
+        )
+        assert text == 'x<4 valid'
+        assert markers == (
+            '; standard: matches step 3; scored under part:critical_points'
+        )
+        assert split_feedback_markers('plain feedback') == ('plain feedback', '')
+
     def test_allocate_all_part_steps_moves_pool_to_algebra_part(self) -> None:
         per_step, _, part_max = allocate_step_max_scores(self._pack_rubric(), 2, [True, True])
         assert per_step == [0.0, 0.0]
@@ -3210,6 +3340,50 @@ class TestFeedbackAnnotator:
         assert 'Validation reason: validator reason' in prompt
         assert 'Current deterministic feedback: composed text' in prompt
 
+    def test_machine_markers_survive_the_llm_rewrite(self) -> None:
+        question = make_question(steps=[make_step(1, 'x<4')], final='x<4')
+        graded = make_step_grade(1, 0.0, 0.0).model_copy(
+            update={
+                'feedback': (
+                    'x<4 valid; standard: matches step 3'
+                    '; scored under part:critical_points'
+                )
+            }
+        )
+        client = FakeClient(json.dumps({'error_type': 'none', 'feedback': 'Cek ulang.'}))
+        annotated = FeedbackAnnotator(client, 'r').annotate(
+            question, self._grade([graded]), make_validation(ValidationStatus.VALID, final=None)
+        )
+        prompt, _model = client.text_calls[0]
+        assert 'Current deterministic feedback: x<4 valid' in prompt
+        assert 'scored under part:critical_points' not in prompt
+        assert annotated.steps[0].feedback == (
+            'Cek ulang. (prompt=grading-v1)'
+            '; standard: matches step 3; scored under part:critical_points'
+        )
+
+    def test_key_override_row_keeps_its_deterministic_wording(self) -> None:
+        question = make_question(steps=[make_step(1, 'x<4')], final='x<4')
+        graded = make_step_grade(1, 3.0, 3.0).model_copy(update={'feedback': 'ok'})
+        final_feedback = (
+            'solution set differs'
+            '; key override: final answer matches the key, so it is scored from'
+            ' the key and marked for human review'
+            '; standard: final answer matches standard'
+        )
+        final = make_step_grade(
+            0, 4.0, 4.0, status=StepGradeStatus.REVIEW
+        ).model_copy(update={'feedback': final_feedback})
+        grade = self._grade([graded]).model_copy(update={'final_answer': final})
+        client = FakeClient(json.dumps({'error_type': 'none', 'feedback': 'ignored'}))
+        annotated = FeedbackAnnotator(client, 'r').annotate(
+            question, grade, make_validation(ValidationStatus.VALID)
+        )
+        assert annotated.final_answer is not None
+        assert annotated.final_answer.feedback == final_feedback
+        # the student step is still annotated; only the decision row is spared
+        assert len(client.text_calls) == 1
+
     def test_legacy_two_argument_call_still_annotates(self) -> None:
         question = make_question(steps=[make_step(1, 'x<4')], final='x<4')
         graded = make_step_grade(1, 3.0, 3.0).model_copy(update={'feedback': 'valid'})
@@ -3470,9 +3644,10 @@ class TestStandardComparer:
         marks = comparer.compare_milestones(question)
         status, reason, fraction = marks['critical_points']
         assert status != ValidationStatus.VALID
-        # one of three roots, and the sign-chart atom misses: mean of 1/3 and 0
-        assert fraction == pytest.approx((1 / 3 + 0) / 2)
+        # one of three roots matched; the sign chart is a separate mark
+        assert fraction == pytest.approx(1 / 3)
         assert '1/3' in reason
+        assert marks['sign_chart'][2] == pytest.approx(0.0)
 
         covered = make_question(steps=[
             make_step(i, raw_text=raw, symbolic_repr=repr_)
@@ -3483,6 +3658,7 @@ class TestStandardComparer:
         full = comparer.compare_milestones(covered)
         assert full['critical_points'][0] == ValidationStatus.VALID
         assert full['critical_points'][2] == pytest.approx(1.0)
+        assert full['sign_chart'][2] == pytest.approx(1.0)
 
     @pytest.mark.parametrize(
         ('key_steps', 'student', 'status', 'fraction'),
@@ -3565,7 +3741,7 @@ class TestStandardComparer:
         )
         question = make_question(steps=[make_step(1, raw_text='x<0', symbolic_repr='x < 0')])
         status, reason, fraction = StandardFinalComparer(tmp_path, exam_schema=schema).compare_milestones(question)[
-            'critical_points'
+            'sign_chart'
         ]
         # x<0 matches, the prose atom is undecided, x>2 misses: (1 + 0.5) / 3
         assert status == ValidationStatus.UNCERTAIN
@@ -3777,7 +3953,10 @@ x_1 &= 3
         assert rubric.maximum_score == 10
         assert sum(c.points for c in rubric.criteria) == pytest.approx(10.0)
         ids = {c.id for c in rubric.criteria}
-        assert ids == {'algebra', 'critical_points', 'figure', 'final_answer'}
+        # no critical_points part in the key, so the sign chart takes the whole 2.0
+        assert ids == {'algebra', 'sign_chart', 'figure', 'final_answer'}
+        sign_chart = next(c.points for c in rubric.criteria if c.id == 'sign_chart')
+        assert sign_chart == pytest.approx(2.0)
 
         single = build_exam_schema(MINI_KUNCI, source='mini')
         q1 = single.questions[0]

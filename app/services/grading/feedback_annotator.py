@@ -9,6 +9,10 @@ from pydantic import ValidationError
 
 from app.exceptions import OllamaTimeoutError, OllamaUnavailableError
 from app.functions.json_extract import extract_json_object
+from app.functions.score_aggregate import (
+    KEY_OVERRIDE_MARKER,
+    split_feedback_markers,
+)
 from app.models.grading import FeedbackAnnotation, QuestionGrade
 from app.models.question import Question
 from app.models.validation import QuestionValidation
@@ -71,12 +75,16 @@ class FeedbackAnnotator:
                 step_text = student_step.symbolic.repr
             else:
                 step_text = student_step.latex or student_step.raw_text
+            # Keep the machine-readable tail (``; standard: …``, ``; scored
+            # under part:…``) out of the rewrite and restore it verbatim, so a
+            # 0/0 row still explains itself after annotation.
+            human_feedback, markers = split_feedback_markers(step_grade.feedback)
             annotated = self._annotate_one(
                 validation_status=step_grade.validation_status.value,
                 validation_reason=reasons.get(
                     step_grade.step_number, step_grade.feedback
                 ),
-                current_feedback=step_grade.feedback,
+                current_feedback=human_feedback,
                 step_text=step_text,
             )
             if annotated is None:
@@ -86,8 +94,8 @@ class FeedbackAnnotator:
                     step_grade.model_copy(
                         update={
                             "error_type": annotated.error_type,
-                            "feedback": annotated.feedback
-                            or step_grade.feedback,
+                            "feedback": (annotated.feedback or human_feedback)
+                            + markers,
                         }
                     )
                 )
@@ -99,17 +107,23 @@ class FeedbackAnnotator:
                 final_reason = (
                     validation.final_answer_status.reason or final.feedback
                 )
+            human_feedback, markers = split_feedback_markers(final.feedback)
+            if KEY_OVERRIDE_MARKER in markers:
+                # The key scored this row although the student's own chain
+                # disagreed. That note is the feedback; paraphrasing it just
+                # buries the reason the row needs a human.
+                return grade.model_copy(update={"steps": new_steps})
             annotated = self._annotate_one(
                 validation_status=final.validation_status.value,
                 validation_reason=final_reason,
-                current_feedback=final.feedback,
+                current_feedback=human_feedback,
                 step_text=question.student_final_answer,
             )
             if annotated is not None:
                 final = final.model_copy(
                     update={
                         "error_type": annotated.error_type,
-                        "feedback": annotated.feedback or final.feedback,
+                        "feedback": (annotated.feedback or human_feedback) + markers,
                     }
                 )
 

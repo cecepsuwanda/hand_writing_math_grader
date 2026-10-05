@@ -166,6 +166,7 @@ def _part_step_grade(
         ),
         feedback=f"part:{part_id}; {reason}",
         validation_status=status,
+        part_id=part_id,
     )
 
 

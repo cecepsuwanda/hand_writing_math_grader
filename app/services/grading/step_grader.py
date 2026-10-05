@@ -125,7 +125,7 @@ class StepGrader:
             role_rubric_parts=self._role_rubric_parts,
         )
         if self._annotator is not None:
-            grade = self._annotator.annotate(question, grade)
+            grade = self._annotator.annotate(question, grade, validation)
 
         out = question_dir / grading_filename()
         try:

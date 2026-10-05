@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.functions.menu_choices import MAIN_MENU, MAIN_MENU_PROMPT
+from app.functions.paths import shorten_pdf_name
 from app.functions.standards_layout import standards_folder_name
 from app.interfaces.topic_pack import TopicPack
 from app.views.prompt_view import InputFn, read_line
@@ -83,13 +84,18 @@ def print_selected_kunci(path: Path) -> None:
 
 
 def print_jawaban_menu(pdfs: list[Path], jawaban_dir: Path) -> None:
-    _print_path_menu(
-        "PDF tersedia", jawaban_dir, pdfs, "Pilih nomor (atau nama file), lalu Enter."
-    )
+    # Short names keep long LMS file names readable; parse_pdf_choice accepts
+    # them too, so whatever is shown here can be typed back.
+    short_names = [shorten_pdf_name(p) for p in pdfs]
+    lines = [bold("PDF tersedia"), dim(str(jawaban_dir)), ""]
+    for index, short_name in enumerate(short_names, start=1):
+        lines.append(f"  {index}. {short_name}")
+    lines.extend(["", dim("Pilih nomor (atau nama file di atas), lalu Enter.")])
+    _print_menu_box(lines)
 
 
 def print_selected_pdf(pdf: Path) -> None:
-    _print_selected(f"Memproses: {pdf.name}", str(pdf))
+    _print_selected(f"Memproses: {shorten_pdf_name(pdf)}", str(pdf))
 
 
 def print_run_menu(run_dirs: list[Path], output_root: Path) -> None:

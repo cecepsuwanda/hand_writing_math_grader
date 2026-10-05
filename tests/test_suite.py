@@ -128,6 +128,7 @@ from app.functions.paths import (
     parse_pdf_choice,
     parse_run_choice,
     resolve_jawaban_pdf,
+    shorten_pdf_name,
 )
 from app.functions.question_crops import load_question_crops, write_question_crops
 from app.functions.question_merge import collect_latex_documents, merge_page_recognitions
@@ -178,11 +179,13 @@ from app.interfaces.validator import StepValidator
 from app.models.defaults import DEFAULT_STUDENT_ID
 from app.models.exam_schema import ExamMethod, ExamMilestone, ExamPart, ExamQuestion, ExamSchema
 from app.models.grading import (
+    ErrorType,
     GradeResult,
     QuestionGrade,
     ReviewStatus,
     Rubric,
     RubricCriterion,
+    StepGrade,
     StepGradeStatus,
 )
 from app.models.page import Page, RenderResult
@@ -219,10 +222,15 @@ from app.models.validation import (
     ValidationMethod,
     ValidationStatus,
 )
+from app.services.grading.feedback_annotator import (
+    FeedbackAnnotator,
+    PROMPT_VERSION as GRADING_PROMPT_VERSION,
+)
 from app.services.grading.latex_report import LatexReportWriter
 from app.services.grading.report import JsonCsvHtmlReporter
 from app.services.grading.rubric import RubricLoader
 from app.services.grading.standard_comparer import StandardFinalComparer
+from app.services.grading.step_grader import StepGrader
 from app.services.latex.builder import LatexBuilder
 from app.services.math.equivalence import (
     is_solved_form,
@@ -465,6 +473,39 @@ class TestPaths:
             pdf.write_bytes(b'%PDF')
         assert parse_pdf_choice(pdfs, '2') == pdfs[1]
         assert parse_pdf_choice(pdfs, '1') == pdfs[0]
+
+    @pytest.mark.parametrize(
+        ('name', 'expected'),
+        [
+            (
+                'MUHAMMAD HAFIZ KHAIRUDDIN_8842_assignsubmission_file_'
+                'Sistem Bilangan Real_Muhammad Hafiz Khairuddin_102022630012.pdf',
+                'hafiz_khairuddin_102022630012_sistem_bilangan_real.pdf',
+            ),
+            (
+                'A_1_AssignSubmission_File_Topic_Name Here_99.pdf',
+                'here_99_topic.pdf',
+            ),
+            ('My File.PDF', 'my_file.pdf'),
+        ],
+        ids=['moodle-export', 'marker-case-insensitive', 'plain-fallback'],
+    )
+    def test_shorten_pdf_name(self, tmp_path: Path, name: str, expected: str) -> None:
+        assert shorten_pdf_name(tmp_path / name) == expected
+
+    def test_parse_pdf_choice_accepts_the_shortened_name_it_shows(self, tmp_path: Path) -> None:
+        pdf = tmp_path / (
+            'MUHAMMAD HAFIZ KHAIRUDDIN_8842_assignsubmission_file_'
+            'Sistem Bilangan Real_Muhammad Hafiz Khairuddin_102022630012.pdf'
+        )
+        pdfs = [tmp_path / 'plain.pdf', pdf]
+        short = 'hafiz_khairuddin_102022630012_sistem_bilangan_real.pdf'
+        assert parse_pdf_choice(pdfs, short) == pdf
+        assert parse_pdf_choice(pdfs, short.upper()) == pdf
+        assert parse_pdf_choice(pdfs, short.removesuffix('.pdf')) == pdf
+        assert parse_pdf_choice(pdfs, '2') == pdf
+        with pytest.raises(ValueError):
+            parse_pdf_choice(pdfs, 'hafiz_khairuddin_sistem_bilangan_real.pdf')
 
     def test_list_kunci_tex_sorted(self, tmp_path: Path) -> None:
         kunci = tmp_path / 'kunci'
@@ -886,8 +927,8 @@ class TestPromptView:
         with pytest.raises(OperationCancelledError):
             wait_for_edit('edit', input_fn=self._interrupted)
 
-    def test_prompt_choice_ctrl_c_raises_domain_error(self, tmp_path: Path) -> None:
-        with pytest.raises(InvalidPdfSelectionError, match='cancelled'):
+    def test_prompt_choice_ctrl_c_cancels_the_session(self, tmp_path: Path) -> None:
+        with pytest.raises(OperationCancelledError, match='Ctrl\\+C'):
             prompt_choice(
                 [tmp_path / 'a.pdf'],
                 parse=parse_pdf_choice,
@@ -2857,6 +2898,21 @@ class TestScoreAggregate:
         assert [s.max_score for s in grade.steps] == pytest.approx([2.0, 2.0, 2.0, 2.0])
         assert grade.score == pytest.approx(10.0)
 
+    def test_part_grades_carry_their_part_id(self) -> None:
+        grade = self._grade(
+            make_validation(ValidationStatus.VALID, ValidationStatus.VALID),
+            self._pack_rubric(),
+            standard_final_status=ValidationStatus.VALID,
+            part_statuses={
+                'critical_points': (ValidationStatus.VALID, 'ok'),
+                'figure': (ValidationStatus.VALID, 'ok'),
+            },
+        )
+        parts = {s.part_id: s for s in grade.steps}
+        assert set(parts) == {None, 'critical_points', 'figure'}
+        assert all(s.step_number == 0 for part_id, s in parts.items() if part_id)
+        assert parts['figure'].feedback.startswith('part:figure;')
+
     def test_hand_edited_roles_are_canonical_for_part_scoring(self) -> None:
         steps = [make_step(1, 'x<3', role=' Algebra '), make_step(2, 'x<3', role='HP')]
         assert [s.role for s in steps] == ['algebra', 'hp']
@@ -3055,6 +3111,31 @@ class TestStepGrader:
         assert 'stem' in grade.steps[0].feedback
         assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
 
+    def test_annotator_keeps_part_feedback_and_passes_validator_reason(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path, TestScoreAggregate._pack_rubric())
+        workspace.add_question(
+            make_question('x-4<0', 'x<4', final='x<4', figures=[make_figure(caption='garis bilangan')]),
+            make_validation((ValidationStatus.VALID, 'algebra ok'), final=ValidationStatus.VALID),
+        )
+        client = FakeClient(json.dumps({'error_type': 'conceptual', 'feedback': 'Periksa lagi.'}))
+        grader = StepGrader(
+            RubricLoader(workspace.standard),
+            feedback_annotator=FeedbackAnnotator(client, 'reasoning-test'),
+        )
+        grade = grader.grade_question_dir(workspace.questions_dir / 'question_001')
+
+        # A rubric part is not a student step: its deterministic feedback stands
+        # and the annotator's ``conceptual`` verdict is not applied to it.
+        figure = next(s for s in grade.steps if s.part_id == 'figure')
+        assert figure.feedback.startswith('part:figure;')
+        assert figure.error_type == ErrorType.UNCERTAIN
+
+        student_steps = [s for s in grade.steps if s.step_number > 0]
+        assert student_steps
+        assert all(s.feedback.endswith(f'(prompt={GRADING_PROMPT_VERSION})') for s in student_steps)
+        prompts = [prompt for prompt, _model in client.text_calls]
+        assert any('Validation reason: algebra ok' in prompt for prompt in prompts)
+
     def test_step_grader_sends_step_roles_to_pool(self, tmp_path: Path) -> None:
         workspace = GradingWorkspace(tmp_path, TestScoreAggregate._pack_rubric())
         steps = [
@@ -3090,6 +3171,53 @@ class TestStepGrader:
         assert figure_step.score == pytest.approx(figure_score)
         if status == 'uncertain':
             assert grade.review_status == ReviewStatus.REVIEW_REQUIRED
+
+
+class TestFeedbackAnnotator:
+
+    @staticmethod
+    def _grade(steps: list[StepGrade]) -> QuestionGrade:
+        return make_report_question_grade(1, 5.0, 10.0).model_copy(
+            update={'steps': steps, 'final_answer': None}
+        )
+
+    def test_part_grades_are_not_sent_to_the_llm(self) -> None:
+        question = make_question(steps=[make_step(1, 'x<4')], final='x<4')
+        part = make_step_grade(0, 2.0, 2.0, part_id='figure').model_copy(
+            update={'feedback': 'part:figure; ok'}
+        )
+        client = FakeClient(
+            json.dumps({'error_type': 'transcription', 'feedback': 'Your response is empty.'})
+        )
+        annotated = FeedbackAnnotator(client, 'r').annotate(
+            question, self._grade([part]), make_validation(ValidationStatus.VALID, final=None)
+        )
+        assert client.text_calls == []
+        assert annotated.steps[0].feedback == 'part:figure; ok'
+        assert annotated.steps[0].error_type == ErrorType.NONE
+
+    def test_prompt_separates_validator_reason_from_current_feedback(self) -> None:
+        question = make_question(steps=[make_step(1, 'x<4')], final='x<4')
+        graded = make_step_grade(1, 3.0, 3.0).model_copy(update={'feedback': 'composed text'})
+        client = FakeClient(json.dumps({'error_type': 'none', 'feedback': ''}))
+        FeedbackAnnotator(client, 'r').annotate(
+            question,
+            self._grade([graded]),
+            make_validation((ValidationStatus.VALID, 'validator reason'), final=None),
+        )
+        prompt, model = client.text_calls[0]
+        assert model == 'r'
+        assert 'Validation reason: validator reason' in prompt
+        assert 'Current deterministic feedback: composed text' in prompt
+
+    def test_legacy_two_argument_call_still_annotates(self) -> None:
+        question = make_question(steps=[make_step(1, 'x<4')], final='x<4')
+        graded = make_step_grade(1, 3.0, 3.0).model_copy(update={'feedback': 'valid'})
+        client = FakeClient(json.dumps({'error_type': 'calculation', 'feedback': 'Cek ulang.'}))
+        annotated = FeedbackAnnotator(client, 'r').annotate(question, self._grade([graded]))
+        assert annotated.steps[0].error_type == ErrorType.CALCULATION
+        assert annotated.steps[0].feedback.startswith('Cek ulang.')
+
 
 class TestStandardExtract:
 
@@ -4306,15 +4434,33 @@ class TestReport:
     def test_latex_text_maps_unicode_punctuation(self) -> None:
         assert latex_text('carry\u2011forward \u2014 x_1 ≤ 2') == r'carry-forward --- x\_1 $\le$ 2'
 
-    def test_part_row_recovers_id_after_annotator_rewrite(self) -> None:
+    def test_part_row_uses_part_id_and_falls_back_to_position(self) -> None:
         question, grade = self._graded_question()
-        annotated = [
-            s.model_copy(update={'feedback': 'Redraw the number line.'}) if s.step_number == 0 else s
+        # New artifacts name the part explicitly, even after an annotator rewrite.
+        rewritten = [
+            s.model_copy(update={'feedback': 'Redraw the number line.'})
+            if s.part_id == 'figure'
+            else s
             for s in grade.steps
         ]
-        grade = grade.model_copy(update={'steps': annotated, 'part_statuses': {'figure': 'valid'}})
+        grade = grade.model_copy(
+            update={'steps': rewritten, 'part_statuses': {'figure': 'valid'}}
+        )
         view = build_question_view(QuestionReportDetail(question=question, grade=grade), Path('.'))
         assert [(p.number, p.comment) for p in view.parts] == [('figure', 'Redraw the number line.')]
+
+        # Older grading.json has no part_id; recover the id from part_statuses order.
+        legacy = [
+            s.model_copy(update={'part_id': None})
+            if s.step_number == 0
+            else s
+            for s in grade.steps
+        ]
+        legacy_grade = grade.model_copy(update={'steps': legacy})
+        legacy_view = build_question_view(
+            QuestionReportDetail(question=question, grade=legacy_grade), Path('.')
+        )
+        assert [p.number for p in legacy_view.parts] == ['figure']
 
     def test_graphics_path_relative_posix(self, tmp_path: Path) -> None:
         png = tmp_path / 'run' / 'crops' / 'page_001' / 'page_001_region_00_solution.png'
@@ -4337,7 +4483,9 @@ class TestReport:
                     make_step_grade(
                         2, 0.0, 3.0, status=StepGradeStatus.INCORRECT, validation=ValidationStatus.INVALID
                     ).model_copy(update={'feedback': 'solution sets differ'}),
-                    make_step_grade(0, 2.0, 2.0).model_copy(update={'feedback': 'part:figure; figure step present'}),
+                    make_step_grade(0, 2.0, 2.0, part_id='figure').model_copy(
+                        update={'feedback': 'part:figure; figure step present'}
+                    ),
                 ],
                 'final_answer': make_step_grade(2, 0.0, 2.0, validation=ValidationStatus.INVALID).model_copy(
                     update={'feedback': 'final answer differs from standard'}

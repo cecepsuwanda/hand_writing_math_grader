@@ -103,6 +103,7 @@ Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recogni
 | Capability id | Bab terkait |
 |---------------|-------------|
 | `abs` | 2 |
+| `indexed_roots` (akar bernama, `x_1` / `x_{1}` / `x₁` → `x`) | 1.5, 2 |
 | `interval` (selang, `\cup` / `∪` / ASCII `U`) | 1.3, 3.2 |
 | `limit` | 4, 5 |
 | `derivative` | 6 |

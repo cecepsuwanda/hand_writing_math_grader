@@ -78,7 +78,11 @@ def prompt_choice(
     prompt: str = "Pilihan: ",
     input_fn: InputFn | None = None,
 ) -> T:
-    """Ask until ``parse(items, raw)`` succeeds; EOF raises ``error_cls``."""
+    """Ask until ``parse(items, raw)`` succeeds; EOF raises ``error_cls``.
+
+    Ctrl+C cancels the whole session (``OperationCancelledError``), matching
+    the other prompts in this module.
+    """
     while True:
         try:
             raw = _resolve(input_fn)(prompt)
@@ -86,7 +90,7 @@ def prompt_choice(
             raise error_cls("no input received") from exc
         except KeyboardInterrupt as exc:
             print()
-            raise error_cls("cancelled") from exc
+            raise OperationCancelledError(prompt.strip()) from exc
         try:
             selected = parse(items, raw)
         except ValueError as exc:

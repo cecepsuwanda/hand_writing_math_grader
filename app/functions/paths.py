@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 
@@ -59,14 +59,57 @@ def resolve_jawaban_pdf(pdf: Path, jawaban_dir: Path) -> Path:
     return resolve_input_path(pdf, jawaban_dir)
 
 
+def shorten_pdf_name(pdf: Path) -> str:
+    """Shortened, lower-case display name for an LMS-style PDF.
+
+    Moodle exports read::
+
+        <full name>_<id>_assignsubmission_file_<topic>_<name>_<student id>.pdf
+
+    The short name keeps the name (minus its first word), the student id, and
+    the topic, joined by underscores. Anything else falls back to the plain
+    lower-cased file name with spaces turned into underscores.
+    """
+    pdf = Path(pdf)
+    parts = pdf.stem.split("_")
+    marker = next(
+        (
+            index
+            for index in range(len(parts) - 1)
+            if parts[index].lower() == "assignsubmission"
+            and parts[index + 1].lower() == "file"
+        ),
+        None,
+    )
+    if marker is None:
+        return pdf.name.lower().replace(" ", "_")
+
+    topic_part = parts[marker + 2] if marker + 2 < len(parts) else ""
+    name_part = parts[marker + 3] if marker + 3 < len(parts) else ""
+    student_id = parts[marker + 4] if marker + 4 < len(parts) else ""
+
+    topic_clean = "_".join(topic_part.lower().split())
+    name_words = name_part.split()
+    if len(name_words) > 1:
+        # The first word is the repeated given name in Moodle exports.
+        name_words = name_words[1:]
+    name_clean = "_".join(word.lower() for word in name_words)
+    components = [c for c in [name_clean, student_id.lower(), topic_clean] if c]
+    return "_".join(components) + pdf.suffix.lower()
+
+
 def parse_path_choice(
     paths: Sequence[Path],
     raw: str,
     *,
     kind: str = "file",
     default_suffix: str | None = None,
+    alias: Callable[[Path], str] | None = None,
 ) -> Path:
     """Map a menu choice (filename preferred, then 1-based index) to a path.
+
+    ``alias`` supplies a display name (see ``shorten_pdf_name``) that is also
+    accepted, so a name the menu shows shortened can still be typed.
 
     Raises:
         ValueError: if the selection is empty or does not match.
@@ -85,6 +128,14 @@ def parse_path_choice(
         if default_suffix and name == f"{lowered}{default_suffix.lower()}":
             return path
 
+    if alias is not None:
+        for path in paths:
+            short = alias(path).lower()
+            if short == lowered:
+                return path
+            if default_suffix and short == f"{lowered}{default_suffix.lower()}":
+                return path
+
     if choice.isdigit():
         index = int(choice)
         if 1 <= index <= len(paths):
@@ -96,7 +147,9 @@ def parse_path_choice(
 
 def parse_pdf_choice(pdfs: Sequence[Path], raw: str) -> Path:
     """Map a menu choice (filename preferred, then 1-based index) to a PDF path."""
-    return parse_path_choice(pdfs, raw, kind="PDF", default_suffix=".pdf")
+    return parse_path_choice(
+        pdfs, raw, kind="PDF", default_suffix=".pdf", alias=shorten_pdf_name
+    )
 
 
 def parse_kunci_choice(tex_files: Sequence[Path], raw: str) -> Path:

@@ -332,12 +332,16 @@ def build_question_view(detail: QuestionReportDetail, base_dir: Path) -> LatexQu
         if number not in known
     )
 
-    # Part grades are appended in part_statuses order; the LLM annotator may
-    # replace the ``part:<id>;`` feedback prefix, so recover the id by position.
+    # Part grades carry an explicit ``part_id``; older grading.json files predate
+    # it and only ordered ``part_statuses``, so fall back to position there.
     part_grades = [g for g in (grade.steps if grade else []) if g.step_number == 0]
-    part_ids = list((grade.part_statuses or {}).keys()) if grade else []
+    fallback_ids = list((grade.part_statuses or {}).keys()) if grade else []
     parts = [
-        _part_row(g, part_ids[i] if i < len(part_ids) else "")
+        _part_row(
+            g,
+            g.part_id
+            or (fallback_ids[i] if i < len(fallback_ids) else ""),
+        )
         for i, g in enumerate(part_grades)
     ]
 

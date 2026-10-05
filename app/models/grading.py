@@ -61,6 +61,9 @@ class StepGrade(BaseModel):
     error_type: ErrorType = ErrorType.NONE
     feedback: str = ""
     validation_status: ValidationStatus
+    # Set for a rubric-part grade (critical_points/figure/…); those carry the
+    # ``step_number=0`` sentinel and are not student steps.
+    part_id: str | None = None
 
 
 class QuestionGrade(BaseModel):

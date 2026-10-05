@@ -365,6 +365,7 @@ def make_step_grade(
     *,
     status: StepGradeStatus = StepGradeStatus.CORRECT,
     validation: ValidationStatus = ValidationStatus.VALID,
+    part_id: str | None = None,
 ) -> StepGrade:
     return StepGrade(
         step_number=number,
@@ -374,6 +375,7 @@ def make_step_grade(
         error_type=ErrorType.NONE,
         feedback="",
         validation_status=validation,
+        part_id=part_id,
     )
 
 

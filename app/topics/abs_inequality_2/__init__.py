@@ -7,7 +7,8 @@ from app.models.grading import Rubric
 from app.models.recognition import SymbolicPayload
 from app.topics.inequality_1_5 import PACK as INEQUALITY_15
 
-# Abs-first chain; keep interval/HP support and shared symbolic adapters.
+# Same capability chain as topic 1.5 (``abs`` keeps its shared position there);
+# keep interval/HP support and shared symbolic adapters.
 _CAPABILITY_IDS: tuple[str, ...] = (
     "matrix",
     "det_inverse",

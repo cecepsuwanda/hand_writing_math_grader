@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Hasil · {{ view.run | short_pdf }}{% endblock %}
+{% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(view.run) }}">{{ view.run | short_pdf }}</a> / Hasil{% endblock %}
+{% block content %}
+{% set report = view.report %}
+<section class="card">
+  <div class="row-between">
+    <h1>Hasil penilaian</h1>
+    <span class="row">
+      {% for kind in view.report_files %}
+      <a class="btn btn-small btn-secondary" href="{{ run_url(view.run, '/files/' ~ kind.value) }}">{{ kind.value | upper }}</a>
+      {% endfor %}
+    </span>
+  </div>
+  {% if report %}
+  <p class="score-total">
+    <strong>{{ "%g" | format(report.total_score) }}</strong> / {{ "%g" | format(report.maximum_total) }}
+    <span class="badge {% if report.overall_status.value == 'AUTO_ACCEPT' %}badge-ok{% else %}badge-warn{% endif %}">{{ report.overall_status.value }}</span>
+  </p>
+  <p class="muted small">NIM {{ report.metadata.student_id }} · {{ report.metadata.generated_at }}
+    · vision <code>{{ report.metadata.vision_model or "—" }}</code> · reasoning <code>{{ report.metadata.reasoning_model or "—" }}</code></p>
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th>Soal</th><th>Nilai</th><th>Status</th><th>Langkah</th><th>Bagian</th></tr></thead>
+    <tbody>
+      {% for row in report.questions %}
+      <tr class="{% if row.missing %}muted{% endif %}">
+        <td><a href="#grade-{{ row.question_id }}">{{ row.question_number }}</a></td>
+        <td>{{ "%g" | format(row.score) }} / {{ "%g" | format(row.maximum_score) }}</td>
+        <td>{% if row.missing %}<span class="badge badge-failed">{{ row.missing_label or "TIDAK ADA" }}</span>
+            {% else %}<span class="badge {% if row.review_status.value == 'AUTO_ACCEPT' %}badge-ok{% else %}badge-warn{% endif %}">{{ row.review_status.value }}</span>{% endif %}</td>
+        <td>{{ row.step_count }}</td>
+        <td class="small">{% for part, status in row.part_statuses.items() %}<span class="badge">{{ part }}: {{ status }}</span> {% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Belum ada laporan untuk run ini.</p>
+  {% endif %}
+  <div class="row">
+    <a class="btn btn-secondary" href="{{ run_url(view.run, '/review') }}">Edit transkripsi</a>
+    <form method="post" action="{{ run_url(view.run, '/finish-questions') }}">
+      <button class="btn btn-secondary">Nilai ulang</button>
+    </form>
+  </div>
+</section>
+
+{% for item in view.grades %}
+<section class="card" id="grade-{{ item.question_id }}">
+  {% set grade = item.grade %}
+  {% if grade %}
+  <div class="row-between">
+    <h2>Soal {{ grade.question_number }} <small class="muted">{{ item.question_id }}</small></h2>
+    <strong>{{ "%g" | format(grade.score) }} / {{ "%g" | format(grade.maximum_score) }}</strong>
+  </div>
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th>Langkah</th><th>Status</th><th>Nilai</th><th>Jenis kesalahan</th><th>Umpan balik</th></tr></thead>
+    <tbody>
+      {% for step in grade.steps %}
+      <tr class="status-{{ step.status.value }}">
+        <td>{% if step.part_id %}{{ step.part_id }}{% else %}{{ step.step_number }}{% endif %}</td>
+        <td><span class="badge badge-step-{{ step.status.value }}">{{ step.status.value }}</span></td>
+        <td>{{ "%g" | format(step.score) }} / {{ "%g" | format(step.max_score) }}</td>
+        <td>{% if step.error_type.value != "none" %}{{ step.error_type.value }}{% endif %}</td>
+        <td class="small">{{ step.feedback }}</td>
+      </tr>
+      {% endfor %}
+      {% if grade.final_answer %}
+      {% set step = grade.final_answer %}
+      <tr class="status-{{ step.status.value }}">
+        <td>Jawaban akhir</td>
+        <td><span class="badge badge-step-{{ step.status.value }}">{{ step.status.value }}</span></td>
+        <td>{{ "%g" | format(step.score) }} / {{ "%g" | format(step.max_score) }}</td>
+        <td>{% if step.error_type.value != "none" %}{{ step.error_type.value }}{% endif %}</td>
+        <td class="small">{{ step.feedback }}</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <h2>{{ item.question_id }}</h2>
+  <p class="error-text">grading.json tidak valid.</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

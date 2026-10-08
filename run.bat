@@ -3,26 +3,17 @@ setlocal
 cd /d "%~dp0"
 set PYTHONIOENCODING=utf-8
 
-REM Default: interactive main menu (topic / ingest kunci / crop / recrop /
-REM   label questions / reload labels / grade from crops / exit)
+REM Starts the local web UI (default http://127.0.0.1:8000, see web: in config.yaml).
 REM Examples:
 REM   run.bat
-REM   run.bat menu
-REM   run.bat ingest-kunci
-REM   run.bat process
-REM   run.bat process smoke_inequality.pdf
-REM   run.bat render smoke_inequality.pdf
-REM   run.bat --help
+REM   run.bat --port 8765
+REM   run.bat --config path\to\config.yaml
 
-if "%~1"=="" (
-  python -m app.cli menu
-) else (
-  python -m app.cli %*
-)
+python -m app.web %*
 
 set EXITCODE=%ERRORLEVEL%
 if not "%EXITCODE%"=="0" (
   echo.
-  echo ERROR: command exited with code %EXITCODE%.
+  echo ERROR: server exited with code %EXITCODE%.
 )
 exit /b %EXITCODE%

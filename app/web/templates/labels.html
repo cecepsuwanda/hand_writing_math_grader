@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Nomor soal · {{ view.run | short_pdf }}{% endblock %}
+{% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(view.run) }}">{{ view.run | short_pdf }}</a> / Nomor soal{% endblock %}
+{% block main_class %}container-wide{% endblock %}
+{% block content %}
+<div class="grid-side">
+  <div>
+    <section class="card">
+      <div class="row-between">
+        <h1>Nomor soal per crop</h1>
+        <form method="post" action="{{ run_url(view.run, '/labels/detect') }}"
+              data-confirm="Deteksi ulang dengan model vision akan menimpa nomor soal yang sudah diisi. Lanjut?">
+          <button class="btn btn-secondary">Deteksi otomatis (vision)</button>
+        </form>
+      </div>
+      <p class="muted small">Isi satu atau beberapa nomor soal per crop (pisahkan dengan koma). Kosongkan jika crop bukan jawaban.</p>
+    </section>
+    {% include "partials/label_form.html" %}
+  </div>
+  <aside class="card">
+    <h3>Soal di kunci</h3>
+    {% if view.questions %}
+    <ol class="question-list">
+      {% for q in view.questions %}
+      {% set stem = q.stem.strip() %}
+      <li value="{{ q.number }}">
+        {% if stem.startswith("$") and stem.endswith("$") and stem.strip("$").count("$") == 0 %}
+        <span class="small" data-tex="{{ stem.strip('$') }}">{{ stem }}</span>
+        {% else %}
+        <span class="small">{{ stem | truncate(160) }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="muted small">Kunci topik ini belum di-ingest.</p>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

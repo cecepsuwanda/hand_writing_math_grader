@@ -21,9 +21,9 @@ description: >-
 
 | Domain | File |
 |--------|------|
-| Pipeline (config → CLI) | `tests/test_suite.py` |
+| Pipeline (config → web) | `tests/test_suite.py` |
 | Crop / ink / symbolic recognition | `tests/test_crop_symbolic.py` |
-| Confirm / recrop / question_crops / labeler | `tests/test_crop_confirm.py` |
+| Confirm / recrop / editor crop manual / question_crops / labeler | `tests/test_crop_confirm.py` |
 | Number line / figure | `tests/test_number_line.py` |
 | Support bersama (bukan kasus uji) | `tests/support/` |
 
@@ -37,10 +37,11 @@ Domain baru → class `TestNama` di file terdekat (biasanya `test_suite.py`).
 | `QuestionValidation` / rubric | `builders.make_validation`, `make_step_validation`, `sample_rubric` |
 | `config.yaml`, PDF, PNG, pages+regions | `builders.write_config`, `write_pdf`, `write_png`, `write_crop_workspace` |
 | Standar kunci di `tmp_path` | `harness.q1_standard`, `GradingWorkspace` |
-| Jalankan `python -m app.cli ...` | `harness.CliHarness` (+ `.controller()`, `.inputs()`, `.tty()`, `.run()`) |
+| Halaman / endpoint web | `harness.WebHarness` (+ `.client`, `.pdf()`, `.run_dir()`, `.controller()`, `.jobs`) |
+| Job background tanpa thread | `fakes.FakeJobManager` (dipasang otomatis oleh `WebHarness`) |
 | `ProcessController` tanpa Ollama | `harness.ProcessHarness` |
 | Vision recognizer / Ollama HTTP / LLM judge | `harness.make_recognizer`, `make_ollama_client`, `make_llm_judge`; `fakes.FakeClient`, `FakeProposer`, `RecordingJudge` |
-| Assert status validasi / output CLI | `asserts.assert_all_valid`, `assert_step_statuses`, `assert_contains` |
+| Assert status validasi / isi respons | `asserts.assert_all_valid`, `assert_step_statuses`, `assert_contains` |
 
 Belum ada? Tambah ke modul lapisan yang sesuai **jika** dipakai ≥ 2 test atau lintas file; kalau sekali pakai, nested class/helper di test itu saja.
 
@@ -68,22 +69,25 @@ Test progress:
 ```python
 from tests.support.asserts import assert_all_valid
 from tests.support.builders import make_question
-from tests.support.harness import CliHarness
+from tests.support.harness import WebHarness
 
 class TestMathInequality:
     def test_validator_linear_chain(self) -> None:
         question = make_question('2x-3<5', '2x<8', 'x<4', final='x < 4')
         assert_all_valid(SymPyStepValidator().validate_question(question))
 
-class TestCliProcess:
-    def test_cli_process_no_pdfs_in_jawaban(self, tmp_path, monkeypatch, capsys) -> None:
-        cli = CliHarness(tmp_path, monkeypatch)
-        assert cli.run('process') == 1
-        assert 'No PDF files found' in capsys.readouterr().err
+class TestWebDashboard:
+    def test_dashboard_lists_pdfs(self, tmp_path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        web.pdf('answer.pdf')
+        response = web.client.get('/')
+        assert response.status_code == 200
+        assert 'answer.pdf' in response.text
 ```
 
-- Fixture: `tmp_path`, `monkeypatch`, `capsys`.
-- Isolasi lewat `tmp_path`; jangan andalkan `data/output/` dari CLI.
+- Fixture: `tmp_path`, `monkeypatch`.
+- Isolasi lewat `tmp_path`; jangan andalkan `data/output/` asli.
+- Job web berjalan sinkron lewat `FakeJobManager`; jangan menjalankan uvicorn di pytest.
 - Jangan panggil Ollama live di pytest — `FakeClient` / `make_ollama_client`.
 
 ## Setelah selesai

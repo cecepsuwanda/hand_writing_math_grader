@@ -1,0 +1,8 @@
+<span class="steps">
+  <span class="step {% if run.steps.pages %}done{% endif %}" title="Halaman ter-render">{{ run.steps.pages }} hal</span>
+  <span class="step {% if run.steps.crops %}done{% endif %}" title="Kotak crop">crop</span>
+  <span class="step {% if run.steps.labels %}done{% endif %}" title="Nomor soal per crop">label</span>
+  <span class="step {% if run.steps.questions %}done{% endif %}" title="question.json">{{ run.steps.questions }} soal</span>
+  <span class="step {% if run.steps.graded %}done{% endif %}" title="grading.json">nilai</span>
+  <span class="step {% if run.steps.report %}done{% endif %}" title="Laporan">laporan</span>
+</span>

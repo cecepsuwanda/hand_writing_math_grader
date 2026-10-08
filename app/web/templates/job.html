@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} · Math Grader{% endblock %}
+{% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(job.run) }}">{{ job.run | short_pdf }}</a> / Job{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>{{ job.title }}</h1>
+  <p class="muted small">Run <code>{{ job.run }}</code> · job <code>{{ job.id }}</code></p>
+  {% if job.finished %}
+    <div>{% include "partials/job_progress.html" %}</div>
+    <div>{% include "partials/job_done.html" %}</div>
+  {% else %}
+  <div hx-ext="sse" sse-connect="/jobs/{{ job.id }}/events" sse-close="done">
+    <div sse-swap="progress">{% include "partials/job_progress.html" %}</div>
+    <div sse-swap="done" data-autoredirect></div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -9,7 +9,6 @@ from app.exceptions import QuestionsNotFoundError, RubricNotFoundError
 from app.functions.question_names import grading_filename, question_artifact_filename
 from app.interfaces.grader import QuestionGrader
 from app.models.grading import GradeResult
-from app.views.error_view import print_warning
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +37,7 @@ class GradeController:
                 first_error = first_error or exc
                 skipped.append(path.parent.name)
                 (path.parent / grading_filename()).unlink(missing_ok=True)
-                print_warning(f"{path.parent.name} tidak dinilai: {exc}")
+                logger.warning(f"{path.parent.name} tidak dinilai: {exc}")
                 continue
             grades.append(grade)
             artifact_paths.append(path.parent / grading_filename())

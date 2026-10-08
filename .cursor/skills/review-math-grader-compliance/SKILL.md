@@ -3,7 +3,7 @@ name: review-math-grader-compliance
 description: >-
   Reviews Math Grader code or diffs for MVC, SOLID/DI, clean code, OOP+FP,
   topic-pack boundaries, recognition fidelity, SymPy-before-LLM validation,
-  per-run artifacts, and CLI-first product rules. Use when reviewing PRs,
+  per-run artifacts, and local web-UI product rules. Use when reviewing PRs,
   checking architecture compliance, auditing an extension, or when the user
   asks for a compliance or architecture review.
 ---
@@ -22,13 +22,15 @@ description: >-
 
 ### MVC, SOLID, clean code, OOP+FP
 
-- [ ] View tidak memanggil Ollama/SymPy/persist artefak
-- [ ] View tidak import `app.controllers` / `app.services`; error/peringatan ke stderr (`print_error` / `print_warning` di `error_view`)
-- [ ] Tidak ada `input()` di controller, `cli.py`, atau `app/commands/`; input interaktif hanya lewat `views/prompt_view.py`
-- [ ] Controller tipis (orkestrasi + view; tidak berisi prompt/rumus grading)
+- [ ] View (template Jinja2 / JS di `app/web/static/js/`) tidak memanggil Ollama/SymPy/persist artefak selain lewat endpoint
+- [ ] Router di `app/web/routers/` tipis: schema → `WebPipeline` / `JobManager` → template/JSON; tanpa glob/parse artefak sendiri
+- [ ] Path dari URL lewat `app/web/files.py` (anti path traversal); upload hanya ke folder input config
+- [ ] Pekerjaan lama (Ollama, render, grading) lewat `JobManager`, bukan sinkron di handler
+- [ ] Tidak ada `input()` / `print()` di controller atau service
+- [ ] Controller tipis (orkestrasi; tidak berisi prompt/rumus grading; tidak import `app.web`)
 - [ ] Controller tidak import konstanta/implementasi dari `app/services` (di-inject `pipeline_factory`); tidak glob/parse artefak sendiri (pakai `functions/*_artifact.py`)
 - [ ] Semua `*Result` = model Pydantic di `app/models/` (tanpa dataclass hasil di controller); default bersama dari `models/defaults.py`
-- [ ] `cli.py` tipis (`build_parser` + `main` atas `COMMANDS`); subcommand = class `Command` di `app/commands/`, alur bersama di `flows.py`, adapter `CliMenuActions`; state menu di `MenuController` / `MenuSession`
+- [ ] `app/web/main.py` hanya merakit app (`create_app` + `ROUTERS`); state sesi (topik aktif) di `WebSession`, use-case di `WebPipeline`
 - [ ] Service bergantung interface / DI lewat `pipeline_factory`, bukan konkret library tersebar
 - [ ] `functions/` deterministik; I/O hanya di modul artefak yang diizinkan (`*_artifact.py`, `question_crops.py`, `image_crop.py`, `report_details.py`, `workspace_reset.py`, `load_exam_schema`); tanpa network/model
 - [ ] Service/client ber-state memakai OOP di `services/`; tidak ada static util class
@@ -53,11 +55,11 @@ description: >-
 
 ### Produk & artefak
 
-- [ ] Entry tetap CLI; API hanya adapter opsional
+- [ ] Entry = web UI lokal (`python -m app.web`, bind `127.0.0.1`); aset pihak ketiga di-vendor (tanpa CDN)
 - [ ] Nama model dari config/env, bukan hard-coded
 - [ ] Pengosongan output hanya `data/output/<nama_pdf>/` (per-run); `standards/` dan run lain aman
 - [ ] Artefak intermediate tidak dihapus bila tahap berikut gagal
-- [ ] Dokumen kanonik diperbarui bila kontrak/CLI/pack berubah
+- [ ] Dokumen kanonik diperbarui bila kontrak/web/pack berubah
 
 ### Testing
 

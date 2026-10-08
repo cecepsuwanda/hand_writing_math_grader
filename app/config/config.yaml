@@ -3,7 +3,7 @@ pdf:
 
 input:
   jawaban_dir: data/input/jawaban
-  # Source TeX for CLI ingest-kunci → standards/.../solutions (enumerate+align+HP slice).
+  # Source TeX for kunci ingest (web: Ingest) → standards/.../solutions (enumerate+align+HP slice).
   kunci_jawaban_dir: data/input/kunci_jawaban
 
 output:
@@ -27,8 +27,13 @@ recognition:
     min_block_height_ratio: 0.03
     min_row_ink_ratio: 0.002
     header_fraction: 0.08
+    # Gutter ink as a fraction of the weaker neighbouring column peak.
     column_valley_ratio: 0.15
     margin_ratio: 0.02
+    # Vertical ink runs this share of the page height are borders, not writing.
+    long_line_ratio: 0.1
+    # Ink must be this much darker than the median (paper) grey; 0 disables.
+    paper_offset: 40
 
 grading:
   # Ingest + grading per topic: <standards_root>/topik_<bab> (1.5 → topik_1, 2 → topik_2).
@@ -45,3 +50,9 @@ report:
     pdflatex_path: ""
     passes: 2
     timeout_seconds: 120
+
+web:
+  # python -m app.web → http://127.0.0.1:8000. Keep loopback: pages show student work.
+  host: 127.0.0.1
+  port: 8000
+  max_upload_mb: 50

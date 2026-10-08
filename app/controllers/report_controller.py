@@ -40,7 +40,6 @@ from app.models.report import (
     ReportResult,
 )
 from app.services.grading.rubric import RubricLoader
-from app.views.error_view import print_warning
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +157,7 @@ class ReportController:
         }
         if parts_by_number:
             for number in sorted(ungraded - set(parts_by_number)):
-                print_warning(
+                logger.warning(
                     f"Soal {number} (nomor sementara, di luar kunci) tidak dinilai"
                 )
             ungraded &= set(parts_by_number)
@@ -179,9 +178,9 @@ class ReportController:
             return self._rubrics.load(number).maximum_score
         except RubricNotFoundError as exc:
             if self._default_rubric is not None:
-                print_warning(f"Soal {number}: {exc}; nilai maksimum dari rubric bawaan topik")
+                logger.warning(f"Soal {number}: {exc}; nilai maksimum dari rubric bawaan topik")
                 return self._default_rubric(number, parts).maximum_score
-            print_warning(f"Soal {number} tidak masuk nilai maksimum: {exc}")
+            logger.warning(f"Soal {number} tidak masuk nilai maksimum: {exc}")
             return None
 
     @staticmethod
@@ -228,7 +227,7 @@ class ReportController:
         try:
             return self._pdf_compiler.compile(tex_path)
         except ReportPdfError as exc:
-            print_warning(str(exc))
+            logger.warning(str(exc))
             # A PDF still open in a viewer cannot be removed; the warning already says so.
             with contextlib.suppress(OSError):
                 tex_path.with_suffix(".pdf").unlink(missing_ok=True)

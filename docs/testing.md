@@ -7,16 +7,16 @@ Panduan menulis dan memperluas tes Math Grader. Discovery memakai **pytest** sta
 1. **Tanpa file test baru** — inventaris `tests/` tertutup. Perluasan hanya di file yang sudah ada.
 2. **OOP Python** — kasus uji sebagai method di `class TestNamaDomain:`; fake/double sebagai class.
 3. **Mudah ditambah/dikurangi** — unit ekstensi = class (area) + method (kasus). Hapus method/class = hapus coverage; tidak ada daftar registrasi yang harus di-update.
-4. **Ringkas lewat `tests/support/`** — setup berulang (objek domain, config, fake, harness CLI/pipeline) dipanggil dari paket support bergaya MVC, bukan disalin per test.
-5. **Tanpa live Ollama** di pytest default — mock HTTP / fake client. Smoke live: `scripts/smoke_live.bat` / CLI manual.
+4. **Ringkas lewat `tests/support/`** — setup berulang (objek domain, config, fake, harness web/pipeline) dipanggil dari paket support bergaya MVC, bukan disalin per test.
+5. **Tanpa live Ollama, uvicorn, atau browser** di pytest default — mock HTTP / fake client, `TestClient` in-process. Smoke live: `scripts/smoke_live.bat`.
 
 ## Inventaris file (set tertutup)
 
 | File | Peran |
 |------|--------|
-| `tests/test_suite.py` | Suite pipeline: config, PDF, vision, extract, LaTeX, SymPy, LLM hybrid, grading, kunci, report, CLI, topic pack |
+| `tests/test_suite.py` | Suite pipeline: config, PDF, vision, extract, LaTeX, SymPy, LLM hybrid, grading, kunci, report, `ProcessController`, topic pack, web (dashboard, job, hasil, keamanan) |
 | `tests/test_crop_symbolic.py` | Crop helpers, ink layout, two-pass recognizer, symbolic merge, stems/schema |
-| `tests/test_crop_confirm.py` | Regions artifact, propose/recrop, `CropController` confirm loop, `question_crops`, labeler |
+| `tests/test_crop_confirm.py` | Regions artifact, propose/recrop, `CropController.ensure_crops`, editor crop manual, `question_crops`, labeler, halaman label + review |
 | `tests/test_number_line.py` | Parse/compare number line, kunci figure, `StandardFinalComparer.compare_figure` |
 | `tests/support/` | Paket support bersama (builders, fakes, harness, asserts) — **bukan** tempat kasus uji |
 | `tests/__init__.py` | Package marker |
@@ -34,10 +34,10 @@ Setiap lapisan punya satu tanggung jawab; test cukup merangkai ketiganya lalu me
 
 | Modul | Lapisan | Isi utama |
 |-------|---------|-----------|
-| `builders.py` | Model | Factory objek domain & fixture file: `make_question`, `make_step`, `make_figure`, `symbolic`, `make_validation`, `make_step_validation`, `make_step_grade`, `sample_rubric`, `make_process_result`, `make_process_question_grade`, `make_report_question_grade`, `make_report_metadata`, `make_report_result`, `make_page`; `write_pdf`, `write_png`, `write_fake_png_bytes`, `write_config`, `write_crop_workspace`, `write_recognition`, `write_report_workspace`, `single_question_json`; konstanta `MINI_KUNCI`, `Q1_KUNCI` |
-| `fakes.py` | Double port | `FakeClient` (Ollama vision/text), `FakeProposer` (ink), `RecordingJudge` (LLM judge), `RecordingMenuActions` (port `MenuActions` untuk `MenuController`), `RecordingProcessController` (pengganti `build_process_controller`), `FakeLatexRunner` (pengganti `subprocess.run` untuk `PdfLatexCompiler`) |
-| `harness.py` | Controller | `CliHarness` (config temp + patch `app.cli.build_*` + `main()`), `ProcessHarness` (`ProcessController` dengan 7 stage `MagicMock`; `progress` = stage, `progress_events` = `ProcessProgress` lengkap), `GradingWorkspace` (standar + folder questions → `GradeController`), `q1_standard`, `make_recognizer`, `make_ollama_client`, `make_llm_judge`, `patch_tty` (patch `sys.stdin.isatty`), `patch_inputs` (patch `builtins.input`) |
-| `asserts.py` | View | `assert_all_valid`, `assert_step_statuses`, `assert_contains` (teks CLI) |
+| `builders.py` | Model | Factory objek domain & fixture file: `make_question`, `make_step`, `make_figure`, `symbolic`, `make_validation`, `make_step_validation`, `make_step_grade`, `sample_rubric`, `make_process_result`, `make_process_question_grade`, `make_report_question_grade`, `make_report_metadata`, `make_report_result`, `make_page`; `write_run_pages`, `write_pdf`, `write_png`, `write_fake_png_bytes`, `write_config`, `write_crop_workspace`, `write_recognition`, `write_report_workspace`, `single_question_json`; konstanta `MINI_KUNCI`, `Q1_KUNCI` |
+| `fakes.py` | Double port | `FakeClient` (Ollama vision/text), `FakeProposer` (ink), `RecordingJudge` (LLM judge), `InlineExecutor` / `DeferredExecutor` + `FakeJobManager` (job web tanpa thread), `RecordingProcessController` (pengganti `build_process_controller`), `FakeLatexRunner` (pengganti `subprocess.run` untuk `PdfLatexCompiler`) |
+| `harness.py` | Controller | `WebHarness` (config temp + `create_app` + `TestClient`, job sinkron; `.pdf()`, `.kunci()`, `.standard()`, `.run_dir()`, `.controller()`, `.htmx()`, `.job()`), `ProcessHarness` (`ProcessController` dengan 7 stage `MagicMock`; `progress` = stage, `progress_events` = `ProcessProgress` lengkap), `GradingWorkspace` (standar + folder questions → `GradeController`), `q1_standard`, `make_recognizer`, `make_ollama_client`, `make_llm_judge` |
+| `asserts.py` | View | `assert_all_valid`, `assert_step_statuses`, `assert_contains` (teks HTML / pesan) |
 
 Aturan:
 
@@ -60,13 +60,14 @@ class TestStepGrader:
         grade = workspace.grade(with_comparer=True).grades[0]
         assert grade.score == pytest.approx(10.0)
 
-class TestCliProcess:
-    def test_cli_process_resolves_bare_filename(self, tmp_path: Path, monkeypatch) -> None:
-        cli = CliHarness(tmp_path, monkeypatch)
-        pdf = cli.pdf('smoke_inequality.pdf')
-        fake = cli.controller()
-        assert cli.run('process', 'smoke_inequality.pdf') == 0
-        assert fake.pdf_paths == [pdf]
+class TestWebJobs:
+    def test_api_process_queues_a_full_run(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)          # controller (TestClient + job sinkron)
+        web.pdf('Nama_1301204567_tugas.pdf')
+        fake = web.controller()                          # double build_process_controller
+        response = web.client.post('/api/process', json={'pdf': 'Nama_1301204567_tugas.pdf'})
+        assert response.status_code == 202
+        assert web.jobs.get(response.json()['job_id']).status == JobStatus.DONE
 ```
 
 Variasi input/ekspektasi pada perilaku yang sama → `@pytest.mark.parametrize` (dengan `ids=`), bukan method salinan.
@@ -75,17 +76,17 @@ Variasi input/ekspektasi pada perilaku yang sama → `@pytest.mark.parametrize` 
 
 | Domain / phase | File | Contoh class (target OOP) |
 |----------------|------|---------------------------|
-| Config, paths, menu choices, run layout, workspace, style/exit/prompt view | `test_suite.py` | `TestConfig`, `TestPaths`, `TestMenuChoices`, `TestRunLayout`, `TestOutputReset`, `TestStyleView`, `TestExitView`, `TestPromptView` |
+| Config, paths, run layout, workspace | `test_suite.py` | `TestConfig`, `TestPaths`, `TestRunLayout`, `TestOutputReset` |
 | PDF render | `test_suite.py` | `TestPdfRenderer` |
 | JSON extract, recognition schema, Ollama client, vision | `test_suite.py` | `TestJsonExtract`, `TestRecognitionSchema`, `TestOllamaClient`, `TestVisionRecognizer` |
 | Question merge/split, review question.json, LaTeX | `test_suite.py` | `TestQuestionMergeExtract`, `TestQuestionReview`, `TestQuestionSchemaSplit`, `TestLatex` |
 | SymPy / inequality, LLM hybrid (+ `validation_artifact`) | `test_suite.py` | `TestMathInequality`, `TestLlmHybrid` |
 | Grading (skor, grader, standar, soft-align) | `test_suite.py` | `TestScoreAggregate`, `TestStepGrader`, `TestStandardExtract`, `TestStandardComparer`, `TestStepAlign` |
-| Kunci ingest, report (+ `grading_artifact`, `artifact_guard`), CLI process / finish-questions + `ProcessController` | `test_suite.py` | `TestKunciIngest`, `TestReport`, `TestCliProcess` |
-| Menu interaktif (`MenuController`, dispatch, `_ensure_layout`, exit code, EOF) | `test_suite.py` | `TestMenuController` |
+| Kunci ingest, report (+ `grading_artifact`, `artifact_guard`), `ProcessController` (process / transcribe / finish) | `test_suite.py` | `TestKunciIngest`, `TestReport`, `TestProcessPipeline` |
+| Web: dashboard, job + SSE, hasil, keamanan path/upload | `test_suite.py` | `TestWebDashboard`, `TestWebJobs`, `TestWebResults`, `TestWebSecurity` |
 | Topic pack / capability registry | `test_suite.py` | `TestTopicRegistry`, `TestTopicPackBehavior`, `TestCapabilityDispatch` |
 | Crop symbolic / ink / recognizer crops | `test_crop_symbolic.py` | `TestCropHelpers`, `TestSymbolicMerge`, `TestTwoPassRecognizer`, `TestInkLayout`, `TestRecognitionStems` |
-| Confirm / recrop / question_crops / labeler | `test_crop_confirm.py` | `TestRegionsArtifact`, `TestCropConfirm`, `TestQuestionCrops`, `TestQuestionLabelController`, `TestRecognizerQuestionCrops` |
+| Crop / editor manual / question_crops / labeler / halaman label + review | `test_crop_confirm.py` | `TestRegionsArtifact`, `TestCropEnsure`, `TestQuestionCrops`, `TestQuestionLabelController`, `TestRecognizerQuestionCrops`, `TestManualRegionEditor`, `TestWebLabels`, `TestWebReview` |
 | Number line / figure compare | `test_number_line.py` | `TestNumberLineParse`, `TestNumberLineCompare`, `TestNumberLineIngest`, `TestCompareFigure` |
 
 Jika domain baru tidak cocok tabel di atas: **tetap** pilih file terdekat (biasanya `test_suite.py`) dan buat `class TestNamaDomain:` di sana. Jangan buat file baru.
@@ -137,8 +138,8 @@ def test_aggregate_full_credit() -> None:
 ```
 
 - Type hints pada signature test (`self` + fixture/arg).
-- Fixture bawaan pytest: `tmp_path`, `monkeypatch`, `capsys`.
-- Isolasi: prefer `tmp_path`; jangan andalkan artefak `data/output/` dari run CLI. `CliHarness` selalu mengarahkan `output.root_dir` ke `tmp_path/output`.
+- Fixture bawaan pytest: `tmp_path`, `monkeypatch`, `caplog` (peringatan controller lewat `logging`).
+- Isolasi: prefer `tmp_path`; jangan andalkan artefak `data/output/` dari run sungguhan. `WebHarness` selalu mengarahkan input, `output.root_dir`, dan standar ke `tmp_path`.
 - Butuh standar kunci (solutions/schema/rubrics)? Pakai `q1_standard(tmp_path)` (ingest `Q1_KUNCI` lewat `KunciIngester`) atau `GradingWorkspace`; jangan baca `data/output/standards/`.
 - Model vision/reasoning di SUT: string uji lokal (`'vision-test'`) atau dari config — jangan hard-code nama model produksi.
 

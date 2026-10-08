@@ -32,7 +32,7 @@ class OutputConfig(BaseModel):
 
 class InputConfig(BaseModel):
     jawaban_dir: Path = Path("data/input/jawaban")
-    # Source for CLI ingest-kunci → standards/solutions (enumerate+align+HP slice).
+    # Source for kunci ingest → standards/solutions (enumerate+align+HP slice).
     kunci_jawaban_dir: Path = Path("data/input/kunci_jawaban")
 
 
@@ -52,6 +52,8 @@ class InkLayoutConfig(BaseModel):
     header_fraction: float = 0.08
     column_valley_ratio: float = 0.15
     margin_ratio: float = 0.02
+    long_line_ratio: float = 0.1
+    paper_offset: int = 40
 
 
 class RecognitionConfig(BaseModel):
@@ -79,6 +81,13 @@ class ReportConfig(BaseModel):
     pdf: ReportPdfConfig = Field(default_factory=ReportPdfConfig)
 
 
+class WebConfig(BaseModel):
+    # Student answers stay on this machine: bind to loopback unless deliberately changed.
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    max_upload_mb: int = Field(default=50, ge=1)
+
+
 class AppConfig(BaseModel):
     pdf: PdfConfig = Field(default_factory=PdfConfig)
     input: InputConfig = Field(default_factory=InputConfig)
@@ -87,6 +96,7 @@ class AppConfig(BaseModel):
     recognition: RecognitionConfig = Field(default_factory=RecognitionConfig)
     grading: GradingConfig = Field(default_factory=GradingConfig)
     report: ReportConfig = Field(default_factory=ReportConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
 
 
 def require_vision_model(config: AppConfig) -> None:

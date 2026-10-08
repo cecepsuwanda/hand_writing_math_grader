@@ -20,7 +20,7 @@ from app.exceptions import (
     OllamaModelNotConfiguredError,
     RegionsArtifactMissingError,
 )
-from app.functions.image_crop import crop_region, union_regions
+from app.functions.image_crop import crop_padding_for, crop_region, union_regions
 from app.functions.json_extract import coerce_confidence, extract_json_object
 from app.functions.kunci_ingest import (
     format_recognition_question_block,
@@ -157,7 +157,9 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
             regions=regions,
             source=region_source,
         )
-        self._crop_regions_to_disk(image_path, page_dir, page_number, regions)
+        self._crop_regions_to_disk(
+            image_path, page_dir, page_number, regions, source=region_source
+        )
         logger.info(
             "proposed crops page=%s regions=%s source=%s json=%s",
             page_number,
@@ -183,7 +185,9 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
         write_regions_artifact(
             page_dir, page_number, regions=regions, source=source
         )
-        self._crop_regions_to_disk(image_path, page_dir, page_number, regions)
+        self._crop_regions_to_disk(
+            image_path, page_dir, page_number, regions, source=source
+        )
         logger.info(
             "recropped page=%s regions=%s from %s",
             page_number,
@@ -191,6 +195,30 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
             json_path,
         )
         return regions, source, json_path
+
+    def save_page_regions(
+        self,
+        image_path: Path,
+        page_number: int,
+        regions: list[DetectedRegion],
+        *,
+        source: str,
+    ) -> tuple[list[DetectedRegion], str, Path]:
+        """Replace the page's regions JSON (e.g. boxes drawn in the editor) and recrop."""
+        page_dir = self.page_crop_dir(page_number)
+        if not regions:
+            raise EmptyRegionsError(regions_json_path(page_dir, page_number))
+        json_path = write_regions_artifact(
+            page_dir, page_number, regions=regions, source=source
+        )
+        _page, _source, saved = load_regions_artifact(json_path)
+        self._crop_regions_to_disk(
+            Path(image_path), page_dir, page_number, saved, source=source
+        )
+        logger.info(
+            "saved regions page=%s regions=%s source=%s", page_number, len(saved), source
+        )
+        return saved, source, json_path
 
     def recognize_page(self, image_path: Path, page_number: int) -> PageRecognition:
         """Recognize from existing crops JSON+PNGs; propose first if missing."""
@@ -292,12 +320,21 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
         page_dir: Path,
         page_number: int,
         regions: list[DetectedRegion],
+        *,
+        source: str,
     ) -> list[Path]:
+        padding = crop_padding_for(source)
         paths: list[Path] = []
         keep: set[str] = set()
         for index, det in enumerate(regions):
             out = page_dir / crop_filename(page_number, index)
-            result = crop_region(image_path, det.region, out)
+            result = crop_region(
+                image_path,
+                det.region,
+                out,
+                pad_ratio=padding.pad_ratio,
+                min_pad=padding.min_pad,
+            )
             paths.append(result.path)
             keep.add(out.name)
         # Legacy ``region_*`` names predate the page prefix; drop them too.

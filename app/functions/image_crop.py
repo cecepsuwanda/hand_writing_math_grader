@@ -12,12 +12,26 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_PAD_RATIO = 0.03
 _DEFAULT_MIN_PAD = 8
+MANUAL_REGION_SOURCE = "manual"
 
 
 @dataclass(frozen=True)
 class CropResult:
     path: Path
     used_full_page_fallback: bool = False
+
+
+@dataclass(frozen=True)
+class CropPadding:
+    pad_ratio: float = _DEFAULT_PAD_RATIO
+    min_pad: int = _DEFAULT_MIN_PAD
+
+
+def crop_padding_for(source: str) -> CropPadding:
+    """Ink boxes hug the strokes and need a margin; a box drawn by hand is exact."""
+    if source == MANUAL_REGION_SOURCE:
+        return CropPadding(pad_ratio=0.0, min_pad=0)
+    return CropPadding()
 
 
 def clamp_region(region: Region, *, image_width: int, image_height: int) -> Region:

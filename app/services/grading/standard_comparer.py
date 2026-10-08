@@ -26,6 +26,7 @@ from app.functions.standard_extract import (
     standard_step_texts,
 )
 from app.functions.question_split import schema_final_text, schema_stem_text
+from app.functions.sign_chart import caption_signs, evaluation_row_signs, format_signs
 from app.functions.step_align import align_student_steps_to_standard
 from app.models.exam_schema import ExamMilestone, ExamQuestion, ExamSchema, NumberLineSpec
 from app.models.question import FigureRef, Question, StudentStep
@@ -58,6 +59,10 @@ from app.services.math.role_checks import finite_solutions
 logger = logging.getLogger(__name__)
 
 FIGURE_UNCOMPARED_REASON = "figure present; no key number line to compare"
+SIGN_CHART_ROLE = "sign_chart"
+HP_ROLE = "hp"
+HP_ALIGN_SKIP_REASON = "HP step is compared as the final answer"
+SIGN_CHART_IN_FIGURE_REASON = "sign chart only in figure; needs review"
 
 # Split joined critical-point lists (``;`` or ``\;``). Do not split logical "and".
 _ATOM_SPLIT_RE = re.compile(r"\s*\\?;\s*")
@@ -331,12 +336,19 @@ class StandardFinalComparer:
             banks = [("shared", texts)]
 
         student_steps = sorted(question.student_steps, key=lambda s: s.step_number)
+        milestone_roles = frozenset(
+            milestone.role.strip().lower()
+            for milestone in (schema_q.milestones if schema_q is not None else [])
+        )
         best: dict[int, tuple[ValidationStatus, str]] | None = None
         best_key: tuple[int, int] | None = None  # (valid, -invalid)
 
         for bank_id, standard_texts in banks:
             aligned = self._align_to_texts(
-                student_steps, standard_texts, bank_id=bank_id
+                student_steps,
+                standard_texts,
+                bank_id=bank_id,
+                milestone_roles=milestone_roles,
             )
             valid = sum(
                 1 for _, (st, _) in aligned.items() if st == ValidationStatus.VALID
@@ -369,7 +381,7 @@ class StandardFinalComparer:
 
         role_results: dict[str, tuple[ValidationStatus, str, float | None]] = {}
         for milestone in schema_q.milestones:
-            if milestone.role == "hp":
+            if milestone.role == HP_ROLE:
                 continue
             mark = self._milestone_match(question, milestone)
             prev = role_results.get(milestone.role)
@@ -417,6 +429,10 @@ class StandardFinalComparer:
                 f"empty milestone {milestone.role}",
                 None,
             )
+        if milestone.role == SIGN_CHART_ROLE:
+            sign_mark = _sign_pattern_match(question, texts)
+            if sign_mark is not None:
+                return sign_mark
 
         standard_parsed: list[ParsedStep] = []
         unparsed = 0
@@ -458,7 +474,7 @@ class StandardFinalComparer:
 
         matched = 0
         saw_false = 0
-        saw_undecided = unparsed
+        saw_undecided = 0
         for atom in standard_parsed:
             outcome: bool | None = None
             for student in students:
@@ -495,12 +511,30 @@ class StandardFinalComparer:
                 f"could not decide milestone {milestone.role}",
                 None,
             )
-        if saw_undecided:
-            # Undecided atoms earn half credit (as UNCERTAIN does) and need review.
+        if (
+            milestone.role == SIGN_CHART_ROLE
+            and matched == 0
+            and len(evaluation_row_signs(texts)) >= 2
+            and _question_has_figure(question)
+            and not _role_steps(question, SIGN_CHART_ROLE)
+        ):
+            return (
+                ValidationStatus.UNCERTAIN,
+                SIGN_CHART_IN_FIGURE_REASON,
+                None,
+            )
+        if saw_undecided or unparsed:
+            # SymPy-undecided atoms earn half credit (as UNCERTAIN does); key
+            # prose rows earn nothing but still send the mark to review.
+            notes = []
+            if saw_undecided:
+                notes.append(f"{saw_undecided} undecided")
+            if unparsed:
+                notes.append(f"{unparsed} key rows undecided (prose, not scored)")
             return (
                 ValidationStatus.UNCERTAIN,
                 f"matches {matched}/{total} of milestone {milestone.role}; "
-                f"{saw_undecided} undecided",
+                + "; ".join(notes),
                 (matched + 0.5 * saw_undecided) / total,
             )
         if matched == 0:
@@ -573,19 +607,31 @@ class StandardFinalComparer:
         standard_texts: list[str],
         *,
         bank_id: str,
+        milestone_roles: frozenset[str] = frozenset(),
     ) -> dict[int, tuple[ValidationStatus, str]]:
-        standard_parsed: list[ParsedStep | None] = []
-        for text in standard_texts:
+        # Prose / unparseable key rows are not alignment targets; they keep
+        # their original row number so labels still point into the key.
+        standard_parsed: list[ParsedStep] = []
+        column_numbers: list[int] = []
+        for index, text in enumerate(standard_texts, start=1):
+            if not text.strip():
+                continue
             try:
                 standard_parsed.append(self._parse(text))
             except MathParseError:
-                standard_parsed.append(None)
+                continue
+            column_numbers.append(index)
 
         rows: list[tuple[int, list[bool | None] | None]] = []
         skip_reasons: dict[int, str] = {}
         early: dict[int, tuple[ValidationStatus, str]] = {}
 
         for step in student_steps:
+            role = (step.role or "").strip().lower()
+            if role and role != HP_ROLE and role in milestone_roles:
+                rows.append((step.step_number, None))
+                skip_reasons[step.step_number] = f"scored under milestone {role}"
+                continue
             built = self._student_equivalence_row(step, standard_parsed)
             if built.kind == "early":
                 assert built.status_reason is not None
@@ -600,7 +646,7 @@ class StandardFinalComparer:
             rows.append((step.step_number, built.row or []))
 
         aligned = align_student_steps_to_standard(
-            rows, skip_reasons=skip_reasons
+            rows, skip_reasons=skip_reasons, column_numbers=column_numbers
         )
         aligned.update(early)
         # Annotate reasons with bank id for audit transparency.
@@ -618,7 +664,7 @@ class StandardFinalComparer:
     def _student_equivalence_row(
         self,
         step: StudentStep,
-        standard_parsed: list[ParsedStep | None],
+        standard_parsed: list[ParsedStep],
     ) -> _RowBuild:
         if step.role == "figure" or (
             step.symbolic is not None and step.symbolic.kind == "figure"
@@ -627,6 +673,8 @@ class StandardFinalComparer:
                 kind="skip",
                 reason="figure step skipped for standard align",
             )
+        if (step.role or "").strip().lower() == HP_ROLE:
+            return _RowBuild(kind="skip", reason=HP_ALIGN_SKIP_REASON)
         student_text = ""
         if step.symbolic is not None and (step.symbolic.repr or "").strip():
             student_text = step.symbolic.repr.strip()
@@ -649,12 +697,7 @@ class StandardFinalComparer:
                 reason="could not parse student step for standard align",
             )
 
-        row: list[bool | None] = []
-        for std in standard_parsed:
-            if std is None:
-                row.append(None)
-                continue
-            row.append(self._align_equivalent(student_parsed, std))
+        row = [self._align_equivalent(student_parsed, std) for std in standard_parsed]
         return _RowBuild(kind="row", row=row)
 
     def _student_final_text(self, question: Question) -> str:
@@ -820,6 +863,53 @@ def _add_points(points: list[Expr], new: list[Expr]) -> list[Expr]:
         if not _has_point(merged, point):
             merged.append(point)
     return merged
+
+
+def _role_steps(question: Question, role: str) -> list[StudentStep]:
+    return [
+        step
+        for step in question.student_steps
+        if (step.role or "").strip().lower() == role
+    ]
+
+
+def _figure_texts(question: Question) -> list[str]:
+    texts = [ref.caption or "" for ref in question.figure_refs]
+    texts.extend(
+        step.raw_text or ""
+        for step in question.student_steps
+        if _is_figure_student_step(step)
+    )
+    return [text for text in texts if text.strip()]
+
+
+def _sign_pattern_match(
+    question: Question, key_texts: list[str]
+) -> tuple[ValidationStatus, str, float | None] | None:
+    """Key sign pattern vs student sign rows, else figure caption; ``None`` = no evidence."""
+    key = evaluation_row_signs(key_texts)
+    if len(key) < 2:
+        return None
+    shown = format_signs(key)
+    rows = evaluation_row_signs(
+        _student_step_text(step) for step in _role_steps(question, SIGN_CHART_ROLE)
+    )
+    if len(rows) == len(key):
+        if rows == key:
+            return ValidationStatus.VALID, f"sign pattern matches key ({shown})", 1.0
+        return (
+            ValidationStatus.INVALID,
+            f"sign pattern {format_signs(rows)} differs from key ({shown})",
+            0.0,
+        )
+    for text in _figure_texts(question):
+        if caption_signs(text) == key:
+            return (
+                ValidationStatus.VALID,
+                f"figure sign pattern matches key ({shown})",
+                1.0,
+            )
+    return None
 
 
 def _student_step_text(step: StudentStep) -> str:

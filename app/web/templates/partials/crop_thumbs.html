@@ -1,0 +1,13 @@
+{% if out.crop_names %}
+<div class="thumbs">
+  {% for name in out.crop_names %}
+  {% set region = out.page.regions[loop.index0] if loop.index0 < out.page.regions | length else none %}
+  <figure class="thumb">
+    <img src="{{ run_url(run, '/crops/' ~ name) }}?v={{ range(100000) | random }}" alt="{{ name }}" loading="lazy">
+    <figcaption class="small">#{{ loop.index }}{% if region and region.question_number %} · soal {{ region.question_number }}{% endif %}</figcaption>
+  </figure>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted small">Belum ada crop untuk halaman ini.</p>
+{% endif %}

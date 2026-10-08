@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import pymupdf
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from app.functions.question_crops import write_question_crops
 from app.functions.question_names import (
@@ -124,6 +124,28 @@ def write_png(
     return path
 
 
+def new_page(
+    size: tuple[int, int], paper: tuple[int, int, int] = (255, 255, 255)
+) -> Image.Image:
+    return Image.new("RGB", size, color=paper)
+
+
+def draw_writing(
+    image: Image.Image,
+    box: tuple[int, int, int, int],
+    ink: tuple[int, int, int] = (20, 20, 20),
+) -> Image.Image:
+    """Fill ``box`` (x0, y0, x1, y1) with 3 px strokes every 6 px, like lines of text.
+
+    A solid block would read as one tall vertical run (a page border), not writing.
+    """
+    x0, y0, x1, y1 = box
+    draw = ImageDraw.Draw(image)
+    for y in range(y0, y1, 6):
+        draw.rectangle([x0, y, x1 - 1, min(y + 2, y1 - 1)], fill=ink)
+    return image
+
+
 def write_fake_png_bytes(tmp_path: Path, name: str = "page.png") -> Path:
     """PNG magic + junk: enough for code that only base64-encodes the file."""
     path = tmp_path / name
@@ -134,6 +156,20 @@ def write_fake_png_bytes(tmp_path: Path, name: str = "page.png") -> Path:
 def write_recognition(path: Path, page: PageRecognition) -> Path:
     path.write_text(page.model_dump_json(indent=2), encoding="utf-8")
     return path
+
+
+def write_run_pages(pages_dir: Path, *sizes: tuple[int, int]) -> list[Page]:
+    """Blank page PNGs + ``pages.json`` (one page of 200x300 when no size is given)."""
+    pages = [
+        Page(page_number=n, image=f"page_{n:03d}.png", width=w, height=h)
+        for n, (w, h) in enumerate(sizes or ((200, 300),), start=1)
+    ]
+    for page in pages:
+        write_png(pages_dir / page.image, (page.width, page.height), (255, 255, 255))
+    (pages_dir / "pages.json").write_text(
+        json.dumps([page.model_dump(mode="json") for page in pages]), encoding="utf-8"
+    )
+    return pages
 
 
 def write_crop_workspace(pages_dir: Path, crops_dir: Path) -> Path:
@@ -168,6 +204,7 @@ def write_config(
     vision_model: str | None = "vision-test",
     reasoning_model: str | None = None,
     jawaban_dir: Path | None = None,
+    kunci_dir: Path | None = None,
     output_root: Path | None = None,
     standards_root: Path | None = None,
     topic_id: str | None = None,
@@ -180,8 +217,12 @@ def write_config(
             lines.append(f'  vision_model: "{vision_model}"')
         if reasoning_model is not None:
             lines.append(f'  reasoning_model: "{reasoning_model}"')
-    if jawaban_dir is not None:
-        lines += ["input:", f"  jawaban_dir: {jawaban_dir.as_posix()}"]
+    if jawaban_dir is not None or kunci_dir is not None:
+        lines.append("input:")
+        if jawaban_dir is not None:
+            lines.append(f"  jawaban_dir: {jawaban_dir.as_posix()}")
+        if kunci_dir is not None:
+            lines.append(f"  kunci_jawaban_dir: {kunci_dir.as_posix()}")
     if output_root is not None:
         lines += ["output:", f"  root_dir: {output_root.as_posix()}"]
     if standards_root is not None or topic_id is not None:

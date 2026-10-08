@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Math Grader{% endblock %}</title>
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"[45]..","swap":true,"error":true}]}'>
+  <link rel="stylesheet" href="{{ static_url('vendor/katex/katex.min.css') }}">
+  <link rel="stylesheet" href="{{ static_url('app.css') }}">
+  <script src="{{ static_url('vendor/htmx.min.js') }}"></script>
+  <script src="{{ static_url('vendor/htmx-ext-sse.min.js') }}"></script>
+  <script defer src="{{ static_url('vendor/katex/katex.min.js') }}"></script>
+  <script defer src="{{ static_url('js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+  <script defer src="{{ static_url('vendor/alpine.min.js') }}"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">Math Grader</a>
+    <nav class="crumbs">{% block crumbs %}{% endblock %}</nav>
+    <span class="topic-badge" title="Topik aktif">Topik {{ active_topic.id }} · {{ active_topic.label }}</span>
+  </header>
+  <main class="{% block main_class %}container{% endblock %}">
+    <div id="flash">
+      {%- if request.query_params.get('ok') %}
+        {% with level='ok', message=request.query_params.get('ok') %}{% include "partials/flash.html" %}{% endwith %}
+      {%- endif %}
+    </div>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

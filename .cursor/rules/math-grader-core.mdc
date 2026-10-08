@@ -1,21 +1,25 @@
 ---
-description: Prinsip inti Math Grader — CLI-first, MVC/SOLID/clean/OOP+FP, scope domain, config, artefak, keamanan
+description: Prinsip inti Math Grader — web UI lokal, MVC/SOLID/clean/OOP+FP, scope domain, config, artefak, keamanan
 alwaysApply: true
 ---
 
 # Math Grader — Core
 
-- Aplikasi utama: **CLI Python** (`python -m app.cli menu` / `process ...`). API FastAPI hanya adapter opsional; jangan alihkan ke web UI.
-- Arsitektur wajib: **MVC** + **SOLID** + **clean code**; **OOP** untuk service/client ber-state, **FP** di `app/functions/` untuk transformasi deterministik. Detail: `docs/architecture.md`, `docs/conventions.md`.
-- Domain: MVP **pertidaksamaan (topik 1.5)**. Perluas **satu bab/pack per PR** lewat `app/topics/` + `app/capabilities/`, setelah acceptance bab sebelumnya hijau. Inti pipeline tetap pack-agnostic. Silabus + status: `docs/math-topics.md`.
-- Model Ollama dari `app/config/config.yaml` / env `OLLAMA_*` — **jangan hard-code** nama model. Type hints + Pydantic untuk kontrak antar layer.
-- Artefak per PDF di `data/output/<nama_pdf>/`. Hanya folder itu yang dikosongkan, di awal `process` / `propose-crops` / menu 3 (`--use-existing-crops` mempertahankan `crops/`); `standards/` dan run lain tidak disentuh. Jangan hapus artefak intermediate di tengah run jika tahap berikutnya gagal.
+- Aplikasi utama: **web UI lokal** (`python -m app.web` → `http://127.0.0.1:8000`), FastAPI + Jinja2 + HTMX + Alpine.js (+ Konva.js untuk editor crop, KaTeX untuk preview). Tidak ada CLI interaktif; konfirmasi user = halaman + tombol, bukan prompt.
+- Arsitektur wajib: **MVC** + **SOLID** + **clean code**; **OOP** untuk service/client ber-state, **FP** di `app/functions/` untuk transformasi deterministik. View = `app/web/templates/`; adapter HTTP = `app/web/routers/` (tipis: parse → `WebPipeline` / `JobManager` → template). Detail: `docs/architecture.md`, `docs/conventions.md`.
+- Pekerjaan lama (render, Ollama, grading) jalan sebagai job background (`app/web/jobs.py`), progres lewat SSE; jangan blok request HTTP.
+- Domain: MVP **pertidaksamaan (topik 1.5)**. Perluas **satu bab/pack per PR** lewat `app/topics/` + `app/capabilities/`, setelah acceptance bab sebelumnya hijau. Inti pipeline (controller + web) tetap pack-agnostic. Silabus + status: `docs/math-topics.md`.
+- Model Ollama dari `app/config/config.yaml` / env `OLLAMA_*` — **jangan hard-code** nama model. Type hints + Pydantic untuk kontrak antar layer (termasuk request/response web di `app/web/schemas.py`).
+- Artefak per PDF di `data/output/<nama_pdf>/`. Hanya folder itu yang dikosongkan, saat **Propose crops** (halaman awal); edit crop / label / review tidak mengosongkan apa pun; `standards/` dan run lain tidak disentuh. Jangan hapus artefak intermediate di tengah run jika tahap berikutnya gagal.
+- Server web bind ke `127.0.0.1` (data mahasiswa); aset JS/CSS di-vendor ke `app/web/static/vendor/` (tanpa CDN). Path artefak dari URL wajib lewat `app/web/files.py` (anti path traversal).
 - Setiap perubahan: tulis/perluas tes, pertahankan perilaku yang sudah ada, jangan ubah kontrak modul stabil tanpa alasan, jangan mengarang API library (verifikasi dokumentasi).
 - Jangan commit secrets/credentials. Prefer Ollama lokal untuk data mahasiswa (model `*-cloud` mengirim gambar keluar).
 
 ```text
-❌ Streamlit / web UI sebagai entry utama
-❌ Logika khusus bab di controller inti (taruh di topic pack)
-✅ python -m app.cli menu
-✅ python -m app.cli process file.pdf [--topic 1.5]
+❌ CLI / prompt input() sebagai entry atau langkah konfirmasi
+❌ Streamlit / Gradio / SPA ber-build (React/Vite)
+❌ Logika khusus bab di controller inti atau router web (taruh di topic pack)
+❌ Pipeline panjang dijalankan sinkron di handler HTTP
+✅ python -m app.web [--config path]
+✅ Router → WebPipeline → pipeline_factory.build_* → controller
 ```

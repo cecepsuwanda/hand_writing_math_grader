@@ -6,33 +6,37 @@ alwaysApply: false
 
 # MVC Architecture
 
-Arah ketergantungan: View → Controller → Services/Models → Infrastructure. Tabel lapisan + peta folder: `docs/architecture.md`.
+Arah ketergantungan: View (template) → Router → `WebPipeline` / `JobManager` → Controller → Services/Models → Infrastructure. Tabel lapisan + peta folder: `docs/architecture.md`.
 
 Kebijakan nyata yang sering salah dibaca:
 
-- **Controller boleh memanggil view** (progress, error, prompt konfirmasi crop/label). Controller tidak berisi prompt LLM atau rumus grading, tidak memanggil `input()` (pakai `views/prompt_view.py`), dan tidak meng-import konstanta dari `app/services/` (inject lewat konstruktor, mis. `PromptVersions`).
-- **View** tidak meng-import `app.controllers` / `app.services`; semua `*Result` ada di `app/models/` (Pydantic). Error/peringatan ke stderr (`error_view.print_error` / `print_warning`).
-- **`cli.py` tipis**: hanya `build_parser` + `main` atas `COMMANDS`. Satu class `Command` per subcommand di `app/commands/` (`configure` + `run`); flow bersama menu/subcommand di `app/commands/flows.py`. State menu ada di `MenuController`/`MenuSession`; langkah ber-efek samping lewat port `MenuActions` (`CliMenuActions`).
+- **View = `app/web/templates/`** (Jinja2 + HTMX/Alpine) dan `app/web/static/js/`. Template hanya memformat model/view-model; tidak ada akses file, Ollama, atau SymPy dari template/JS selain endpoint HTTP.
+- **Router (`app/web/routers/`) tipis**: parse request (schema Pydantic di `app/web/schemas.py`) → panggil `WebPipeline` atau `JobManager` → render template / JSON. Tidak glob/parse artefak sendiri; path dari URL lewat `app/web/files.py`. Error = `MathGraderError` yang dipetakan `app/web/errors.py` ke status HTTP.
+- **`WebPipeline` (`app/web/pipeline.py`)** = fasad use-case per sesi (topik aktif di `WebSession`). Memanggil builder lewat modul `pipeline_factory.build_*` (bukan import nama) agar tes cukup mem-patch satu target.
+- **Pekerjaan lama** (render+propose, label vision, recognize → report) dikirim ke `JobManager` (`app/web/jobs.py`); progres = callback `on_progress` → event job → SSE. Handler HTTP tidak menunggu Ollama.
+- **Controller** tidak mencetak, tidak meminta input, dan tidak meng-import `app.web`; hasil = model `*Result` Pydantic di `app/models/`; notifikasi lewat callback opsional yang di-inject. Controller tidak berisi prompt LLM atau rumus grading, dan tidak meng-import konstanta dari `app/services/`.
 - **`app/functions/`** = transformasi deterministik. Boleh baca/tulis **artefak run** hanya di `*_artifact.py`, `question_crops.py`, `image_crop.py`, `report_details.py`, `workspace_reset.py`, `load_exam_schema`. Tidak boleh network / model / mutasi input.
 - **Services** tidak mencetak ke stdout (pakai `logging`). Error domain = subclass `MathGraderError`.
-- Wiring (DI) terpusat di `app/services/pipeline_factory.py`, dipakai CLI dan API.
+- Wiring (DI) terpusat di `app/services/pipeline_factory.py`.
 
 ## SOLID, clean code, OOP + FP
 
 - **SOLID**: bergantung pada `interfaces/`; injeksi lewat konstruktor; interface sempit; satu alasan berubah per modul.
 - **Clean code**: fungsi kecil; konfigurasi terpusat (`app/config/`); type hints; error eksplisit; komentar hanya untuk "mengapa".
-- **OOP**: encapsulation di `services/` / client ber-state; polymorphism lewat ABC/Protocol; domain model Pydantic.
+- **OOP**: encapsulation di `services/` / client ber-state / `JobManager` / `WebSession`; polymorphism lewat ABC/Protocol; domain model Pydantic.
 - **FP**: jangan buat util class berisi static method saja; composition over inheritance.
 
 ```python
-# ❌ BAD — controller memanggil Ollama langsung
-def process(pdf):
-    return httpx.post("http://localhost:11434/...", ...)
+# ❌ BAD — router menjalankan pipeline sinkron dan membaca file sendiri
+@router.post("/runs/{run}/finish")
+def finish(run: str):
+    data = json.loads(Path(f"data/output/{run}/report.json").read_text())
 
-# ✅ GOOD — controller memanggil abstraksi yang diinjeksi
-render_result = self._render.render(pdf_path, pages_dir, dpi)
-self._recognize.recognize_pages(render_result.pages, pages_dir, recognition_dir)
-grade_result = self._grade.grade(questions_dir)
+# ✅ GOOD — router tipis: job background + pipeline fasad
+@router.post("/runs/{run}/finish")
+def finish(run: str, pipeline: WebPipeline = Depends(get_pipeline), jobs: JobManager = Depends(get_jobs)):
+    job = jobs.submit(run=run, kind=JobKind.FINISH, task=lambda report: pipeline.finish(run, report))
+    return redirect_to_job(job)
 ```
 
 Detail: `docs/conventions.md`.

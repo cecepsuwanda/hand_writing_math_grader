@@ -12,7 +12,6 @@ from app.models.recognition import DetectedRegion, Region
 _CROP_NAME_RE = re.compile(r"^page_(\d+)_region_\d+")
 _PAGE_DIR_RE = re.compile(r"^page_(\d+)$")
 CROP_SUFFIX = "_solution.png"
-REGIONS_JSON_HINT = "page_*/page_*_regions.json"
 
 
 def regions_json_path(page_crop_dir: Path, page_number: int) -> Path:
@@ -59,6 +58,25 @@ def crop_page_number(name: str) -> int | None:
     return page if page >= 1 else None
 
 
+def normalize_region_orders(regions: list[DetectedRegion]) -> list[DetectedRegion]:
+    """Make ``order`` a permutation of ``0..n-1``.
+
+    Distinct orders are a deliberate reading order and keep their ranking.
+    A repeated order means a hand-copied entry, so the list position (which
+    also names the crop file) wins.
+    """
+    orders = [r.order for r in regions]
+    if len(set(orders)) == len(orders):
+        ranked = sorted(range(len(regions)), key=lambda i: orders[i])
+        new_orders = {index: rank for rank, index in enumerate(ranked)}
+    else:
+        new_orders = {index: index for index in range(len(regions))}
+    return [
+        r if r.order == new_orders[i] else r.model_copy(update={"order": new_orders[i]})
+        for i, r in enumerate(regions)
+    ]
+
+
 def region_dicts_with_crop_paths(
     regions: list[DetectedRegion], page_number: int
 ) -> list[dict[str, Any]]:
@@ -68,7 +86,7 @@ def region_dicts_with_crop_paths(
             **r.model_dump(),
             "crop_path": crop_filename(page_number, i),
         }
-        for i, r in enumerate(regions)
+        for i, r in enumerate(normalize_region_orders(regions))
     ]
 
 
@@ -130,8 +148,37 @@ def load_regions_artifact(path: Path) -> tuple[int, str, list[DetectedRegion]]:
                 order=int(order_raw) if order_raw is not None else index,
             )
         )
-    return page_number, source, regions
+    return page_number, source, normalize_region_orders(regions)
 
 
 def page_has_regions_artifact(page_crop_dir: Path, page_number: int) -> bool:
     return regions_json_path(page_crop_dir, page_number).is_file()
+
+
+# Below ~1.5 px every coordinate would read as a page fraction (image_crop).
+MIN_REGION_SIDE_PX = 4
+_BOUNDS_TOLERANCE_PX = 1.0
+
+
+def manual_region_errors(
+    regions: list[DetectedRegion], *, image_width: int, image_height: int
+) -> list[str]:
+    """Problems with hand-drawn pixel boxes; empty when every box is usable."""
+    if not regions:
+        return ["minimal satu kotak per halaman"]
+    errors: list[str] = []
+    for number, detected in enumerate(regions, start=1):
+        box = detected.region
+        if box.width < MIN_REGION_SIDE_PX or box.height < MIN_REGION_SIDE_PX:
+            errors.append(f"kotak {number}: lebar dan tinggi minimal {MIN_REGION_SIDE_PX} px")
+            continue
+        if (
+            box.x < -_BOUNDS_TOLERANCE_PX
+            or box.y < -_BOUNDS_TOLERANCE_PX
+            or box.x + box.width > image_width + _BOUNDS_TOLERANCE_PX
+            or box.y + box.height > image_height + _BOUNDS_TOLERANCE_PX
+        ):
+            errors.append(
+                f"kotak {number}: di luar halaman ({image_width}x{image_height} px)"
+            )
+    return errors

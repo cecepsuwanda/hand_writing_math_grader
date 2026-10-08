@@ -1,0 +1,11 @@
+{% if job.status.value == "done" %}
+<div class="flash flash-ok">
+  Selesai.
+  {% if job.next_url %}<a class="btn btn-small" href="{{ job.next_url }}" data-next>Lanjut</a>{% endif %}
+</div>
+{% else %}
+<div class="flash flash-error">
+  <span>Gagal: {{ job.error }}</span>
+  <a class="btn btn-small btn-secondary" href="/runs/{{ job.run | urlq }}">Kembali ke run</a>
+</div>
+{% endif %}

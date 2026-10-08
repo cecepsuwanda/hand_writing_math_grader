@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable
 from pathlib import Path
 
-from app.functions.question_names import latex_source_filename, question_dir_name
+from app.functions.question_names import (
+    latex_source_filename,
+    question_artifact_filename,
+    question_dir_name,
+)
 from app.functions.validation_artifact import load_question_artifact, question_artifact_paths
 from app.models.question import Question
 
@@ -51,12 +54,22 @@ def _consistency_error(question: Question, folder: str) -> str | None:
     return None
 
 
-def question_fingerprints(questions_dir: Path) -> dict[str, str]:
-    """Folder name → sha256 of its ``question.json`` bytes."""
-    return {
-        path.parent.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in question_artifact_paths(questions_dir)
-    }
+def write_reviewed_question(questions_dir: Path, question: Question) -> Path:
+    """Overwrite an existing ``question.json`` with a reviewed edit.
+
+    Raises:
+        ValueError: the folder does not exist, or the edit would break the
+            folder/id/step invariants later stages rely on.
+    """
+    folder = question.question_id
+    path = Path(questions_dir) / folder / question_artifact_filename()
+    if not path.is_file():
+        raise ValueError(f"{folder}/{question_artifact_filename()} tidak ada")
+    problem = _consistency_error(question, folder)
+    if problem is not None:
+        raise ValueError(f"{folder}: {problem}")
+    path.write_text(question.model_dump_json(indent=2), encoding="utf-8")
+    return path
 
 
 def stale_latex_sources(questions_dir: Path) -> list[str]:

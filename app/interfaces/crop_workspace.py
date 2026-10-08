@@ -31,3 +31,14 @@ class CropWorkspace(ABC):
         self, image_path: Path, page_number: int
     ) -> tuple[list[DetectedRegion], str, Path]:
         """Reload editable regions JSON and rewrite crop PNGs."""
+
+    @abstractmethod
+    def save_page_regions(
+        self,
+        image_path: Path,
+        page_number: int,
+        regions: list[DetectedRegion],
+        *,
+        source: str,
+    ) -> tuple[list[DetectedRegion], str, Path]:
+        """Replace the regions JSON with ``regions`` and rewrite crop PNGs."""

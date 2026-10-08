@@ -19,22 +19,31 @@ class InkLayoutParams:
     column_valley_ratio: float = 0.15
     margin_ratio: float = 0.02
     min_row_ink_ratio: float = 0.002
+    long_line_ratio: float = 0.1
+    paper_offset: int = 40
 
 
 def binarize_ink(gray: bytes, *, threshold: int) -> bytes:
     """Return mask bytes: 1 = ink (darker than threshold), 0 = paper."""
     thr = max(0, min(255, int(threshold)))
-    return bytes(1 if value < thr else 0 for value in gray)
+    return gray.translate(bytes(1 if value < thr else 0 for value in range(256)))
 
 
-def _column_ink_counts(mask: bytes, *, width: int, height: int) -> list[int]:
-    counts = [0] * width
-    for y in range(height):
-        row = y * width
-        for x in range(width):
-            if mask[row + x]:
-                counts[x] += 1
-    return counts
+_PAPER_SAMPLE_STRIDE = 97
+
+
+def ink_threshold(gray: bytes, *, threshold: int, paper_offset: int) -> int:
+    """``threshold``, lowered to sit ``paper_offset`` below the paper level.
+
+    A phone photo leaves the paper grey (~185); a fixed cut-off of 200 would
+    read the whole sheet as ink. The median grey is the paper on any page
+    that is mostly blank.
+    """
+    if paper_offset <= 0 or not gray:
+        return threshold
+    sample = sorted(gray[::_PAPER_SAMPLE_STRIDE])
+    paper = sample[len(sample) // 2]
+    return max(1, min(threshold, paper - paper_offset))
 
 
 def _row_ink_counts(
@@ -56,43 +65,111 @@ def _row_ink_counts(
     return counts
 
 
+def remove_long_vertical_runs(
+    mask: bytes, *, width: int, height: int, min_run: int
+) -> bytes:
+    """Clear vertical ink runs of ``min_run`` rows or more.
+
+    Handwriting strokes are short; page borders, scan edges and dark photo
+    backgrounds run most of the page height and would otherwise read as ink.
+    """
+    if min_run <= 0 or width <= 0 or height <= 0:
+        return mask
+    mask = mask[: width * height]
+    out = bytearray(mask)
+    for x in range(width):
+        y = 0
+        for piece in mask[x::width].split(b"\x00"):
+            run = len(piece)
+            if run >= min_run:
+                start = y * width + x
+                out[start : start + run * width : width] = bytes(run)
+            y += run + 1
+    return bytes(out)
+
+
+def _smooth(values: list[int], radius: int) -> list[float]:
+    prefix = [0]
+    for value in values:
+        prefix.append(prefix[-1] + value)
+    size = len(values)
+    smoothed: list[float] = []
+    for x in range(size):
+        lo, hi = max(0, x - radius), min(size, x + radius + 1)
+        smoothed.append((prefix[hi] - prefix[lo]) / (hi - lo))
+    return smoothed
+
+
+def _plateau_middle(values: list[float], start: int, end: int) -> int:
+    low = min(values[start:end])
+    lows = [x for x in range(start, end) if values[x] == low]
+    return lows[len(lows) // 2]
+
+
+# A column carries a real share of the page's ink, not one overhanging line.
+_MIN_COLUMN_INK_SHARE = 0.1
+
+
 def detect_columns(
     mask: bytes,
     *,
     width: int,
     height: int,
     valley_ratio: float,
+    y_min: int = 0,
+    min_column_ratio: float = 0.15,
 ) -> list[tuple[int, int]]:
-    """Return column spans (x0, x1). One span if no clear middle valley."""
+    """Contiguous column spans ``(x0, x1)`` split at every ink gutter.
+
+    A gutter is a stretch whose ink is at most ``valley_ratio`` of the weaker
+    neighbouring column peak (each side looked at over ``min_column_ratio`` of
+    the width), so an empty margin or a sparse part of one column is not a
+    gutter. Rows above ``y_min`` (a header written across columns) are ignored.
+    """
     if width <= 0 or height <= 0 or not mask:
         return []
-    counts = _column_ink_counts(mask, width=width, height=height)
-    max_count = max(counts) if counts else 0
-    if max_count <= 0:
+    body = mask[max(0, y_min) * width : height * width]
+    counts = [body[x::width].count(1) for x in range(width)]
+    if max(counts, default=0) <= 0:
         return [(0, width)]
 
-    mid_lo = width // 3
-    mid_hi = (2 * width) // 3
-    valley_x = min(range(mid_lo, mid_hi), key=lambda x: counts[x])
-    valley = counts[valley_x]
-    if valley > max_count * valley_ratio:
-        return [(0, width)]
+    smoothed = _smooth(counts, max(1, width // 200))
+    window = max(1, int(width * min_column_ratio))
+    is_gutter = []
+    for x in range(width):
+        left = max(smoothed[max(0, x - window) : x], default=0.0)
+        right = max(smoothed[x + 1 : x + 1 + window], default=0.0)
+        weaker = min(left, right)
+        is_gutter.append(weaker > 0 and smoothed[x] <= valley_ratio * weaker)
 
-    threshold = max_count * valley_ratio
-    left = valley_x
-    while left > mid_lo and counts[left] <= threshold:
-        left -= 1
-    right = valley_x
-    while right < mid_hi - 1 and counts[right] <= threshold:
-        right += 1
+    prefix = [0]
+    for count in counts:
+        prefix.append(prefix[-1] + count)
+    min_ink = prefix[-1] * _MIN_COLUMN_INK_SHARE
 
-    left_span = (0, max(left, 1))
-    right_span = (min(right + 1, width - 1), width)
-    if left_span[1] - left_span[0] < width * 0.15:
-        return [(0, width)]
-    if right_span[1] - right_span[0] < width * 0.15:
-        return [(0, width)]
-    return [left_span, right_span]
+    cuts: list[int] = []
+    previous = 0
+    x = 0
+    while x < width:
+        if not is_gutter[x]:
+            x += 1
+            continue
+        end = x
+        while end < width and is_gutter[end]:
+            end += 1
+        cut = _plateau_middle(smoothed, x, end)
+        wide_enough = cut - previous >= window and width - cut >= window
+        inked = (
+            prefix[cut] - prefix[previous] >= min_ink
+            and prefix[-1] - prefix[cut] >= min_ink
+        )
+        if wide_enough and inked:
+            cuts.append(cut)
+            previous = cut
+        x = end
+
+    edges = [0, *cuts, width]
+    return list(zip(edges[:-1], edges[1:]))
 
 
 def _ink_runs(
@@ -113,6 +190,44 @@ def _ink_runs(
     if start is not None:
         runs.append((start, len(counts)))
     return runs
+
+
+_SHORT_BLOCK_REACH = 3
+
+
+def _absorb_short_blocks(
+    blocks: list[tuple[int, int]],
+    *,
+    min_block_height: int,
+    max_gap: int,
+) -> list[tuple[int, int]]:
+    """Fold each short block into its nearer neighbour within ``max_gap``.
+
+    A short block is usually the last line of a solution (``HP = ...``) or a
+    separator written a little apart; dropping it loses work. Short blocks
+    with no neighbour in reach (a scanner footer, a stray mark) are dropped.
+    """
+    result = list(blocks)
+    while True:
+        short = next(
+            (i for i, (y0, y1) in enumerate(result) if y1 - y0 < min_block_height),
+            None,
+        )
+        if short is None:
+            return result
+        y0, y1 = result[short]
+        gaps = []
+        if short > 0:
+            gaps.append((y0 - result[short - 1][1], short - 1))
+        if short + 1 < len(result):
+            gaps.append((result[short + 1][0] - y1, short + 1))
+        reachable = [(gap, i) for gap, i in gaps if gap <= max_gap]
+        if not reachable:
+            del result[short]
+            continue
+        _gap, neighbour = min(reachable)
+        lo, hi = sorted((short, neighbour))
+        result[lo : hi + 1] = [(result[lo][0], result[hi][1])]
 
 
 def cluster_vertical_blocks(
@@ -143,16 +258,19 @@ def cluster_vertical_blocks(
         else:
             merged.append((start, end))
 
+    clipped = [(max(y0, y_min), y1) for y0, y1 in merged if y1 > y_min]
+    blocks = _absorb_short_blocks(
+        clipped,
+        min_block_height=min_block_height,
+        max_gap=_SHORT_BLOCK_REACH * merge_gap,
+    )
+
     regions: list[Region] = []
-    for y0, y1 in merged:
-        if y1 <= y_min:
-            continue
-        y0 = max(y0, y_min)
+    for y0, y1 in blocks:
         block_height = y1 - y0
-        if block_height < min_block_height:
-            continue
         tight_x0, tight_x1 = _horizontal_bounds(mask, width, x0, x1, y0, y1)
-        if tight_x1 <= tight_x0:
+        # A sliver this thin is a paper edge or shadow, never a written answer.
+        if tight_x1 - tight_x0 < min_block_height:
             continue
         regions.append(
             Region(
@@ -217,16 +335,29 @@ def propose_solution_regions(
     if len(gray) < width * height:
         return []
 
-    mask = binarize_ink(gray, threshold=cfg.threshold)
+    gray = gray[: width * height]
+    threshold = ink_threshold(
+        gray, threshold=cfg.threshold, paper_offset=cfg.paper_offset
+    )
+    mask = remove_long_vertical_runs(
+        binarize_ink(gray, threshold=threshold),
+        width=width,
+        height=height,
+        min_run=int(round(height * cfg.long_line_ratio)),
+    )
+    y_min = int(round(height * cfg.header_fraction))
     columns = detect_columns(
-        mask, width=width, height=height, valley_ratio=cfg.column_valley_ratio
+        mask,
+        width=width,
+        height=height,
+        valley_ratio=cfg.column_valley_ratio,
+        y_min=y_min,
     )
     if not columns:
         columns = [(0, width)]
 
     merge_gap = max(4, int(round(height * cfg.merge_gap_ratio)))
     min_block_height = max(12, int(round(height * cfg.min_block_height_ratio)))
-    y_min = int(round(height * cfg.header_fraction))
     margin = int(round(width * cfg.margin_ratio))
     col_width_ref = max(columns[0][1] - columns[0][0], 1)
     min_row_ink = max(2, int(round(col_width_ref * cfg.min_row_ink_ratio)))

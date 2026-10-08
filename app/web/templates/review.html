@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Review transkripsi · {{ run | short_pdf }}{% endblock %}
+{% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(run) }}">{{ run | short_pdf }}</a> / Review{% endblock %}
+{% block main_class %}container-wide{% endblock %}
+{% block scripts %}<script defer src="{{ static_url('js/review.js') }}"></script>{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="row-between">
+    <h1>Review transkripsi</h1>
+    <form method="post" action="{{ run_url(run, '/finish-questions') }}">
+      <button class="btn">Nilai sekarang</button>
+    </form>
+  </div>
+  <p class="muted small">Perbaiki teks dan bentuk simbolik setiap langkah. Pratinjau memakai parser SymPy yang sama dengan validator.
+    Langkah bertanda kuning perlu diperiksa.</p>
+  {% if review.errors %}
+  <div class="flash flash-error"><ul>{% for e in review.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if not review.items %}
+  <p class="muted">Belum ada <code>question.json</code>. Jalankan transkripsi dari <a href="{{ run_url(run) }}">halaman run</a>.</p>
+  {% endif %}
+</section>
+
+{% for item in review.items %}
+{% set q = item.question %}
+{% set flags = {} %}
+{% for f in item.flagged_steps %}{% set _ = flags.update({f.step_number|string: f.flags | map(attribute="value") | list}) %}{% endfor %}
+{% set editor = {
+  "question": q.model_dump(mode="json"),
+  "saveUrl": "/api" ~ run_url(run, "/questions/" ~ (q.question_id | urlq)),
+  "flags": flags,
+} %}
+<section class="card review-item" id="q-{{ q.question_id }}" x-data='questionEditor({{ editor | tojson }})' :data-dirty="dirty">
+  <div class="row-between">
+    <h2>Soal {{ q.question_number }} <small class="muted">{{ q.question_id }}</small></h2>
+    <span class="row">
+      <span class="badge badge-warn" x-show="dirty" x-cloak>belum disimpan</span>
+      <span class="badge badge-ok" x-show="saved && !dirty" x-cloak>tersimpan</span>
+      <button type="button" class="btn btn-small" @click="save()" :disabled="saving || !dirty">
+        <span x-text="saving ? 'Menyimpan…' : 'Simpan'"></span>
+      </button>
+    </span>
+  </div>
+  <p class="error-text small" x-show="error" x-text="error" x-cloak></p>
+
+  <div class="review-body">
+    <div class="review-crops">
+      {% for ref in q.image_regions if ref.crop_path %}
+      {% set crop_name = ref.crop_path.replace("\\", "/").split("/")[-1] %}
+      <img src="{{ run_url(run, '/crops/' ~ crop_name) }}" alt="{{ crop_name }}" loading="lazy">
+      {% else %}
+      <p class="muted small">Tidak ada crop tercatat.</p>
+      {% endfor %}
+    </div>
+
+    <div class="review-steps">
+      <table class="table steps-table">
+        <thead>
+          <tr><th>#</th><th>Teks (tulisan mahasiswa)</th><th>Jenis</th><th>Simbolik (SymPy)</th><th>Pratinjau</th><th>Peran</th><th></th></tr>
+        </thead>
+        <tbody>
+          <template x-for="(step, i) in steps" :key="step.key">
+            <tr :class="{ flagged: flagsFor(step).length }">
+              <td>
+                <span x-text="step.step_number"></span>
+                <template x-for="flag in flagsFor(step)"><span class="badge badge-warn tiny" x-text="flag"></span></template>
+              </td>
+              <td><textarea rows="2" x-model="step.raw_text" @input="touch()"></textarea></td>
+              <td>
+                <select x-model="step.kind" @change="touch(); preview(step)">
+                  <option value="">—</option>
+                  {% for kind in symbolic_kinds %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
+                </select>
+              </td>
+              <td><input type="text" class="mono" x-model="step.repr" @input="touch()" @input.debounce.400ms="preview(step)"></td>
+              <td class="preview" x-effect="tex($el, step.previewTex, step.repr)"></td>
+              <td><input type="text" class="input-role" x-model="step.role" @input="touch()"></td>
+              <td><button type="button" class="btn btn-tiny btn-danger" @click="removeStep(i)" title="Hapus langkah">×</button></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <button type="button" class="btn btn-small btn-secondary" @click="addStep()">+ Langkah</button>
+
+      <h3>Jawaban akhir</h3>
+      <div class="final-grid">
+        <label class="small">Teks <input type="text" x-model="finalText" @input="touch()"></label>
+        <label class="small">Jenis
+          <select x-model="final.kind" @change="touch(); preview(final)">
+            <option value="">—</option>
+            {% for kind in symbolic_kinds %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="small">Simbolik <input type="text" class="mono" x-model="final.repr" @input="touch()" @input.debounce.400ms="preview(final)"></label>
+        <div class="preview" x-effect="tex($el, final.previewTex, final.repr)"></div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endfor %}
+
+{% if review.items %}
+<section class="card row-between">
+  <a class="btn btn-secondary" href="{{ run_url(run) }}">Kembali ke run</a>
+  <form method="post" action="{{ run_url(run, '/finish-questions') }}">
+    <button class="btn">Nilai sekarang</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,12 +1,12 @@
-"""Recognize question numbers per crop → editable question_crops JSON → confirm."""
+"""Recognize question numbers per crop → editable question_crops JSON."""
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from app.exceptions import (
     NoRegionsForLabelingError,
-    QuestionCropsInvalidError,
     QuestionCropsNotFoundError,
 )
 from app.functions.question_crops import (
@@ -20,19 +20,15 @@ from app.functions.question_crops import (
     write_question_crops,
 )
 from app.interfaces.question_labeler import QuestionLabeler
-from app.models.exam_schema import ExamSchema
+from app.models.exam_schema import ExamQuestion, ExamSchema
 from app.models.question_crops import (
     LabelSource,
     QuestionCropMap,
     QuestionCropsReport,
     QuestionLabelResult,
 )
-from app.views.prompt_view import InputFn, is_interactive
-from app.views.question_crops_view import (
-    ask_question_crops_ok,
-    print_question_crops_summary,
-    wait_for_question_crops_edit,
-)
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionLabelController:
@@ -54,6 +50,16 @@ class QuestionLabelController:
     @property
     def _numbers(self) -> list[int]:
         return sorted(q.number for q in self._schema.questions)
+
+    @property
+    def exam_questions(self) -> list[ExamQuestion]:
+        return sorted(self._schema.questions, key=lambda q: q.number)
+
+    def save_mapping(self, mapping: QuestionCropMap) -> QuestionLabelResult:
+        """Write a mapping edited in the UI, then validate it exactly like a reload."""
+        stems = {q.number: q.stem for q in self._schema.questions}
+        write_question_crops(self._crops_dir, mapping, stems=stems)
+        return self.reload_all()
 
     def label_all(self) -> QuestionLabelResult:
         """Detect labels per crop (vision), carry forward, write one JSON per question."""
@@ -104,33 +110,21 @@ class QuestionLabelController:
                 )
         return self._result(mapping, report, LabelSource.RELOAD)
 
-    def confirm_loop(
-        self,
-        result: QuestionLabelResult,
-        *,
-        force_yes: bool = False,
-        input_fn: InputFn | None = None,
-    ) -> QuestionLabelResult:
-        """Ask until mapping is OK and valid; on no, wait for JSON edit then reload."""
-        if force_yes or not is_interactive(input_fn):
-            if not result.report.ok:
-                raise QuestionCropsInvalidError(result.report.errors)
-            return result
-        while True:
-            if result.report.ok and ask_question_crops_ok(input_fn=input_fn):
-                return result
-            edited = wait_for_question_crops_edit(json_dir=self.json_dir, input_fn=input_fn)
-            if not edited and not result.report.ok:
-                raise QuestionCropsInvalidError(result.report.errors)
-            result = self.reload_all()
-
     def _result(
         self,
         mapping: QuestionCropMap,
         report: QuestionCropsReport,
         source: LabelSource,
     ) -> QuestionLabelResult:
-        print_question_crops_summary(mapping, report, json_dir=self.json_dir)
+        logger.info(
+            "question crops (%s): %d question(s), %d error(s), %d unassigned, %d unreadable in %s",
+            source.value,
+            len(mapping),
+            len(report.errors),
+            len(report.unassigned_crops),
+            len(report.unreadable_crops),
+            self.json_dir,
+        )
         return QuestionLabelResult(
             mapping=mapping, report=report, json_dir=self.json_dir, source=source
         )

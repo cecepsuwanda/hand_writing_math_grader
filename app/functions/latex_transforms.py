@@ -33,6 +33,10 @@ _ALIGN_OPS = (
     r"\\geqslant",
     r"\\approx",
     r"\\equiv",
+    "<=",
+    ">=",
+    "!=",
+    "==",
     "=",
     r"\\lt",
     r"\\gt",
@@ -43,8 +47,35 @@ _ALIGN_OPS = (
     "≥",
 )
 
+# Implications chain steps on one line; they are never the aligned relation.
+_ARROW_OPS = (
+    "<=>",
+    "=>",
+    "⇒",
+    "⇔",
+    r"\\Rightarrow",
+    r"\\Leftrightarrow",
+    r"\\rightarrow",
+    r"\\leftarrow",
+    r"\\leftrightarrow",
+    r"\\implies",
+    r"\\iff",
+    r"\\to",
+)
+
+
+def _op_pattern(op: str) -> str:
+    # ``\le`` must not swallow the head of ``\left`` or ``\leftarrow``.
+    return f"{op}(?![A-Za-z])" if op.startswith("\\\\") else op
+
+
+_ARROW_SET = frozenset(op.replace("\\\\", "\\") for op in _ARROW_OPS)
+
 _ALIGN_OP_RE = re.compile(
-    "|".join(sorted((_ALIGN_OPS), key=len, reverse=True))
+    "|".join(
+        _op_pattern(op)
+        for op in sorted(_ALIGN_OPS + _ARROW_OPS, key=len, reverse=True)
+    )
 )
 
 _FINAL_ANSWER_PREFIX_RE = re.compile(
@@ -80,7 +111,10 @@ def format_aligned_line(expression: str) -> str:
     expr = expression.strip()
     if not expr:
         return ""
-    match = _ALIGN_OP_RE.search(expr)
+    match = next(
+        (m for m in _ALIGN_OP_RE.finditer(expr) if m.group(0) not in _ARROW_SET),
+        None,
+    )
     if not match or match.start() == 0:
         return expr
     left = expr[: match.start()].rstrip()

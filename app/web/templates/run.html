@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ run.short_name }} · Math Grader{% endblock %}
+{% block crumbs %}<a href="/">Beranda</a> / <span title="{{ run.name }}">{{ run.short_name }}</span>{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="row-between">
+    <h1 title="{{ run.name }}">{{ run.short_name }}</h1>
+    <span class="muted">NIM {{ run.student_id }}</span>
+  </div>
+  {% include "partials/run_steps.html" %}
+  {% if job %}
+  <p class="small">Job terakhir:
+    <a href="/jobs/{{ job.id }}" class="badge badge-{{ job.status.value }}">{{ job.title }}: {{ job.status.value }}</a>
+    {% if job.error %}<span class="error-text">{{ job.error }}</span>{% endif %}
+  </p>
+  {% endif %}
+</section>
+
+<ol class="stepper">
+  <li class="card {% if run.steps.crops %}done{% endif %}">
+    <h3>Crop jawaban</h3>
+    <p class="muted">Gambar, geser, ubah ukuran, atau hapus kotak jawaban di tiap halaman.</p>
+    {% if run.steps.pages %}
+    <a class="btn" href="{{ run_url(run.name, '/crops') }}">Editor crop</a>
+    {% else %}
+    <p class="muted">Belum ada halaman. Jalankan <strong>Propose crops</strong> dari beranda.</p>
+    {% endif %}
+  </li>
+  <li class="card {% if run.steps.labels %}done{% endif %}">
+    <h3>Nomor soal per crop <small class="muted">(opsional)</small></h3>
+    <p class="muted">Tanpa ini, model menebak nomor soal saat transkripsi.</p>
+    {% if run.steps.crops %}<a class="btn btn-secondary" href="{{ run_url(run.name, '/labels') }}">Atur nomor soal</a>{% endif %}
+  </li>
+  <li class="card {% if run.steps.questions %}done{% endif %}">
+    <h3>Transkripsi</h3>
+    <p class="muted">Model vision membaca crop menjadi <code>question.json</code>.</p>
+    {% if run.steps.crops %}
+    <div class="row">
+      <form method="post" action="{{ run_url(run.name, '/transcribe') }}"
+            {% if run.steps.questions %}data-confirm="Transkripsi ulang akan menimpa question.json yang sudah direview. Lanjut?"{% endif %}>
+        <button class="btn">Transkripsi lalu review</button>
+      </form>
+      <form method="post" action="{{ run_url(run.name, '/finish') }}"
+            data-confirm="Transkripsi dan langsung menilai tanpa review?">
+        <button class="btn btn-secondary">Transkripsi + nilai langsung</button>
+      </form>
+    </div>
+    {% endif %}
+  </li>
+  <li class="card {% if run.steps.graded %}done{% endif %}">
+    <h3>Review &amp; penilaian</h3>
+    <p class="muted">Periksa langkah hasil transkripsi, lalu nilai.</p>
+    {% if run.steps.questions %}
+    <div class="row">
+      <a class="btn btn-secondary" href="{{ run_url(run.name, '/review') }}">Review transkripsi</a>
+      <form method="post" action="{{ run_url(run.name, '/finish-questions') }}">
+        <button class="btn">Nilai dari question.json</button>
+      </form>
+    </div>
+    {% endif %}
+  </li>
+  <li class="card {% if run.steps.report %}done{% endif %}">
+    <h3>Hasil</h3>
+    {% if run.steps.report %}
+    <p>Total <strong>{{ "%g" | format(run.total_score) }} / {{ "%g" | format(run.maximum_total) }}</strong></p>
+    <div class="row">
+      <a class="btn" href="{{ run_url(run.name, '/results') }}">Lihat hasil</a>
+      {% for kind in run.report_files %}
+      <a class="btn btn-small btn-secondary" href="{{ run_url(run.name, '/files/' ~ kind.value) }}">{{ kind.value | upper }}</a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">Belum ada laporan.</p>
+    {% endif %}
+  </li>
+</ol>
+{% endblock %}

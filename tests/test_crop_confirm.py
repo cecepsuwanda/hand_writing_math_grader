@@ -1,29 +1,32 @@
-"""Tests for regions artifact + crop confirm / recrop (no live Ollama)."""
+"""Tests for regions artifact, crop editor, labels and review (no live Ollama)."""
 from __future__ import annotations
 import json
+import logging
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from app.config import AppConfig, GradingConfig
 from app.controllers.crop_controller import CropController
-from app.controllers.menu_controller import exit_code_for
 from app.controllers.question_label_controller import QuestionLabelController
 from app.exceptions import (
     EmptyRegionsError,
     ExamSchemaMissingError,
+    InvalidRegionsError,
+    MathGraderError,
     NoRegionsForLabelingError,
-    OperationCancelledError,
-    PageImageMissingError,
     QuestionCropsInvalidError,
     RegionsArtifactMissingError,
 )
+from app.functions.image_crop import MANUAL_REGION_SOURCE, CropPadding, crop_padding_for
 from app.functions.question_crops import (
     assign_by_labels,
     assign_sequential,
     crop_to_questions,
     list_crops_in_reading_order,
     load_question_crops,
+    mapping_from_crop_labels,
     question_crops_dir,
     question_crops_path,
     validate_question_crops,
@@ -35,6 +38,7 @@ from app.functions.regions_artifact import (
     crop_paths_for,
     list_page_crop_dirs,
     load_regions_artifact,
+    manual_region_errors,
     regions_json_path,
     write_regions_artifact,
 )
@@ -43,12 +47,22 @@ from app.models.exam_schema import ExamQuestion, ExamSchema
 from app.models.page import Page
 from app.models.question_crops import LabelSource
 from app.models.recognition import DetectedRegion, Region
-from app.functions.run_layout import build_run_layout
+from app.services.math.preview import symbolic_preview_latex
 from app.services.pipeline_factory import build_question_label_controller
 from app.services.vision.question_labeler import OllamaQuestionLabeler
-from tests.support.builders import single_question_json, write_png
+from app.web.jobs import JobStatus
+from app.web.schemas import parse_crop_labels
+from tests.support.asserts import assert_contains
+from tests.support.builders import (
+    make_question,
+    make_step,
+    single_question_json,
+    write_png,
+    write_question_dir,
+    write_run_pages,
+)
 from tests.support.fakes import FakeClient, FakeProposer
-from tests.support.harness import CliHarness, make_recognizer, q1_standard
+from tests.support.harness import WebHarness, make_recognizer, q1_standard
 
 
 def _schema(count: int) -> ExamSchema:
@@ -107,6 +121,27 @@ class TestRegionsArtifact:
         _n, source, loaded = load_regions_artifact(path)
         assert source == "ink"
         assert loaded[0].region.width == 3
+
+    @pytest.mark.parametrize(
+        ("orders", "written"),
+        [
+            ([0, 1, 1], [0, 1, 2]),
+            ([5, 5, 5], [0, 1, 2]),
+            ([2, 0, 1], [2, 0, 1]),
+            ([10, 30, 20], [0, 2, 1]),
+        ],
+    )
+    def test_saved_orders_are_a_permutation(
+        self, tmp_path: Path, orders: list[int], written: list[int]
+    ) -> None:
+        regions = [
+            DetectedRegion(type="solution", region=Region(x=0, y=10 * i, width=5, height=5), order=order)
+            for i, order in enumerate(orders)
+        ]
+        path = write_regions_artifact(tmp_path / "page_001", 1, regions=regions, source="manual")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert [item["order"] for item in payload["regions"]] == written
+        assert [r.order for r in load_regions_artifact(path)[2]] == written
 
     def test_list_page_crop_dirs_skips_non_page_entries(self, tmp_path: Path) -> None:
         for name in ("page_002", "page_001", "page_000", "page_x", "question_crops"):
@@ -207,83 +242,11 @@ class TestRegionsArtifact:
         ]
 
 
-class TestCropConfirm:
-
-    def test_confirm_loop_n_then_y(self, tmp_path: Path) -> None:
-        write_png(tmp_path / "pages" / "page_001.png", (30, 30), (255, 255, 255))
-        page_dir = tmp_path / "crops" / "page_001"
-        write_regions_artifact(
-            page_dir,
-            1,
-            regions=[
-                DetectedRegion(
-                    type="solution",
-                    region=Region(x=0, y=0, width=10, height=10),
-                    order=0,
-                )
-            ],
-            source="ink",
-        )
-
-        class _FakeRenderer:
-            def render(self, pdf_path, pages_dir, dpi):
-                raise AssertionError("render should not run")
-
-        controller = CropController(renderer=_FakeRenderer(), workspace=make_recognizer(tmp_path))
-        answers = iter(["n", "", "y"])
-        controller.confirm_loop(
-            tmp_path / "pages",
-            force_yes=False,
-            input_fn=lambda _prompt="": next(answers),
-        )
+class TestCropEnsure:
 
     class _NoRender:
         def render(self, pdf_path, pages_dir, dpi):
             raise AssertionError("render should not run")
-
-    def test_confirm_loop_waits_for_fix_after_failed_recrop(self, tmp_path: Path, capsys) -> None:
-        pages = tmp_path / "pages"
-        pages.mkdir()
-        _write_regions(tmp_path / "crops", 1, 1)
-        controller = CropController(renderer=self._NoRender(), workspace=make_recognizer(tmp_path))
-        prompts: list[str] = []
-
-        def input_fn(prompt: str = "") -> str:
-            prompts.append(prompt)
-            if len(prompts) == 3:
-                # Second edit round: the user restores the page image before Enter.
-                write_png(pages / "page_001.png", (30, 30), (255, 255, 255))
-            return {1: "n"}.get(len(prompts), "")
-
-        controller.confirm_loop(pages, input_fn=input_fn)
-        assert "Page image missing" in capsys.readouterr().err
-        # OK?, edit (recrop fails), edit again without OK?, then OK? after a good recrop.
-        assert [p.startswith("Crop OK?") for p in prompts] == [True, False, False, True]
-
-    def test_confirm_loop_eof_after_failed_recrop_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "pages").mkdir()
-        _write_regions(tmp_path / "crops", 1, 1)
-        controller = CropController(renderer=self._NoRender(), workspace=make_recognizer(tmp_path))
-        answers = iter(["n", ""])
-
-        def input_fn(_prompt: str = "") -> str:
-            try:
-                return next(answers)
-            except StopIteration:
-                raise EOFError from None
-
-        with pytest.raises(PageImageMissingError):
-            controller.confirm_loop(tmp_path / "pages", input_fn=input_fn)
-
-    def test_confirm_loop_ctrl_c_cancels(self, tmp_path: Path) -> None:
-        _write_regions(tmp_path / "crops", 1, 1)
-        controller = CropController(renderer=self._NoRender(), workspace=make_recognizer(tmp_path))
-
-        def interrupted(_prompt: str = "") -> str:
-            raise KeyboardInterrupt
-
-        with pytest.raises(OperationCancelledError):
-            controller.confirm_loop(tmp_path / "pages", input_fn=interrupted)
 
     def test_crop_controller_accepts_crop_workspace_port(self, tmp_path: Path) -> None:
         pages_dir = tmp_path / "pages"
@@ -319,13 +282,16 @@ class TestCropConfirm:
             def recrop_page_from_json(self, image_path: Path, page_number: int):
                 return self.propose_page_crops(image_path, page_number)
 
+            def save_page_regions(self, image_path, page_number, regions, *, source):
+                raise AssertionError("unused")
+
         class _FakeRenderer:
             def render(self, pdf_path, pages_dir, dpi):
                 raise AssertionError("unused")
 
         controller = CropController(renderer=_FakeRenderer(), workspace=_FakeCrop())
         pages = [Page(page_number=1, width=20, height=20, image="page_001.png")]
-        result = controller.ensure_crops_confirmed(pages, pages_dir, force_yes=True)
+        result = controller.ensure_crops(pages, pages_dir)
         assert len(result.pages) == 1
         assert result.pages[0].json_path.is_file()
 
@@ -356,6 +322,9 @@ class TestCropConfirm:
         def recrop_page_from_json(self, image_path: Path, page_number: int):
             raise AssertionError("recrop should not run")
 
+        def save_page_regions(self, image_path, page_number, regions, *, source):
+            raise AssertionError("save should not run")
+
     def test_use_existing_proposes_only_pages_without_json(self, tmp_path: Path) -> None:
         workspace = self._RecordingCrop(tmp_path / "crops")
         _write_regions(workspace.crops_dir, 1, 2)
@@ -365,49 +334,17 @@ class TestCropConfirm:
         pages = [
             Page(page_number=n, width=20, height=20, image=f"page_{n:03d}.png") for n in (1, 2)
         ]
-        result = controller.ensure_crops_confirmed(
-            pages, tmp_path / "pages", use_existing=True, force_yes=True
-        )
+        result = controller.ensure_crops(pages, tmp_path / "pages", use_existing=True)
         assert workspace.proposed == [2]
         assert edited.read_bytes() == before
         assert [(s.page_number, len(s.crop_paths)) for s in result.pages] == [(1, 2), (2, 1)]
-
-    def test_ensure_returns_result_of_last_recrop(self, tmp_path: Path) -> None:
-        write_png(tmp_path / "pages" / "page_001.png", (30, 30), (255, 255, 255))
-        recognizer = make_recognizer(tmp_path)
-        _write_regions(recognizer.crops_dir, 1, 1)
-        controller = CropController(renderer=self._NoRender(), workspace=recognizer)
-
-        def add_region() -> str:
-            _write_regions(recognizer.crops_dir, 1, 2)
-            return ""
-
-        answers = iter([lambda: "n", add_region, lambda: "y"])
-        result = controller.ensure_crops_confirmed(
-            [Page(page_number=1, width=30, height=30, image="page_001.png")],
-            tmp_path / "pages",
-            use_existing=True,
-            input_fn=lambda _prompt="": next(answers)(),
-        )
-        assert [len(s.crop_paths) for s in result.pages] == [2]
-
-    def test_cli_recrop_without_regions_json_exits_1(
-        self, tmp_path: Path, monkeypatch, capsys
-    ) -> None:
-        cli = CliHarness(tmp_path, monkeypatch)
-        layout = build_run_layout(cli.output_root, "answer")
-        layout.crops_dir.mkdir(parents=True)
-        assert cli.run("recrop", "--run", "answer", "--yes") == 1
-        err = capsys.readouterr().err
-        assert "No regions JSON" in err
-        assert str(layout.crops_dir) in err
 
     @pytest.mark.parametrize(
         ("regions", "error_cls"),
         [(None, RegionsArtifactMissingError), ([], EmptyRegionsError)],
         ids=["missing_json", "empty_regions"],
     )
-    def test_recrop_page_errors_map_to_exit_code_1(
+    def test_recrop_page_errors_are_domain_errors(
         self, tmp_path: Path, regions, error_cls
     ) -> None:
         recognizer = make_recognizer(tmp_path)
@@ -418,25 +355,9 @@ class TestCropConfirm:
             )
         with pytest.raises(error_cls) as info:
             recognizer.recrop_page_from_json(image, 1)
-        assert exit_code_for(info.value) == 1
+        assert isinstance(info.value, MathGraderError)
 
-    def test_confirm_loop_reprompts_on_empty_regions(self, tmp_path: Path, capsys) -> None:
-        write_png(tmp_path / "pages" / "page_001.png", (20, 20))
-        recognizer = make_recognizer(tmp_path)
-        write_regions_artifact(recognizer.page_crop_dir(1), 1, regions=[], source="ink")
-        controller = CropController(renderer=object(), workspace=recognizer)
-
-        def fix_regions() -> str:
-            _write_regions(recognizer.crops_dir, 1, 1)
-            return ""
-
-        answers = iter([lambda: "n", lambda: "", fix_regions, lambda: "y"])
-        controller.confirm_loop(
-            tmp_path / "pages", input_fn=lambda _prompt="": next(answers)()
-        )
-        assert "No regions in" in capsys.readouterr().err
-
-    def test_ensure_propose_with_force_yes(self, tmp_path: Path) -> None:
+    def test_ensure_crops_proposes_every_page(self, tmp_path: Path) -> None:
         pages_dir = tmp_path / "pages"
         pages_dir.mkdir()
         write_png(pages_dir / "page_001.png", (40, 40))
@@ -449,14 +370,37 @@ class TestCropConfirm:
 
         controller = CropController(renderer=_FakeRenderer(), workspace=recognizer)
         pages = [Page(page_number=1, width=40, height=40, image="page_001.png")]
-        result = controller.ensure_crops_confirmed(
-            pages, pages_dir, force_yes=True
-        )
+        result = controller.ensure_crops(pages, pages_dir)
         assert len(result.pages) == 1
         assert result.pages[0].json_path.is_file()
 
 
 class TestQuestionCrops:
+
+    @staticmethod
+    def _hand_edit_orders(crops_dir: Path, page_number: int, orders: list[int]) -> None:
+        path = regions_json_path(crops_dir / f"page_{page_number:03d}", page_number)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for item, order in zip(payload["regions"], orders):
+            item["order"] = order
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        ("orders", "expected_indices"),
+        [
+            ([0, 1, 2, 3, 4, 5, 4], [0, 1, 2, 3, 4, 5, 6]),
+            ([0, 1, 2, 3, 4, 6, 5], [0, 1, 2, 3, 4, 6, 5]),
+            ([10, 30, 20, 40, 50, 60, 70], [0, 2, 1, 3, 4, 5, 6]),
+        ],
+    )
+    def test_reading_order_follows_normalized_region_order(
+        self, tmp_path: Path, orders: list[int], expected_indices: list[int]
+    ) -> None:
+        names = _write_regions(tmp_path, 1, 7)
+        self._hand_edit_orders(tmp_path, 1, orders)
+        refs = list_crops_in_reading_order(tmp_path)
+        assert [r.name for r in refs] == [names[i] for i in expected_indices]
+        assert sorted(r.order for r in refs) == list(range(7))
 
     def test_reading_order_spans_pages(self, tmp_path: Path) -> None:
         page2 = _write_regions(tmp_path, 2, 1)
@@ -593,7 +537,7 @@ class TestQuestionLabelController:
         assert json.loads(files[0].read_text(encoding="utf-8"))["stem"] == "soal 1"
         assert load_question_crops(tmp_path) == result.mapping
 
-    def test_label_all_reports_unreadable_labels(self, tmp_path: Path, capsys) -> None:
+    def test_label_all_reports_unreadable_labels(self, tmp_path: Path) -> None:
         names = _write_regions(tmp_path, 1, 3)
         labeler = _FakeLabeler({names[0]: [1], names[1]: None, names[2]: [2]})
         result = QuestionLabelController(
@@ -603,7 +547,6 @@ class TestQuestionLabelController:
         assert result.mapping == {1: [names[0], names[1]], 2: [names[2]]}
         assert result.report.ok
         assert result.report.unreadable_crops == [names[1]]
-        assert "label tidak terbaca (ikut soal sebelumnya)" in capsys.readouterr().err
 
     def test_label_all_without_labeler_is_sequential(self, tmp_path: Path) -> None:
         names = _write_regions(tmp_path, 1, 2)
@@ -620,54 +563,6 @@ class TestQuestionLabelController:
     def test_label_all_requires_regions(self, tmp_path: Path) -> None:
         with pytest.raises(NoRegionsForLabelingError):
             QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1)).label_all()
-
-    def test_confirm_loop_n_edit_then_y(self, tmp_path: Path, capsys) -> None:
-        a, b = _write_regions(tmp_path, 1, 2)
-        controller = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(2))
-        result = controller.label_all()
-
-        def edit_json() -> str:
-            write_question_crops(tmp_path, {1: [a, b], 2: [b]})
-            return ""
-
-        answers = iter([lambda: "n", edit_json, lambda: "y"])
-        final = controller.confirm_loop(result, input_fn=lambda _prompt="": next(answers)())
-        assert final.source == "reload"
-        assert final.mapping == {1: [a, b], 2: [b]}
-        assert "Edit daftar" in capsys.readouterr().out
-
-    def test_confirm_loop_non_interactive_raises_on_invalid(self, tmp_path: Path) -> None:
-        _write_regions(tmp_path, 1, 1)
-        controller = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1))
-        write_question_crops(tmp_path, {1: ["page_001_region_05_solution.png"]})
-        result = controller.reload_all()
-        assert not result.report.ok
-        with pytest.raises(QuestionCropsInvalidError, match="menu 6"):
-            controller.confirm_loop(result, force_yes=True)
-
-    def test_confirm_loop_eof_while_invalid_raises(self, tmp_path: Path) -> None:
-        _write_regions(tmp_path, 1, 1)
-        controller = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1))
-        write_question_crops(tmp_path, {1: ["page_001_region_05_solution.png"]})
-        result = controller.reload_all()
-
-        def eof(_prompt: str = "") -> str:
-            raise EOFError
-
-        with pytest.raises(QuestionCropsInvalidError):
-            controller.confirm_loop(result, input_fn=eof)
-
-    def test_confirm_loop_ctrl_c_cancels(self, tmp_path: Path) -> None:
-        _write_regions(tmp_path, 1, 1)
-        controller = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1))
-        result = controller.label_all()
-        assert result.report.ok
-
-        def interrupted(_prompt: str = "") -> str:
-            raise KeyboardInterrupt
-
-        with pytest.raises(OperationCancelledError):
-            controller.confirm_loop(result, input_fn=interrupted)
 
     def test_reload_all_reports_broken_regions_json(self, tmp_path: Path) -> None:
         _write_regions(tmp_path, 1, 1)
@@ -687,14 +582,14 @@ class TestQuestionLabelController:
         result = QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1)).reload_all()
         assert result.mapping == {}
         assert result.source is LabelSource.RELOAD
-        assert "label-questions" in result.report.errors[0]
+        assert "halaman Label" in result.report.errors[0]
 
-    def test_invalid_mapping_warnings_go_to_stderr(self, tmp_path: Path, capsys) -> None:
+    def test_invalid_mapping_is_logged_not_printed(self, tmp_path: Path, caplog, capsys) -> None:
         _write_regions(tmp_path, 1, 1)
-        QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1)).reload_all()
-        captured = capsys.readouterr()
-        assert "Nomor soal per crop" in captured.out
-        assert "label-questions" in captured.err
+        with caplog.at_level(logging.INFO, logger="app.controllers.question_label_controller"):
+            QuestionLabelController(crops_dir=tmp_path, exam_schema=_schema(1)).reload_all()
+        assert "1 error(s)" in caplog.text
+        assert capsys.readouterr() == ("", "")
 
     def test_factory_reads_schema_from_topic_folder(self, tmp_path: Path) -> None:
         standard = q1_standard(tmp_path)
@@ -752,3 +647,253 @@ class TestRecognizerQuestionCrops:
         assert [q.question_number for q in page.questions] == [1, 0]
         assert "duplicate_of=1" in page.questions[1].reconcile_note
         assert "This crop contains" not in client.calls[0][0]
+
+
+def _box(x: float, y: float, width: float, height: float, **extra) -> dict:
+    return {"x": x, "y": y, "width": width, "height": height, **extra}
+
+
+class TestManualRegionEditor:
+
+    def test_manual_boxes_get_no_padding(self) -> None:
+        assert crop_padding_for(MANUAL_REGION_SOURCE) == CropPadding(pad_ratio=0.0, min_pad=0)
+        ink = crop_padding_for("ink")
+        assert ink.pad_ratio > 0 and ink.min_pad > 0
+
+    @pytest.mark.parametrize(
+        ("box", "message"),
+        [
+            (Region(x=10, y=10, width=3, height=50), "minimal 4 px"),
+            (Region(x=-5, y=0, width=20, height=20), "di luar halaman"),
+            (Region(x=190, y=0, width=20, height=20), "di luar halaman"),
+            (Region(x=0, y=290, width=20, height=20), "di luar halaman"),
+        ],
+        ids=["too-small", "left", "right", "bottom"],
+    )
+    def test_manual_region_errors(self, box: Region, message: str) -> None:
+        regions = [DetectedRegion(type="solution", region=box, order=0)]
+        (error,) = manual_region_errors(regions, image_width=200, image_height=300)
+        assert message in error
+
+    def test_manual_region_errors_accept_edge_boxes_and_need_one(self) -> None:
+        edge = DetectedRegion(type="solution", region=Region(x=0, y=0, width=200.5, height=300), order=0)
+        assert manual_region_errors([edge], image_width=200, image_height=300) == []
+        assert manual_region_errors([], image_width=200, image_height=300)
+
+    def test_recognizer_crops_manual_box_exactly(self, tmp_path: Path) -> None:
+        image = write_png(tmp_path / "pages" / "page_001.png", (100, 80), (255, 255, 255))
+        recognizer = make_recognizer(tmp_path)
+        box = DetectedRegion(type="solution", region=Region(x=10, y=5, width=30, height=20), order=0)
+        regions, source, json_path = recognizer.save_page_regions(
+            image, 1, [box], source=MANUAL_REGION_SOURCE
+        )
+        assert source == MANUAL_REGION_SOURCE
+        assert load_regions_artifact(json_path)[1] == MANUAL_REGION_SOURCE
+        crop = recognizer.page_crop_dir(1) / crop_filename(1, 0)
+        with Image.open(crop) as img:
+            assert img.size == (30, 20)
+        with pytest.raises(EmptyRegionsError):
+            recognizer.save_page_regions(image, 1, [], source=MANUAL_REGION_SOURCE)
+
+    def test_controller_rejects_invalid_boxes_before_writing(self, tmp_path: Path) -> None:
+        pages = write_run_pages(tmp_path / "pages", (200, 300))
+        recognizer = make_recognizer(tmp_path)
+        controller = CropController(renderer=object(), workspace=recognizer)
+        outside = DetectedRegion(type="solution", region=Region(x=150, y=0, width=100, height=10), order=0)
+        with pytest.raises(InvalidRegionsError, match="di luar halaman"):
+            controller.save_page_regions(pages[0].page_number, [outside], tmp_path / "pages")
+        assert not recognizer.page_crop_dir(1).exists()
+
+    def test_editor_page_and_empty_regions(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        web.run_dir("answer", (200, 300), (200, 300))
+        page = web.client.get("/runs/answer/crops", params={"page": 2})
+        assert page.status_code == 200
+        assert_contains(page.text, "cropEditor(", "konva.min.js", "/runs/answer/pages/2/image")
+        assert page.text.count("${savedCount} kotak") == 1
+        regions = web.client.get("/api/runs/answer/pages/1/regions").json()
+        assert regions["page"]["regions"] == [] and regions["crop_names"] == []
+        assert web.client.get("/runs/answer/crops", params={"page": 3}).status_code == 404
+
+    def test_put_regions_recrops_in_order(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        layout = web.run_dir("answer", (200, 300))
+        body = {"regions": [_box(10, 150, 60, 40, question_number=2), _box(10, 20, 80, 50)]}
+        response = web.client.put("/api/runs/answer/pages/1/regions", json=body)
+        assert response.status_code == 200, response.text
+        out = response.json()
+        assert out["page"]["source"] == MANUAL_REGION_SOURCE
+        assert [r["question_number"] for r in out["page"]["regions"]] == [2, 0]
+        assert out["crop_names"] == [crop_filename(1, 0), crop_filename(1, 1)]
+        with Image.open(layout.crops_dir / "page_001" / crop_filename(1, 0)) as img:
+            assert img.size == (60, 40)
+        thumbs = web.client.get("/runs/answer/pages/1/thumbs").text
+        assert_contains(thumbs, crop_filename(1, 0), "soal 2")
+        image = web.client.get(f"/runs/answer/crops/{crop_filename(1, 1)}")
+        assert image.headers["cache-control"] == "no-store"
+
+    @pytest.mark.parametrize(
+        ("regions", "needle"),
+        [
+            ([_box(10, 10, 2, 2)], "minimal 4 px"),
+            ([], "kotak"),
+            ([_box(10, 10, 20, 20, question_number=-1)], "question_number"),
+        ],
+        ids=["tiny", "empty", "negative-number"],
+    )
+    def test_put_invalid_regions_is_422_json(
+        self, tmp_path: Path, monkeypatch, regions: list[dict], needle: str
+    ) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        layout = web.run_dir("answer", (200, 300))
+        response = web.client.put("/api/runs/answer/pages/1/regions", json={"regions": regions})
+        assert response.status_code == 422
+        assert needle in json.dumps(response.json()["detail"])
+        assert not (layout.crops_dir / "page_001").exists()
+
+    def test_run_without_pages_has_no_editor(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        (web.output_root / "answer" / "crops").mkdir(parents=True)
+        response = web.client.get("/runs/answer/crops")
+        assert response.status_code == 404
+        assert "Propose crops" in response.text
+
+
+class TestWebLabels:
+
+    @pytest.mark.parametrize(
+        ("form", "expected"),
+        [
+            ({"crop:a.png": "1, 2", "crop:b.png": "", "other": "x"}, {"a.png": [1, 2], "b.png": []}),
+            ({"crop:a.png": " 3;4  5 "}, {"a.png": [3, 4, 5]}),
+        ],
+    )
+    def test_parse_crop_labels(self, form: dict, expected: dict) -> None:
+        assert parse_crop_labels(form) == expected
+
+    @pytest.mark.parametrize("raw", ["x", "0", "-1", "1.5"])
+    def test_parse_crop_labels_rejects_non_numbers(self, raw: str) -> None:
+        with pytest.raises(QuestionCropsInvalidError):
+            parse_crop_labels({"crop:a.png": raw})
+
+    def test_mapping_from_crop_labels(self, tmp_path: Path) -> None:
+        names = _write_regions(tmp_path, 1, 3)
+        crops = list_crops_in_reading_order(tmp_path)
+        labels = {names[0]: [1, 1], names[1]: [2, 9], names[2]: []}
+        assert mapping_from_crop_labels(crops, labels, [1, 2, 3]) == {
+            1: [names[0]],
+            2: [names[1]],
+            3: [],
+            9: [names[1]],
+        }
+
+    def _labeled_run(self, web: WebHarness) -> tuple[Path, list[str]]:
+        web.standard()
+        layout = web.run_dir("answer")
+        return layout.crops_dir, _write_regions(layout.crops_dir, 1, 2)
+
+    def test_labels_page_lists_crops_and_questions(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        _crops, names = self._labeled_run(web)
+        page = web.client.get("/runs/answer/labels")
+        assert page.status_code == 200
+        assert_contains(page.text, f'name="crop:{names[0]}"', f'name="crop:{names[1]}"', "2-3x")
+
+    def test_htmx_save_returns_the_form_with_report(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        crops, names = self._labeled_run(web)
+        response = web.htmx(
+            "POST", "/runs/answer/labels", data={f"crop:{names[0]}": "1", f"crop:{names[1]}": ""}
+        )
+        assert response.status_code == 200
+        assert_contains(response.text, 'id="label-form"', "Nomor soal disimpan", "1 crop tanpa nomor soal")
+        assert load_question_crops(crops) == {1: [names[0]]}
+
+    def test_plain_save_redirects(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        _crops, names = self._labeled_run(web)
+        response = web.client.post("/runs/answer/labels", data={f"crop:{names[0]}": "1"})
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("/runs/answer/labels?ok=")
+
+    def test_bad_label_is_a_flash(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        crops, names = self._labeled_run(web)
+        response = web.htmx("POST", "/runs/answer/labels", data={f"crop:{names[0]}": "satu"})
+        assert response.status_code == 422
+        assert response.headers["HX-Retarget"] == "#flash"
+        assert load_question_crops(crops) is None
+
+    def test_labels_need_an_ingested_kunci(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        _write_regions(web.run_dir("answer").crops_dir, 1, 1)
+        assert web.client.get("/runs/answer/labels").status_code == 422
+
+    def test_detect_job_without_vision_assigns_in_order(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch, vision_model="")
+        web.standard()
+        crops = web.run_dir("answer").crops_dir
+        names = _write_regions(crops, 1, 1)
+        job = web.job(web.client.post("/runs/answer/labels/detect"))
+        assert job.status == JobStatus.DONE, job.error
+        assert job.next_url == "/runs/answer/labels"
+        assert load_question_crops(crops) == {1: names}
+
+
+class TestWebReview:
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [("3*x - 5 < 4*x - 6", "3 x - 5 < 4 x - 6"), ("", None), ("((", None)],
+        ids=["relation", "empty", "unparseable"],
+    )
+    def test_symbolic_preview_latex(self, text: str, expected: str | None) -> None:
+        assert symbolic_preview_latex(text) == expected
+
+    def test_preview_endpoint(self, tmp_path: Path, monkeypatch) -> None:
+        client = WebHarness(tmp_path, monkeypatch).client
+        assert client.post("/api/preview", json={"text": "x >= 2"}).json() == {"latex": "x \\geq 2"}
+        assert client.post("/api/preview", json={"text": "x" * 2001}).status_code == 422
+
+    def _reviewed_run(self, web: WebHarness) -> Path:
+        layout = web.run_dir("answer")
+        question = make_question(steps=[make_step(1, symbolic_repr="2 - 3*x <= 12", raw_text="2-3x<=12")])
+        return write_question_dir(layout.questions_dir, question)
+
+    def test_review_page_lists_questions(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        self._reviewed_run(web)
+        page = web.client.get("/runs/answer/review")
+        assert page.status_code == 200
+        assert_contains(page.text, "questionEditor(", "question_001", "/api/runs/answer/questions/question_001")
+
+    def test_put_question_saves_the_edit(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        path = self._reviewed_run(web)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["student_steps"][0]["symbolic"]["repr"] = "2 - 3*x < 12"
+        response = web.client.put("/api/runs/answer/questions/question_001", json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["edited_ids"] == ["question_001"]
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        assert saved["student_steps"][0]["symbolic"]["repr"] == "2 - 3*x < 12"
+
+    @pytest.mark.parametrize(
+        ("question_id", "change", "needle"),
+        [
+            ("question_001", {"student_steps": "nope"}, "student_steps"),
+            ("question_002", {}, "tidak ada"),
+        ],
+        ids=["invalid-shape", "unknown-question"],
+    )
+    def test_put_invalid_question_is_422(
+        self, tmp_path: Path, monkeypatch, question_id: str, change: dict, needle: str
+    ) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        path = self._reviewed_run(web)
+        before = path.read_text(encoding="utf-8")
+        payload = {**json.loads(before), **change}
+        response = web.client.put(f"/api/runs/answer/questions/{question_id}", json=payload)
+        assert response.status_code == 422
+        assert needle in response.json()["detail"]
+        assert path.read_text(encoding="utf-8") == before

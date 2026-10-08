@@ -3,12 +3,49 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Sequence
+from concurrent.futures import Executor, Future
 from pathlib import Path
 
-from app.functions.run_layout import RunLayout
 from app.models.process import ProcessProgress, ProcessResult
 from app.models.recognition import DetectedRegion, Region
 from app.models.validation import StepValidation, ValidationMethod, ValidationStatus
+from app.web.jobs import JobManager
+
+
+class InlineExecutor(Executor):
+    """Runs each submitted callable immediately on the caller's thread."""
+
+    def submit(self, fn, /, *args, **kwargs) -> Future:
+        future: Future = Future()
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except BaseException as exc:  # noqa: BLE001 — mirror ThreadPoolExecutor
+            future.set_exception(exc)
+        return future
+
+
+class DeferredExecutor(Executor):
+    """Holds submitted callables until :meth:`run_all` (a job stays queued until then)."""
+
+    def __init__(self) -> None:
+        self.pending: list[tuple] = []
+
+    def submit(self, fn, /, *args, **kwargs) -> Future:
+        future: Future = Future()
+        self.pending.append((future, fn, args, kwargs))
+        return future
+
+    def run_all(self) -> None:
+        while self.pending:
+            future, fn, args, kwargs = self.pending.pop(0)
+            future.set_result(fn(*args, **kwargs))
+
+
+class FakeJobManager(JobManager):
+    """``JobManager`` whose jobs run synchronously inside ``submit`` (no worker thread)."""
+
+    def __init__(self, executor: Executor | None = None) -> None:
+        super().__init__(executor=executor or InlineExecutor())
 
 
 class FakeLatexRunner:
@@ -132,63 +169,6 @@ class RecordingJudge:
         )
 
 
-class RecordingMenuActions:
-    """:class:`MenuActions` double: records ``(action, args)``; ``errors`` makes an action raise."""
-
-    def __init__(
-        self,
-        *,
-        run_root: Path,
-        pdf: Path | None = None,
-        topic_id: str | None = "2",
-        errors: dict[str, Exception] | None = None,
-    ) -> None:
-        self.run_root = run_root
-        self.pdf = pdf or run_root.parent / "answer.pdf"
-        self.topic_id = topic_id
-        self.errors = dict(errors or {})
-        self.calls: list[tuple[str, tuple]] = []
-
-    @property
-    def names(self) -> list[str]:
-        return [name for name, _args in self.calls]
-
-    def _record(self, name: str, *args) -> None:
-        self.calls.append((name, args))
-        if name in self.errors:
-            raise self.errors[name]
-
-    def select_topic(self, active_topic_id: str) -> str | None:
-        self._record("select_topic", active_topic_id)
-        return self.topic_id
-
-    def select_pdf(self, config) -> Path:
-        self._record("select_pdf")
-        return self.pdf
-
-    def pick_run(self, config) -> RunLayout:
-        self._record("pick_run")
-        return RunLayout(root=self.run_root)
-
-    def ingest(self, config, topic_id: str) -> None:
-        self._record("ingest", topic_id)
-
-    def propose_crops(self, config, layout: RunLayout, pdf_path: Path) -> None:
-        self._record("propose_crops", layout, pdf_path)
-
-    def recrop(self, config, layout: RunLayout) -> None:
-        self._record("recrop", layout)
-
-    def label(self, config, layout: RunLayout, mode) -> None:
-        self._record("label", layout, mode)
-
-    def finish(self, config, layout: RunLayout, topic_id: str | None) -> None:
-        self._record("finish", layout, topic_id)
-
-    def finish_questions(self, config, layout: RunLayout, topic_id: str | None) -> None:
-        self._record("finish_questions", layout, topic_id)
-
-
 class RecordingProcessController:
     """Stands in for ``build_process_controller`` and the controller it returns.
 
@@ -232,6 +212,12 @@ class RecordingProcessController:
     def process_from_questions(self, **kwargs) -> ProcessResult:
         self.calls.append(("process_from_questions", None, kwargs))
         return self._finish(kwargs)
+
+    def transcribe_from_crops(self, **kwargs) -> Path | None:
+        self.calls.append(("transcribe_from_crops", None, kwargs))
+        if self.error is not None:
+            raise self.error
+        return kwargs.get("crops_dir")
 
     def _finish(self, kwargs: dict) -> ProcessResult:
         if self.error is not None:

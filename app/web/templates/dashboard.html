@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+{% if view.cloud_models %}
+<div class="flash flash-warn">
+  Model cloud aktif ({{ view.cloud_models | join(", ") }}): gambar jawaban mahasiswa dikirim keluar mesin ini.
+  Untuk data mahasiswa, utamakan model Ollama lokal.
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <section class="card" id="topic">
+    <h2>1 · Topik &amp; kunci jawaban</h2>
+    <form method="post" action="/topic" class="row">
+      <label for="topic_id">Topik aktif</label>
+      <select name="topic_id" id="topic_id">
+        {% for topic in view.topics %}
+        <option value="{{ topic.id }}" {% if topic.active %}selected{% endif %}>
+          {{ topic.id }} — {{ topic.label }}{% if not topic.standard_ready %} (standar belum ada){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <button class="btn">Pilih</button>
+    </form>
+    <p class="muted small">Standar: <code>{{ view.standard_dir }}</code>
+      {% if view.standard_ready %}<span class="badge badge-ok">siap</span>
+      {% else %}<span class="badge badge-warn">belum di-ingest</span>{% endif %}
+    </p>
+
+    <h3>Kunci jawaban (.tex)</h3>
+    {% if view.kunci_files %}
+    <ul class="list">
+      {% for name in view.kunci_files %}
+      <li class="row-between">
+        <code>{{ name }}</code>
+        <form method="post" action="/kunci/ingest">
+          <input type="hidden" name="kunci" value="{{ name }}">
+          <button class="btn btn-small">Ingest ke topik {{ view.active_topic_id }}</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Belum ada file kunci.</p>
+    {% endif %}
+    <form method="post" action="/kunci/upload" enctype="multipart/form-data" class="row">
+      <input type="file" name="file" accept=".tex" required>
+      <button class="btn btn-secondary">Unggah kunci</button>
+    </form>
+  </section>
+
+  <section class="card" id="pdfs">
+    <h2>2 · PDF jawaban mahasiswa</h2>
+    {% if view.pdfs %}
+    <ul class="list">
+      {% for pdf in view.pdfs %}
+      <li class="row-between">
+        <span title="{{ pdf.name }}">{{ pdf.short_name }}</span>
+        <span class="row">
+          {% if pdf.has_run %}<a class="btn btn-small btn-secondary" href="{{ run_url(pdf.run_name) }}">Buka run</a>{% endif %}
+          <form method="post" action="/pdfs/propose"
+                {% if pdf.has_run %}data-confirm="Folder run {{ pdf.run_name }} akan dikosongkan (crop, transkripsi, nilai). Lanjut?"{% endif %}>
+            <input type="hidden" name="pdf" value="{{ pdf.name }}">
+            <button class="btn btn-small">{% if pdf.has_run %}Mulai ulang{% else %}Propose crops{% endif %}</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Belum ada PDF jawaban.</p>
+    {% endif %}
+    <form method="post" action="/pdfs/upload" enctype="multipart/form-data" class="row">
+      <input type="file" name="file" accept=".pdf,application/pdf" required>
+      <button class="btn btn-secondary">Unggah PDF</button>
+    </form>
+  </section>
+</div>
+
+<section class="card" id="runs">
+  <h2>3 · Run</h2>
+  <p class="muted small">Vision: <code>{{ view.vision_model or "—" }}</code> · Reasoning: <code>{{ view.reasoning_model or "—" }}</code></p>
+  {% if view.runs %}
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th>Run</th><th>NIM</th><th>Tahap</th><th>Nilai</th><th>Job terakhir</th><th></th></tr></thead>
+    <tbody>
+      {% for run in view.runs %}
+      {% set job = run_jobs.get(run.name) %}
+      <tr>
+        <td title="{{ run.name }}">{{ run.short_name }}</td>
+        <td>{{ run.student_id }}</td>
+        <td>{% include "partials/run_steps.html" %}</td>
+        <td>{% if run.total_score is not none %}{{ "%g" | format(run.total_score) }} / {{ "%g" | format(run.maximum_total) }}{% else %}—{% endif %}</td>
+        <td>{% if job %}<a href="/jobs/{{ job.id }}" class="badge badge-{{ job.status.value }}">{{ job.title }}: {{ job.status.value }}</a>{% else %}—{% endif %}</td>
+        <td><a class="btn btn-small" href="{{ run_url(run.name) }}">Buka</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Belum ada run. Pilih PDF lalu <strong>Propose crops</strong>.</p>
+  {% endif %}
+</section>
+{% endblock %}

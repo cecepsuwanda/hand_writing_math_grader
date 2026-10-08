@@ -1,10 +1,10 @@
 # Konvensi Pengembangan
 
-Aturan coding dan domain. Pipeline, lapisan, peta folder, dan kontrak CLI ada di [`architecture.md`](architecture.md); pemakaian di [`README.md`](../README.md).
+Aturan coding dan domain. Pipeline, lapisan, peta folder, dan kontrak web ada di [`architecture.md`](architecture.md); pemakaian di [`README.md`](../README.md).
 
 ## Prinsip arsitektur (wajib)
 
-1. **MVC** — View (presentasi CLI), Controller (orkestrasi), Model/Services (domain + use-case). Lihat [`architecture.md`](architecture.md).
+1. **MVC** — View (template Jinja2 + HTMX/Alpine), Controller (router tipis + orkestrasi), Model/Services (domain + use-case). Lihat [`architecture.md`](architecture.md).
 2. **SOLID** — abstraksi sempit di `app/interfaces/`, dependency injection, satu alasan berubah per modul.
 3. **Clean code** — nama bermakna; fungsi kecil; konfigurasi terpusat; type hints + Pydantic; error eksplisit; komentar hanya untuk "mengapa".
 4. **OOP + Functional Programming** berdampingan — OOP untuk service/client ber-state dan polymorphism; FP (fungsi di `app/functions/`) untuk transformasi deterministik.
@@ -28,7 +28,7 @@ Silabus, status per bab, dan topic pack: [`math-topics.md`](math-topics.md).
 - **S**: satu alasan berubah per kelas/modul.
 - **O**: perluasan lewat interface/pack/capability baru, bukan edit besar inti.
 - **L**: implementasi `VisionRecognizer` / `StepValidator` / `LlmClient` dapat diganti tanpa merusak pemanggil.
-- **I**: interface sempit (`PdfRenderer`, `VisionRecognizer`, `CropWorkspace`, `StepValidator`, `LlmClient`, `QuestionLabeler`, `QuestionExtractorPort`, `QuestionGrader`, `LatexDocumentBuilder`, `KunciIngestPort`, `GradeReporter`, `DetailedReporter`, `MenuActions`, `TopicPack`, `Capability`).
+- **I**: interface sempit (`PdfRenderer`, `VisionRecognizer`, `CropWorkspace`, `StepValidator`, `LlmClient`, `QuestionLabeler`, `QuestionExtractorPort`, `QuestionGrader`, `LatexDocumentBuilder`, `KunciIngestPort`, `GradeReporter`, `DetailedReporter`, `LatexCompiler`, `TopicPack`, `Capability`).
 - **D**: controller/service bergantung abstraksi; Ollama/PyMuPDF/SymPy diinjeksi lewat `pipeline_factory`.
 
 ## Clean coding
@@ -40,7 +40,7 @@ Silabus, status per bab, dan topic pack: [`math-topics.md`](math-topics.md).
 
 ## Error handling
 
-- Error domain = subclass `MathGraderError` (`app/exceptions.py`) → CLI exit code `1` + box error. Exception lain → exit code `2`.
+- Error domain = subclass `MathGraderError` (`app/exceptions.py`) → status 4xx + pesan domain (flash HTMX, halaman error, atau JSON `{"detail"}` di `/api/*`); di job → status "Gagal" dengan pesan itu. Exception lain di job → di-log dengan traceback dan job gagal; di route → 500.
 - Jangan menelan exception; ubah error library menjadi error domain di batas service.
 - Kasus yang wajib ditangani: PDF korup / kosong, halaman gagal dirender, Ollama tidak berjalan / model tidak ada (4xx tidak di-retry), timeout, JSON model invalid, LaTeX invalid, parse SymPy gagal, confidence recognition rendah.
 - Jika satu tahap gagal, **jangan hapus hasil tahap sebelumnya** dalam run yang sama.
@@ -90,7 +90,7 @@ Setiap skor harus dapat ditelusuri dari artefak run: soal + stem (`question_crop
 
 ## Kunci jawaban (ingest)
 
-`python -m app.cli ingest-kunci` mem-parse `data/input/kunci_jawaban/*.tex` menjadi `exam_schema.json` (termasuk `topic_id`), `solutions/question_NNN.tex`, dan `rubrics/question_NNN.json`.
+Tombol **Ingest** di halaman awal (`POST /kunci/ingest`) mem-parse satu file `data/input/kunci_jawaban/*.tex` menjadi `exam_schema.json` (termasuk `topic_id`), `solutions/question_NNN.tex`, dan `rubrics/question_NNN.json`.
 
 Kontrak markup itemize di dalam `\textbf{Penyelesaian}` (pack `1.5`):
 
@@ -105,7 +105,7 @@ Kontrak markup itemize di dalam `\textbf{Penyelesaian}` (pack `1.5`):
 
 **Skor per bucket rubrik:** `algebra` = konsistensi langkah saja (soft-align best-method = audit). Bucket `critical_points` / `sign_chart` / `figure` di-score terpisah; `final_answer` = min(konsistensi, standard SymPy). Skor `figure` = set-equivalence `number_line` (endpoint open/closed + daerah arsir / union) vs gambar mahasiswa (`FigureRef.symbolic.repr` / caption); schema lama tanpa `number_line` → presence. Recognition (`app/prompts/crop_math.txt`) mengisi `role` per langkah (`algebra` / `critical_points` / `sign_chart` / `figure` / `hp`); figure step memakai `NUMBER_LINE(...)` di `symbolic.repr`.
 
-**Pemisahan `sign_chart`.** `role_rubric_parts` memetakan role → daftar kandidat bucket rubrik, kandidat pertama yang ada di rubrik yang dipakai (`fold_role_marks`). `sign_chart` memilih bucket `sign_chart` sendiri bila rubrik memilikinya (kunci dengan dua milestone → `critical_points` 1.0 + `sign_chart` 1.0; kunci dengan `sign_chart` saja → 2.0), sehingga akar yang benar tidak tertahan tabel tanda. Rubrik lama yang hanya punya `critical_points` membuat kedua role jatuh ke bucket itu lagi dan dirata-ratakan seperti sebelumnya — skornya identik, jadi `ingest-kunci` ulang tidak wajib (tapi perlu agar baris `sign_chart` muncul di laporan).
+**Pemisahan `sign_chart`.** `role_rubric_parts` memetakan role → daftar kandidat bucket rubrik, kandidat pertama yang ada di rubrik yang dipakai (`fold_role_marks`). `sign_chart` memilih bucket `sign_chart` sendiri bila rubrik memilikinya (kunci dengan dua milestone → `critical_points` 1.0 + `sign_chart` 1.0; kunci dengan `sign_chart` saja → 2.0), sehingga akar yang benar tidak tertahan tabel tanda. Rubrik lama yang hanya punya `critical_points` membuat kedua role jatuh ke bucket itu lagi dan dirata-ratakan seperti sebelumnya — skornya identik, jadi ingest kunci ulang tidak wajib (tapi perlu agar baris `sign_chart` muncul di laporan).
 
 **HP yang cocok kunci tidak di-nol-kan.** Bila `compare()` bilang jawaban akhir cocok dengan kunci tetapi rantai langkah mahasiswa tidak konsisten, skor diambil dari kunci (bukan `min(...)` yang men-nol-kan) dan barisnya ditandai review. Feedback baris itu diakhiri penanda mesin `; standard: …`, `; scored under part:…`, dan `; key override: …` (`split_feedback_markers`); `FeedbackAnnotator` menulis ulang hanya bagian manusianya dan menempelkan penanda kembali apa adanya, serta melewati baris ber-`key override` supaya catatan keputusannya tidak terhapus.
 
@@ -118,7 +118,7 @@ Kontrak markup itemize di dalam `\textbf{Penyelesaian}` (pack `1.5`):
 
 ## Logging
 
-Modul memakai `logging.getLogger(__name__)` (model, attempt, status HTTP, durasi, status tahap). CLI belum mengonfigurasi handler, jadi log INFO/DEBUG tidak tampil secara default. Pengecualian: pada exit code `2`, `report_failure` di `app/commands/flows.py` (dipakai `main()` di `app/cli.py` dan loop `process`) memanggil `logger.exception`, sehingga traceback tetap tercetak ke stderr lewat `logging.lastResort` (level WARNING ke atas). Target: timestamp, `submission_id`, page, model, prompt_version, processing_time.
+Modul memakai `logging.getLogger(__name__)` (model, attempt, status HTTP, durasi, status tahap). `python -m app.web` memasang `logging.basicConfig(level=INFO)`, jadi log tampil di konsol server. Controller tidak mencetak ke stdout: peringatan (rubric hilang, PDF gagal dikompilasi, soal tidak dinilai) lewat `logger.warning`; pesan yang perlu dilihat user dikirim ke progress job (`JobReporter.message`) atau flash halaman. Error tak terduga di job tercatat dengan `logger.exception` dan pesannya tampil sebagai "Gagal: …" di halaman job. Target: timestamp, `submission_id`, page, model, prompt_version, processing_time.
 
 ## Testing
 

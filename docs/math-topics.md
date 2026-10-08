@@ -92,7 +92,7 @@ Pack = implementasi `TopicPack` di `app/topics/<id>/` + entri di `_PACKS` (`app/
 | `2` | 2 Pertidaksamaan nilai mutlak | `standards/topik_2` | **Registered** — delegasi roles/`step_checks`/rubric/role instructions ke `1.5`; tes masih minimal |
 | — | 3–11 | `standards/topik_<bab>` | Belum ada pack. Tambah `app/topics/<id>/` + entri `_PACKS` saat acceptance grading bab itu siap |
 
-Pemilihan pack: menu CLI **Pilih topik** (nomor, id, atau `topik_<bab>`), `grading.topic_id` di `config.yaml`, `--topic` pada `process` / `recognize` / `extract` / `validate` / `grade` / `report` / `label-questions` / `ingest-kunci` / `menu`, atau `topic_id` di `exam_schema.json` (hanya bersama `--standard`).
+Pemilihan pack: dropdown **Topik** di halaman awal web UI (berlaku untuk ingest kunci dan semua job), `grading.topic_id` di `config.yaml`, atau `topic_id` di `exam_schema.json` selama user belum memilih topik.
 
 **Folder standar per bab.** Hasil ingest setiap pack disimpan di `<grading.standards_root>/topik_<bab>`, dengan bab = bagian id sebelum titik. Karena itu maksimal **satu pack per bab**: registry menolak dua pack yang memetakan ke folder yang sama (misalnya `1.3` dan `1.5` sama-sama `topik_1`).
 

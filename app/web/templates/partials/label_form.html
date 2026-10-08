@@ -1,0 +1,40 @@
+<form id="label-form" class="card" method="post" action="{{ run_url(view.run, '/labels') }}"
+      hx-post="{{ run_url(view.run, '/labels') }}" hx-target="#label-form" hx-swap="outerHTML">
+  {% if view.saved %}<div class="flash flash-ok">Nomor soal disimpan.</div>{% endif %}
+  {% set report = view.report %}
+  {% if report %}
+    {% if report.errors %}
+    <div class="flash flash-error"><ul>{% for e in report.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if report.missing_questions %}
+    <div class="flash flash-warn">Soal tanpa crop: {{ report.missing_questions | join(", ") }}</div>
+    {% endif %}
+    {% if report.unassigned_crops %}
+    <div class="flash flash-warn">{{ report.unassigned_crops | length }} crop tanpa nomor soal.</div>
+    {% endif %}
+  {% endif %}
+
+  {% if view.rows %}
+  <div class="label-grid">
+    {% for row in view.rows %}
+    <figure class="label-card {% if not row.numbers %}unassigned{% endif %}">
+      <img src="{{ run_url(view.run, '/crops/' ~ row.crop.name) }}" alt="{{ row.crop.name }}" loading="lazy">
+      <figcaption>
+        <span class="small muted">Hal {{ row.crop.page_number }} · #{{ row.crop.order + 1 }}</span>
+        <label class="small">Soal
+          <input type="text" name="crop:{{ row.crop.name }}" value="{{ row.numbers | join(', ') }}"
+                 inputmode="numeric" placeholder="mis. 1, 2" class="input-num-wide">
+        </label>
+      </figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  <div class="row form-actions">
+    <button class="btn">Simpan nomor soal</button>
+    <a class="btn btn-secondary" href="{{ run_url(view.run, '/crops') }}">Kembali ke crop</a>
+    <a class="btn btn-secondary" href="{{ run_url(view.run) }}">Ke run</a>
+  </div>
+  {% else %}
+  <p class="muted">Belum ada crop. Simpan kotak di <a href="{{ run_url(view.run, '/crops') }}">editor crop</a> dulu.</p>
+  {% endif %}
+</form>

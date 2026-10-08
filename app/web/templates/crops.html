@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Crop hal {{ view.current.page_number }} · {{ view.run | short_pdf }}{% endblock %}
+{% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(view.run) }}">{{ view.run | short_pdf }}</a> / Crop{% endblock %}
+{% block main_class %}container-wide{% endblock %}
+{% block scripts %}
+<script defer src="{{ static_url('vendor/konva.min.js') }}"></script>
+<script defer src="{{ static_url('js/crop_editor.js') }}"></script>
+{% endblock %}
+{% block content %}
+{% set page = view.current %}
+{% set config = {
+  "page": page.model_dump(mode="json"),
+  "imageUrl": run_url(view.run, "/pages/" ~ page.page_number ~ "/image"),
+  "regionsUrl": "/api" ~ run_url(view.run, "/pages/" ~ page.page_number ~ "/regions"),
+  "thumbsUrl": run_url(view.run, "/pages/" ~ page.page_number ~ "/thumbs"),
+} %}
+<div class="editor" x-data='cropEditor({{ config | tojson }})' @keydown.window="onKey($event)">
+  <aside class="editor-pages card">
+    <h3>Halaman</h3>
+    <ol class="page-list">
+      {% for p in view.pages %}
+      <li>
+        <a href="{{ run_url(view.run, '/crops') }}?page={{ p.page_number }}"
+           class="{% if p.page_number == page.page_number %}active{% endif %}"
+           @click="guardLeave($event)">
+          {% set label = "(" ~ (p.regions | length) ~ " kotak" ~ (", manual" if p.source == "manual" else "") ~ ")" %}
+          Hal {{ p.page_number }}
+          {% if p.page_number == page.page_number %}
+          <span class="muted" x-text="`(${savedCount} kotak${savedSource === 'manual' ? ', manual' : ''})`">{{ label }}</span>
+          {% else %}
+          <span class="muted">{{ label }}</span>
+          {% endif %}
+        </a>
+      </li>
+      {% endfor %}
+    </ol>
+    <a class="btn btn-secondary btn-block" href="{{ run_url(view.run) }}" @click="guardLeave($event)">Selesai → run</a>
+    <a class="btn btn-block" href="{{ run_url(view.run, '/labels') }}" @click="guardLeave($event)">Lanjut: nomor soal</a>
+  </aside>
+
+  <section class="editor-canvas card">
+    <div class="toolbar">
+      <span class="muted small">Seret di area kosong untuk menggambar kotak. Klik kotak untuk memilih; <kbd>Del</kbd> menghapus, <kbd>Esc</kbd> batal pilih.</span>
+      <span class="row">
+        <button type="button" class="btn btn-small btn-secondary" @click="zoomBy(0.8)" title="Perkecil">−</button>
+        <span class="small" x-text="Math.round(zoom * 100) + '%'"></span>
+        <button type="button" class="btn btn-small btn-secondary" @click="zoomBy(1.25)" title="Perbesar">+</button>
+        <button type="button" class="btn btn-small btn-secondary" @click="fit()">Pas lebar</button>
+      </span>
+    </div>
+    <div class="stage-wrap" x-ref="wrap">
+      <div x-ref="stage"></div>
+    </div>
+  </section>
+
+  <aside class="editor-side card">
+    <div class="row-between">
+      <h3>Kotak (<span x-text="boxes.length"></span>)</h3>
+      <span class="badge badge-warn" x-show="dirty" x-cloak>belum disimpan</span>
+    </div>
+    <p class="muted small" x-show="!boxes.length" x-cloak>Belum ada kotak di halaman ini.</p>
+    <ol class="box-list">
+      <template x-for="(box, i) in boxes" :key="box.id">
+        <li :class="{ selected: box.id === selectedId }" @click="select(box.id)">
+          <div class="row-between">
+            <strong x-text="'#' + (i + 1)"></strong>
+            <span class="small muted" x-text="Math.round(box.width) + '×' + Math.round(box.height) + ' px'"></span>
+          </div>
+          <div class="row">
+            <label class="small">Soal
+              <input type="number" min="0" class="input-num" x-model.number="box.question_number"
+                     @input="markDirty()" @click.stop title="0 = belum diketahui">
+            </label>
+            <select class="small" x-model="box.type" @change="markDirty()" @click.stop>
+              <option value="solution">jawaban</option>
+              <option value="figure">gambar</option>
+            </select>
+          </div>
+          <div class="row">
+            <button type="button" class="btn btn-tiny btn-secondary" @click.stop="move(i, -1)" :disabled="i === 0" title="Naikkan urutan">↑</button>
+            <button type="button" class="btn btn-tiny btn-secondary" @click.stop="move(i, 1)" :disabled="i === boxes.length - 1" title="Turunkan urutan">↓</button>
+            <button type="button" class="btn btn-tiny btn-danger" @click.stop="remove(box.id)">Hapus</button>
+          </div>
+        </li>
+      </template>
+    </ol>
+    <div class="row">
+      <button type="button" class="btn btn-small btn-secondary" @click="sortReading()" :disabled="boxes.length < 2">Urutkan atas → bawah</button>
+      <button type="button" class="btn btn-small btn-secondary" @click="reload()" :disabled="saving">Batalkan perubahan</button>
+    </div>
+    <button type="button" class="btn btn-block" @click="save()" :disabled="saving || !boxes.length">
+      <span x-text="saving ? 'Menyimpan…' : 'Simpan & crop ulang'"></span>
+    </button>
+    <p class="error-text small" x-show="error" x-text="error" x-cloak></p>
+
+    <h3>Hasil crop</h3>
+    <div id="thumbs" hx-get="{{ config.thumbsUrl }}" hx-trigger="load" hx-swap="innerHTML">
+      <p class="muted small">Memuat…</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}

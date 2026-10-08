@@ -2,11 +2,12 @@
 name: extend-math-grader
 description: >-
   Extends the Math Grader after phases 1–9: adds a topic pack (syllabus bab)
-  with capabilities, adds or changes a pipeline stage (controller/service/view
-  + pipeline_factory), or adds a CLI subcommand — following MVC, SOLID, clean
-  code, OOP+FP and CLI-first conventions. Use when the user asks to add a new
-  topic/bab/pack, support a new math notation, add or modify a pipeline step,
-  add a CLI command or menu item, or continue development.
+  with capabilities, adds or changes a pipeline stage (controller/service
+  + pipeline_factory), or adds a web page / endpoint / background job —
+  following MVC, SOLID, clean code, OOP+FP and web-UI conventions. Use when
+  the user asks to add a new topic/bab/pack, support a new math notation, add
+  or modify a pipeline step, add a page or button to the web UI, or continue
+  development.
 ---
 
 # Extend Math Grader
@@ -16,7 +17,7 @@ Phase 1–9 sudah selesai; pekerjaan baru selalu berupa **perluasan**. Pilih sat
 ## Sebelum coding
 
 1. Inspect repo (`app/`, `tests/`) dan baca dokumen kanonik yang relevan:
-   - `docs/architecture.md` — pipeline, lapisan, peta folder, kontrak CLI
+   - `docs/architecture.md` — pipeline, lapisan, peta folder, kontrak web (halaman + endpoint)
    - `docs/conventions.md` — aturan coding + domain
    - `docs/math-topics.md` — silabus, status bab, pack, capability
    - `docs/testing.md` — konvensi tes
@@ -56,11 +57,12 @@ Stage progress:
 - [ ] Kontrak data: model Pydantic di app/models/
 - [ ] Port: ABC/Protocol sempit di app/interfaces/ (bila ada adapter eksternal)
 - [ ] Service (OOP, ber-state) di app/services/<area>/ ATAU fungsi pure di app/functions/
-- [ ] Controller tipis di app/controllers/ (orkestrasi + panggil view); tidak import dari
+- [ ] Controller tipis di app/controllers/ (orkestrasi; tanpa print/prompt); tidak import dari
       app/services (konstanta/implementasi di-inject), tidak glob/parse artefak sendiri
-      (pakai app/functions/*_artifact.py); hasil = model *Result Pydantic di app/models/
-- [ ] View di app/views/ (presentasi terminal saja; error/peringatan ke stderr via error_view)
-- [ ] Wiring DI di app/services/pipeline_factory.py (dipakai CLI + API)
+      (pakai app/functions/*_artifact.py); hasil = model *Result Pydantic di app/models/;
+      notifikasi (progres, peringatan) lewat callback opsional
+- [ ] Tampilkan hasil di web: method WebPipeline + template (lihat Alur C)
+- [ ] Wiring DI di app/services/pipeline_factory.py
 - [ ] Error domain = subclass MathGraderError (app/exceptions.py)
 - [ ] Artefak intermediate ditulis ke folder run (RunLayout); tidak dihapus bila tahap berikut gagal
 - [ ] Tes di file inventaris yang sesuai domain (lihat docs/testing.md)
@@ -69,39 +71,32 @@ Stage progress:
 
 Aturan: recognition tidak mengoreksi jawaban; SymPy sebelum LLM; output LLM divalidasi schema (rule `recognition-and-grading.mdc`).
 
-## Alur C — Tambah subcommand CLI / item menu
+## Alur C — Tambah halaman / endpoint / job web
 
 ```text
-CLI progress:
-- [ ] Class XCommand(Command) di app/commands/ (stages.py / crops.py / workflows.py sesuai jenis):
-      atribut name + help; configure(parser) memakai helper di app/commands/base.py
-      (add_pdf_arg, add_dpi_arg, add_pages_dir_arg, add_yes_arg, add_questions_dir_arg,
-      add_standard_arg, add_run_arg, add_topic_arg, …)
-- [ ] run(args): load_config → pipeline_factory.build_* (panggil lewat modul
-      `pipeline_factory.build_x`, bukan import nama) → controller → view → return 0
-- [ ] Daftarkan instance di COMMANDS (app/commands/__init__.py); urutan = urutan --help.
-      main() di app/cli.py sudah memetakan error lewat flows.report_failure
-      (MathGraderError → 1, lainnya → 2 + logger.exception)
-- [ ] Folder run: flows.layout_for (ada PDF) atau flows.layout_for_run (--run)
-- [ ] Pengosongan output hanya untuk folder run milik perintah itu
-- [ ] Alur dipakai subcommand DAN menu? Fungsi <alur>(config, layout, ...) di app/commands/flows.py,
-      dipanggil dari XCommand.run dan CliMenuActions (jangan duplikasi)
-- [ ] Item menu (opsional):
-      - entri MenuChoice + MAIN_MENU (app/functions/menu_choices.py)
-      - method di Protocol MenuActions (app/interfaces/menu_actions.py), implementasi di
-        CliMenuActions (app/commands/menu_actions.py)
-      - handler di MenuController._handlers (state sesi di MenuSession, bukan di app/commands/)
-- [ ] Input interaktif hanya lewat app/views/prompt_view.py (tidak ada input() di app/commands/ / controller)
-- [ ] Tes: subcommand di TestCliProcess (CliHarness) + nama baru di TestCliCommands.EXPECTED_NAMES;
-      menu di TestMenuController (RecordingMenuActions)
-- [ ] Update README.md (menu/flag) + docs/architecture.md (kontrak CLI)
+Web progress:
+- [ ] Use-case di WebPipeline (app/web/pipeline.py): ambil config dari WebSession, folder run
+      lewat files.require_run, builder lewat modul `pipeline_factory.build_x` (bukan import nama);
+      kembalikan model Pydantic (tanpa print/prompt)
+- [ ] Lama (Ollama / render / grading)? kirim ke JobManager.submit(run=..., kind=JobKind.X,
+      task=lambda reporter: ...) — task mengembalikan URL halaman lanjutan; progres via
+      reporter.progress / reporter.message (SSE di /jobs/{id}/events)
+- [ ] Schema request/response di app/web/schemas.py (validasi input di sini, bukan di router)
+- [ ] Router tipis di app/web/routers/<area>.py; daftarkan di ROUTERS (app/web/routers/__init__.py)
+- [ ] Template di app/web/templates/ (extends base.html; partial HTMX di templates/partials/);
+      aset JS/CSS pihak ketiga hanya dari app/web/static/vendor/ (tanpa CDN)
+- [ ] Path artefak dari URL → app/web/files.py (anti path traversal); jangan bangun Path dari input mentah
+- [ ] Error domain = subclass MathGraderError; status HTTP di app/web/errors.py (_STATUS)
+- [ ] Pengosongan output hanya untuk folder run milik aksi itu (hanya Propose crops)
+- [ ] Tes: WebHarness (TestClient + FakeJobManager) di class Test* file inventaris yang sesuai
+- [ ] Update README.md + docs/architecture.md (kontrak web)
 ```
 
-`app/cli.py` hanya bootstrap (`build_parser` dari `COMMANDS`, `main`). Subcommand = class `Command` di `app/commands/`, alur bersama di `flows.py`, adapter menu `CliMenuActions`. Logika bisnis ada di controller/service.
+`app/web/main.py` hanya merakit `FastAPI` (`create_app`), static, template, dan `ROUTERS`. Logika bisnis ada di controller/service; router hanya adapter HTTP.
 
 ## Setelah selesai
 
-- Jalankan `pytest -q` (tanpa Ollama live).
+- Jalankan `pytest -q` (tanpa Ollama live). Perubahan UI: cek manual dengan `python -m app.web`.
 - Laporkan alur yang dipakai, file utama, tes yang ditambah, dan dokumen yang diperbarui.
 
 ## Referensi

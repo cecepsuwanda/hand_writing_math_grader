@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from pathlib import Path
+
+from app.models.defaults import DEFAULT_STUDENT_ID
 
 
 def list_jawaban_pdfs(jawaban_dir: Path) -> list[Path]:
@@ -54,11 +55,6 @@ def resolve_input_path(path: Path, base_dir: Path) -> Path:
     return path
 
 
-def resolve_jawaban_pdf(pdf: Path, jawaban_dir: Path) -> Path:
-    """Resolve a student answer PDF under ``jawaban_dir`` (see ``resolve_input_path``)."""
-    return resolve_input_path(pdf, jawaban_dir)
-
-
 def shorten_pdf_name(pdf: Path) -> str:
     """Shortened, lower-case display name for an LMS-style PDF.
 
@@ -98,65 +94,21 @@ def shorten_pdf_name(pdf: Path) -> str:
     return "_".join(components) + pdf.suffix.lower()
 
 
-def parse_path_choice(
-    paths: Sequence[Path],
-    raw: str,
-    *,
-    kind: str = "file",
-    default_suffix: str | None = None,
-    alias: Callable[[Path], str] | None = None,
-) -> Path:
-    """Map a menu choice (filename preferred, then 1-based index) to a path.
+_NIM_MIN_DIGITS = 8
 
-    ``alias`` supplies a display name (see ``shorten_pdf_name``) that is also
-    accepted, so a name the menu shows shortened can still be typed.
 
-    Raises:
-        ValueError: if the selection is empty or does not match.
+def student_id_from_pdf_stem(stem: str, fallback: str = DEFAULT_STUDENT_ID) -> str:
+    """Student id for a PDF / run folder name: the NIM, else the Moodle name.
+
+    The NIM is the last all-digit ``_`` part of at least eight digits (the
+    Moodle submission id is shorter). Without one, a Moodle export still names
+    the student in its first part; anything else gets ``fallback``.
     """
-    choice = raw.strip()
-    if not choice:
-        raise ValueError("empty selection")
-    if not paths:
-        raise ValueError(f"no {kind}s available")
-
-    lowered = choice.lower()
-    for path in paths:
-        name = path.name.lower()
-        if name == lowered:
-            return path
-        if default_suffix and name == f"{lowered}{default_suffix.lower()}":
-            return path
-
-    if alias is not None:
-        for path in paths:
-            short = alias(path).lower()
-            if short == lowered:
-                return path
-            if default_suffix and short == f"{lowered}{default_suffix.lower()}":
-                return path
-
-    if choice.isdigit():
-        index = int(choice)
-        if 1 <= index <= len(paths):
-            return paths[index - 1]
-        raise ValueError(f"choice out of range: {choice}")
-
-    raise ValueError(f"unknown {kind}: {choice}")
-
-
-def parse_pdf_choice(pdfs: Sequence[Path], raw: str) -> Path:
-    """Map a menu choice (filename preferred, then 1-based index) to a PDF path."""
-    return parse_path_choice(
-        pdfs, raw, kind="PDF", default_suffix=".pdf", alias=shorten_pdf_name
-    )
-
-
-def parse_kunci_choice(tex_files: Sequence[Path], raw: str) -> Path:
-    """Map a menu choice to a kunci ``.tex`` path."""
-    return parse_path_choice(tex_files, raw, kind="kunci", default_suffix=".tex")
-
-
-def parse_run_choice(run_dirs: Sequence[Path], raw: str) -> Path:
-    """Map a menu choice (folder name or 1-based index) to a run directory."""
-    return parse_path_choice(run_dirs, raw, kind="run")
+    parts = [part.strip() for part in stem.split("_")]
+    nims = [p for p in parts if p.isdigit() and len(p) >= _NIM_MIN_DIGITS]
+    if nims:
+        return nims[-1]
+    lowered = [p.lower() for p in parts]
+    if "assignsubmission" in lowered and parts[0]:
+        return "_".join(parts[0].lower().split())
+    return fallback

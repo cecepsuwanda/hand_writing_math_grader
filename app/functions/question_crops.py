@@ -39,7 +39,7 @@ def list_crops_in_reading_order(crops_dir: Path) -> list[CropRef]:
     crops_dir = Path(crops_dir)
     if not crops_dir.is_dir():
         return []
-    refs: list[CropRef] = []
+    refs: list[tuple[CropRef, int]] = []
     for page_dir in crops_dir.glob("page_*"):
         if not page_dir.is_dir():
             continue
@@ -54,14 +54,14 @@ def list_crops_in_reading_order(crops_dir: Path) -> list[CropRef]:
             continue
         _page, _source, regions = load_regions_artifact(json_path)
         for index, region in enumerate(regions):
-            refs.append(
-                CropRef(
-                    page_number=page_number,
-                    order=region.order,
-                    name=crop_filename(page_number, index),
-                )
+            ref = CropRef(
+                page_number=page_number,
+                order=region.order,
+                name=crop_filename(page_number, index),
             )
-    return sorted(refs, key=lambda r: (r.page_number, r.order, r.name))
+            refs.append((ref, index))
+    refs.sort(key=lambda item: (item[0].page_number, item[0].order, item[1]))
+    return [ref for ref, _index in refs]
 
 
 def _empty_map(numbers: Iterable[int]) -> QuestionCropMap:
@@ -100,6 +100,22 @@ def assign_sequential(crops: list[CropRef], numbers: list[int]) -> QuestionCropM
     for number, crop in zip(ordered, crops):
         mapping[number].append(crop.name)
     return mapping
+
+
+def mapping_from_crop_labels(
+    crops: list[CropRef],
+    labels: Mapping[str, list[int]],
+    numbers: list[int],
+) -> QuestionCropMap:
+    """Explicit per-crop numbers (UI edit) → question map; unlabeled crops stay unassigned.
+
+    Numbers outside ``numbers`` are kept so validation can report them.
+    """
+    mapping = _empty_map(numbers)
+    for crop in crops:
+        for number in dict.fromkeys(labels.get(crop.name, [])):
+            mapping.setdefault(number, []).append(crop.name)
+    return dict(sorted(mapping.items()))
 
 
 def crop_to_questions(mapping: Mapping[int, list[str]]) -> dict[str, list[int]]:

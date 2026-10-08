@@ -1,0 +1,17 @@
+{% set last = job.last_progress %}
+<div class="job-status">
+  <span class="badge badge-{{ job.status.value }}">{{ job.status.value }}</span>
+  {% if last %}
+  <progress max="{{ last.total }}" value="{{ last.completed or 0 }}"></progress>
+  <span class="small">{{ last.message }} {{ last.completed or 0 }}/{{ last.total }}</span>
+  {% elif not job.finished %}
+  <progress></progress>
+  {% endif %}
+</div>
+{% if job.events %}
+<ol class="job-log">
+  {% for event in job.events[-30:] %}
+  <li>{{ event.message }}{% if event.total %} <span class="muted">({{ event.completed or 0 }}/{{ event.total }})</span>{% endif %}</li>
+  {% endfor %}
+</ol>
+{% endif %}

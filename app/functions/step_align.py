@@ -8,12 +8,16 @@ from app.models.validation import ValidationStatus
 
 AlignResult = dict[int, tuple[ValidationStatus, str]]
 
+NO_MATCH_REASON = "no matching standard step"
+NO_REMAINING_REASON = "no remaining standard step"
+
 
 def align_student_steps_to_standard(
     student_rows: Sequence[tuple[int, Sequence[bool | None] | None]],
     *,
     skip_reasons: dict[int, str] | None = None,
     default_skip_reason: str = "figure step skipped for standard align",
+    column_numbers: Sequence[int] | None = None,
 ) -> AlignResult:
     """Greedy monotonic soft-align via pairwise equivalence.
 
@@ -21,15 +25,25 @@ def align_student_steps_to_standard(
     ``equivalence_row[j]`` is ``True`` / ``False`` / ``None`` vs standard
     step ``j`` (0-based).  A ``None`` row means the student step cannot be
     compared (e.g. figure): ``UNCERTAIN`` without consuming a standard slot.
+    ``column_numbers[j]`` is the 1-based key row shown in reasons (default ``j + 1``).
 
     Preference per student step among remaining standards (``j >= cursor``):
     1. first ``True`` → ``VALID``, advance cursor past ``j``
     2. else first ``None`` → ``UNCERTAIN``, advance cursor past ``j``
-    3. else ``INVALID`` (no match); cursor unchanged
+    3. else ``UNCERTAIN`` (no match); cursor unchanged
+    4. no standard left at all → ``UNCERTAIN`` (nothing to compare against)
+
+    No match is not a wrong step: the student may take a route the key does
+    not write out, and step correctness comes from the student's own chain.
     """
     reasons = skip_reasons or {}
     results: AlignResult = {}
     cursor = 0
+
+    def label(j: int) -> int:
+        if column_numbers is not None and j < len(column_numbers):
+            return column_numbers[j]
+        return j + 1
 
     for step_number, row in student_rows:
         if row is None:
@@ -40,6 +54,10 @@ def align_student_steps_to_standard(
             continue
 
         n_std = len(row)
+        if cursor >= n_std:
+            results[step_number] = (ValidationStatus.UNCERTAIN, NO_REMAINING_REASON)
+            continue
+
         true_j: int | None = None
         uncertain_j: int | None = None
         for j in range(cursor, n_std):
@@ -53,7 +71,7 @@ def align_student_steps_to_standard(
         if true_j is not None:
             results[step_number] = (
                 ValidationStatus.VALID,
-                f"step matches standard step {true_j + 1}",
+                f"step matches standard step {label(true_j)}",
             )
             cursor = true_j + 1
             continue
@@ -61,14 +79,11 @@ def align_student_steps_to_standard(
         if uncertain_j is not None:
             results[step_number] = (
                 ValidationStatus.UNCERTAIN,
-                f"SymPy could not decide vs standard step {uncertain_j + 1}",
+                f"SymPy could not decide vs standard step {label(uncertain_j)}",
             )
             cursor = uncertain_j + 1
             continue
 
-        results[step_number] = (
-            ValidationStatus.INVALID,
-            "no matching standard step",
-        )
+        results[step_number] = (ValidationStatus.UNCERTAIN, NO_MATCH_REASON)
 
     return results

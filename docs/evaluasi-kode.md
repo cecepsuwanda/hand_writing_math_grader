@@ -6,10 +6,12 @@ Dokumen ini memuat hasil audit dan evaluasi menyeluruh terhadap seluruh kode sum
 >
 > Review lanjutan juga menemukan dan memperbaiki tiga masalah perilaku yang tidak terdeteksi alat statis:
 > - Path override (`--output`, `--pages-dir`, `--recognition-dir`, `--questions-dir`) di luar folder run tidak lagi dikosongkan. Kalau folder itu sudah berisi file, run ditolak dengan `UnsafeOutputDirError`.
-> - `recognition/` dan `questions/` lama baru diganti setelah pengenalan tulisan berhasil (menu 7, `recognize`, dan `extract`).
+> - `recognition/` dan `questions/` lama baru diganti setelah pengenalan tulisan berhasil (job *Transkripsi lalu review* / *Transkripsi + nilai langsung*).
 > - `config.yaml` atau env Ollama yang tidak valid kini memunculkan `ConfigInvalidError` (exit 1), bukan exit 2.
 >
 > Audit penilaian (bagian 5) menemukan tujuh bug yang membuat nilai salah; semuanya sudah diperbaiki.
+>
+> **Catatan (8 Okt 2026):** CLI (`app/cli.py`, `app/commands/`, `app/views/`, `MenuController`) sudah dihapus dan diganti web UI (`app/web/`). Rujukan ke file-file itu dan ke "ringkasan CLI" di bawah bersifat historis; ringkasan skor kini tampil di halaman hasil (`/runs/<run>/results`).
 >
 > Test suite kini 726 tes, semua lulus (6 Okt 2026).
 

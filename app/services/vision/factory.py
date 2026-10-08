@@ -1,4 +1,4 @@
-"""Factory helpers to wire vision recognizer from AppConfig (DRY for CLI/API)."""
+"""Factory helpers to wire vision recognizer from AppConfig (DRY for the web pipeline)."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ def ink_params_from_config(config: AppConfig) -> InkLayoutParams:
         header_fraction=ink.header_fraction,
         column_valley_ratio=ink.column_valley_ratio,
         margin_ratio=ink.margin_ratio,
+        long_line_ratio=ink.long_line_ratio,
+        paper_offset=ink.paper_offset,
     )
 
 

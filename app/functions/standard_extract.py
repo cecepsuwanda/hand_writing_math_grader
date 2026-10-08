@@ -69,11 +69,15 @@ def standard_step_texts(
     schema_q: ExamQuestion | None,
     tex: str | None,
 ) -> list[str]:
-    """Prefer per-index ``steps_symbolic.repr``; fall back to TeX / ``steps``."""
+    """Prefer per-index ``steps_symbolic.repr``; fall back to TeX / ``steps``.
+
+    With ``steps_symbolic`` the schema's shared rows set the length: the TeX
+    file also holds every method / milestone block, which are not shared rows.
+    """
     tex_steps = extract_solution_steps_from_tex(tex) if tex else []
     if schema_q is not None and schema_q.steps_symbolic:
         symbolic = schema_q.steps_symbolic
-        length = max(len(symbolic), len(tex_steps))
+        length = len(symbolic)
         result: list[str] = []
         for index in range(length):
             repr_text = ""

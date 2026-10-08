@@ -16,7 +16,7 @@ Jangan minta LLM memberi nilai langsung dari gambar.
 
 - LLM recognition **tidak boleh**: memperbaiki persamaan, mengoreksi typo, mengarang langkah hilang, mengganti jawaban, menyalin kunci.
 - Konteks dari `exam_schema` ke vision (crop_math, crop_label) hanya **stem + flag `expects_figure`** (`format_recognition_question_block`). Jangan kirim steps / HP / `number_line`.
-- Nomor soal: `crops/question_crops/question_NNN.json` (label-questions / relabel-questions). Nomor tunggal dipaksa, beberapa nomor membatasi model; file tidak valid → `QuestionCropsInvalidError`; folder tidak ada → peringatan + tebakan model.
+- Nomor soal: `crops/question_crops/question_NNN.json` (halaman Label: "Deteksi otomatis (vision)" / "Simpan nomor soal"). Nomor tunggal dipaksa, beberapa nomor membatasi model; file tidak valid → `QuestionCropsInvalidError`; folder tidak ada → peringatan + tebakan model.
 - Jika ragu → `uncertain` / confidence rendah; pertahankan gambar asli + `raw_text`.
 
 ## Validasi

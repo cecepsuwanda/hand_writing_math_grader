@@ -53,10 +53,3 @@ class QuestionLabelResult(BaseModel):
     report: QuestionCropsReport
     json_dir: Path
     source: LabelSource
-
-
-class LabelMode(StrEnum):
-    """`label-questions` detects numbers; `relabel-questions` reloads edited JSON."""
-
-    LABEL = "label"
-    RELABEL = "relabel"

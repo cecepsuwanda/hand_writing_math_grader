@@ -1,4 +1,4 @@
-"""End-to-end pipeline orchestration (CLI process)."""
+"""End-to-end pipeline orchestration (web jobs)."""
 
 from __future__ import annotations
 
@@ -101,7 +101,6 @@ class ProcessController:
         workspace_root: Path | None = None,
         reset_workspace: bool = True,
         crops_dir: Path | None = None,
-        force_yes: bool = False,
         use_existing_crops: bool = False,
     ) -> ProcessResult:
         pdf_path = Path(pdf_path)
@@ -131,25 +130,28 @@ class ProcessController:
 
         from_crops = False
         if self._crop is not None:
-            self._crop.ensure_crops_confirmed(
+            self._crop.ensure_crops(
                 render_result.pages,
                 pages_dir,
                 use_existing=use_existing_crops,
-                force_yes=force_yes,
             )
             from_crops = True
             self._check_question_crops(self._crop.crops_dir if crops_dir is None else Path(crops_dir))
 
-        return self._run_from_recognition(
+        self._recognize_and_extract(
             render_result.pages,
+            pages_dir=pages_dir,
+            recognition_dir=recognition_dir,
+            questions_dir=questions_dir,
+            from_crops=from_crops,
+        )
+        return self._run_from_questions(
             pages_dir=pages_dir,
             recognition_dir=recognition_dir,
             questions_dir=questions_dir,
             output_dir=output_dir,
             student_id=student_id,
             crops_dir=crops_dir,
-            from_crops=from_crops,
-            force_yes=force_yes,
         )
 
     def process_from_crops(
@@ -161,7 +163,6 @@ class ProcessController:
         output_dir: Path,
         student_id: str = DEFAULT_STUDENT_ID,
         crops_dir: Path | None = None,
-        force_yes: bool = False,
         workspace_root: Path | None = None,
     ) -> ProcessResult:
         """Continue pipeline from existing page images + regions crops (no re-ink).
@@ -169,6 +170,36 @@ class ProcessController:
         Prior recognition/questions are replaced only after recognition succeeds,
         so a failed rerun keeps them. With ``workspace_root`` both dirs must lie
         inside it (or be empty) before anything runs.
+        """
+        crops = self.transcribe_from_crops(
+            pages_dir=pages_dir,
+            recognition_dir=recognition_dir,
+            questions_dir=questions_dir,
+            crops_dir=crops_dir,
+            workspace_root=workspace_root,
+        )
+        return self._run_from_questions(
+            pages_dir=Path(pages_dir),
+            recognition_dir=Path(recognition_dir),
+            questions_dir=Path(questions_dir),
+            output_dir=Path(output_dir),
+            student_id=student_id,
+            crops_dir=crops,
+        )
+
+    def transcribe_from_crops(
+        self,
+        *,
+        pages_dir: Path,
+        recognition_dir: Path,
+        questions_dir: Path,
+        crops_dir: Path | None = None,
+        workspace_root: Path | None = None,
+    ) -> Path | None:
+        """Recognize the approved crops and write ``question.json`` files, then stop.
+
+        Same guards and artifact replacement as :meth:`process_from_crops`, so the
+        user can review ``question.json`` before grading. Returns the crops dir used.
         """
         pages_dir = Path(pages_dir)
         recognition_dir = Path(recognition_dir)
@@ -189,18 +220,15 @@ class ProcessController:
         if crops is not None and pages_missing_regions(crops, [p.page_number for p in pages]):
             raise CropsRegionsMissingError(crops)
 
-        return self._run_from_recognition(
+        self._recognize_and_extract(
             pages,
             pages_dir=pages_dir,
             recognition_dir=recognition_dir,
             questions_dir=questions_dir,
-            output_dir=Path(output_dir),
-            student_id=student_id,
-            crops_dir=crops,
             from_crops=True,
-            force_yes=force_yes,
             replace_artifacts=True,
         )
+        return crops
 
     def process_from_questions(
         self,
@@ -211,7 +239,6 @@ class ProcessController:
         recognition_dir: Path,
         student_id: str = DEFAULT_STUDENT_ID,
         crops_dir: Path | None = None,
-        force_yes: bool = False,
     ) -> ProcessResult:
         """Continue from existing (possibly user-edited) question.json; never rewrites them."""
         questions_dir = Path(questions_dir)
@@ -226,24 +253,19 @@ class ProcessController:
             output_dir=Path(output_dir),
             student_id=student_id,
             crops_dir=Path(crops_dir) if crops_dir is not None else None,
-            force_yes=force_yes,
         )
 
-    def _run_from_recognition(
+    def _recognize_and_extract(
         self,
         pages: list[Page],
         *,
         pages_dir: Path,
         recognition_dir: Path,
         questions_dir: Path,
-        output_dir: Path,
-        student_id: str,
-        crops_dir: Path | None,
         from_crops: bool,
-        force_yes: bool,
         replace_artifacts: bool = False,
-    ) -> ProcessResult:
-        """Recognize → extract → (review) → LaTeX → validate → grade → report.
+    ) -> None:
+        """Recognize Ã¢â€ â€™ extract.
 
         ``replace_artifacts`` drops recognition of pages no longer present and
         empties ``questions_dir`` after recognition, so a shorter rerun cannot
@@ -264,16 +286,6 @@ class ProcessController:
         )
         self._emit(ProcessStage.EXTRACT)
 
-        return self._run_from_questions(
-            pages_dir=pages_dir,
-            recognition_dir=recognition_dir,
-            questions_dir=questions_dir,
-            output_dir=output_dir,
-            student_id=student_id,
-            crops_dir=crops_dir,
-            force_yes=force_yes,
-        )
-
     def _run_from_questions(
         self,
         *,
@@ -283,11 +295,10 @@ class ProcessController:
         output_dir: Path,
         student_id: str,
         crops_dir: Path | None,
-        force_yes: bool,
     ) -> ProcessResult:
-        """(review) → LaTeX → validate → grade → report."""
+        """(review) Ã¢â€ â€™ LaTeX Ã¢â€ â€™ validate Ã¢â€ â€™ grade Ã¢â€ â€™ report."""
         if self._question_review is not None:
-            self._question_review.review_loop(questions_dir, force_yes=force_yes)
+            self._question_review.require_valid(questions_dir)
 
         self._latex.build(questions_dir)
         self._emit(ProcessStage.LATEX)

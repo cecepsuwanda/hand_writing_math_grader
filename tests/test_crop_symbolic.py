@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 from app.functions.image_crop import (
     clamp_region,
     crop_region,
@@ -12,7 +12,12 @@ from app.functions.image_crop import (
     prepare_crop_region,
     union_regions,
 )
-from app.functions.ink_layout import InkLayoutParams, propose_solution_regions_from_image
+from app.functions.ink_layout import (
+    InkLayoutParams,
+    ink_threshold,
+    propose_solution_regions_from_image,
+    remove_long_vertical_runs,
+)
 from app.functions.kunci_ingest import format_recognition_stems_block
 from app.functions.question_merge import collect_latex_documents, merge_page_recognitions
 from app.functions.step_role import coalesce_step_role
@@ -28,7 +33,7 @@ from app.models.recognition import (
 )
 from app.services.vision.ink_region_proposer import InkRegionProposer
 from app.services.vision.recognizer import OllamaVisionRecognizer
-from tests.support.builders import single_question_json, write_png
+from tests.support.builders import draw_writing, new_page, single_question_json, write_png
 from tests.support.fakes import FakeClient, FakeProposer
 from tests.support.harness import make_recognizer
 
@@ -412,15 +417,11 @@ class TestTwoPassRecognizer:
 class TestInkLayout:
 
     def test_propose_one_column_blocks(self, tmp_path: Path) -> None:
-        """Stacked ink blocks with clear gaps â†’ separate regions (single column)."""
-        image = Image.new("RGB", (200, 500), color=(255, 255, 255))
+        """Stacked ink blocks with clear gaps → separate regions (single column)."""
+        image = new_page((200, 500))
         # header zone left mostly blank; blocks below header_fraction
         for y0, y1 in ((60, 120), (160, 220), (280, 360)):
-            for y in range(y0, y1):
-                for x in range(30, 160):
-                    image.putpixel((x, y), (0, 0, 0))
-        path = tmp_path / "one_col.png"
-        image.save(path)
+            draw_writing(image, (30, y0, 160, y1))
         params = InkLayoutParams(
             threshold=200,
             merge_gap_ratio=0.02,
@@ -435,17 +436,13 @@ class TestInkLayout:
         assert all(r.x < 100 for r in regions)
 
     def test_propose_two_column_blocks(self, tmp_path: Path) -> None:
-        """Left and right ink with empty gutter â†’ two columns, reading order L then R."""
-        image = Image.new("RGB", (400, 400), color=(255, 255, 255))
+        """Left and right ink with empty gutter → two columns, reading order L then R."""
+        image = new_page((400, 400))
         # left column two blocks
         for y0, y1 in ((50, 120), (160, 240)):
-            for y in range(y0, y1):
-                for x in range(20, 150):
-                    image.putpixel((x, y), (0, 0, 0))
+            draw_writing(image, (20, y0, 150, y1))
         # right column one block
-        for y in range(50, 200):
-            for x in range(250, 380):
-                image.putpixel((x, y), (0, 0, 0))
+        draw_writing(image, (250, 50, 380, 200))
         params = InkLayoutParams(
             threshold=200,
             merge_gap_ratio=0.02,
@@ -464,13 +461,9 @@ class TestInkLayout:
         assert regions[0].x < 200
 
     def test_ink_region_proposer_assigns_order_without_question_numbers(self, tmp_path: Path) -> None:
-        image = Image.new("RGB", (200, 300), color=(255, 255, 255))
-        for y in range(50, 120):
-            for x in range(20, 160):
-                image.putpixel((x, y), (10, 10, 10))
-        for y in range(160, 240):
-            for x in range(20, 160):
-                image.putpixel((x, y), (10, 10, 10))
+        image = new_page((200, 300))
+        draw_writing(image, (20, 50, 160, 120), ink=(10, 10, 10))
+        draw_writing(image, (20, 160, 160, 240), ink=(10, 10, 10))
         path = tmp_path / "page.png"
         image.save(path)
         proposer = InkRegionProposer(
@@ -480,6 +473,67 @@ class TestInkLayout:
         assert len(detected) == 2
         assert [d.question_number for d in detected] == [0, 0]
         assert [d.order for d in detected] == [0, 1]
+
+    _PAPER_GREY = (185, 185, 185)
+    _INK = (40, 40, 40)
+
+    def test_three_columns_on_grey_paper_with_scan_border(self) -> None:
+        """Photo-grey paper, a header across the page and a full-height border line."""
+        image = new_page((900, 600), paper=self._PAPER_GREY)
+        draw_writing(image, (60, 10, 820, 30), ink=self._INK)  # name / NIM header
+        columns = ((40, 260), (330, 560), (630, 850))
+        for x0, x1 in columns:
+            draw_writing(image, (x0, 80, x1, 300), ink=self._INK)
+        draw_writing(image, (40, 360, 260, 520), ink=self._INK)
+        ImageDraw.Draw(image).rectangle([880, 0, 882, 599], fill=self._INK)
+
+        regions = propose_solution_regions_from_image(image, params=InkLayoutParams())
+
+        def column_of(region: Region) -> int:
+            middle = region.x + region.width / 2
+            return next(i for i, (x0, x1) in enumerate(columns) if x0 <= middle <= x1)
+
+        assert [column_of(r) for r in regions] == [0, 0, 1, 2]
+        for region in regions:
+            x0, x1 = columns[column_of(region)]
+            assert x0 <= region.x and region.x + region.width <= x1
+
+    def test_short_last_line_joins_its_block_and_far_footer_is_dropped(self) -> None:
+        image = new_page((300, 600))
+        draw_writing(image, (30, 60, 250, 200))
+        draw_writing(image, (30, 225, 120, 236))  # "HP = ..." written a little apart
+        draw_writing(image, (150, 560, 280, 570))  # scanner footer
+        regions = propose_solution_regions_from_image(image, params=InkLayoutParams())
+        assert len(regions) == 1
+        assert regions[0].y == 60
+        assert regions[0].y + regions[0].height >= 230
+
+    def test_overhanging_line_does_not_open_a_column(self) -> None:
+        image = new_page((900, 600))
+        draw_writing(image, (40, 80, 500, 500))
+        draw_writing(image, (40, 200, 860, 206))  # one long line running to the edge
+        regions = propose_solution_regions_from_image(image, params=InkLayoutParams())
+        assert len(regions) == 1
+        assert regions[0].x + regions[0].width >= 850
+
+    @pytest.mark.parametrize(
+        ("paper", "offset", "expected"),
+        [(185, 40, 145), (255, 40, 200), (185, 0, 200), (230, 40, 190)],
+    )
+    def test_ink_threshold_follows_paper_grey(self, paper: int, offset: int, expected: int) -> None:
+        gray = bytes([paper] * 900 + [30] * 100)
+        assert ink_threshold(gray, threshold=200, paper_offset=offset) == expected
+
+    def test_remove_long_vertical_runs_keeps_short_strokes(self) -> None:
+        width, height = 3, 10
+        column_runs = {0: range(0, 10), 1: range(2, 5), 2: range(0, 6)}
+        mask = bytearray(width * height)
+        for x, ys in column_runs.items():
+            for y in ys:
+                mask[y * width + x] = 1
+        cleaned = remove_long_vertical_runs(bytes(mask), width=width, height=height, min_run=6)
+        kept = {x: [y for y in range(height) if cleaned[y * width + x]] for x in range(width)}
+        assert kept == {0: [], 1: [2, 3, 4], 2: []}
 
     def test_merge_regions_helper_via_recognizer(self) -> None:
         recognizer = OllamaVisionRecognizer.__new__(OllamaVisionRecognizer)

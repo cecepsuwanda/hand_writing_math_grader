@@ -13,15 +13,26 @@ from app.functions.score_aggregate import (
     KEY_OVERRIDE_MARKER,
     split_feedback_markers,
 )
-from app.models.grading import FeedbackAnnotation, QuestionGrade
+from app.models.grading import ErrorType, FeedbackAnnotation, QuestionGrade
 from app.models.question import Question
-from app.models.validation import QuestionValidation
+from app.models.validation import QuestionValidation, ValidationStatus
 from app.interfaces.llm_client import LlmClient
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "grading.txt"
 PROMPT_VERSION = "grading-v1"
+
+_VALID_ERROR_TYPES = frozenset({ErrorType.NONE, ErrorType.CARRY_FORWARD})
+
+
+def _agrees_with_status(status: ValidationStatus, error_type: ErrorType) -> bool:
+    """The LLM may reword feedback, never contradict the validator's verdict."""
+    if status == ValidationStatus.VALID:
+        return error_type in _VALID_ERROR_TYPES
+    if status == ValidationStatus.INVALID:
+        return error_type != ErrorType.NONE
+    return True
 
 
 class FeedbackAnnotator:
@@ -87,7 +98,9 @@ class FeedbackAnnotator:
                 current_feedback=human_feedback,
                 step_text=step_text,
             )
-            if annotated is None:
+            if annotated is None or not _agrees_with_status(
+                step_grade.validation_status, annotated.error_type
+            ):
                 new_steps.append(step_grade)
             else:
                 new_steps.append(
@@ -119,7 +132,9 @@ class FeedbackAnnotator:
                 current_feedback=human_feedback,
                 step_text=question.student_final_answer,
             )
-            if annotated is not None:
+            if annotated is not None and _agrees_with_status(
+                final.validation_status, annotated.error_type
+            ):
                 final = final.model_copy(
                     update={
                         "error_type": annotated.error_type,

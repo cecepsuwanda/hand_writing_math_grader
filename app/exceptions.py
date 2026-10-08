@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 class MathGraderError(Exception):
-    """Base error for recoverable CLI failures."""
+    """Base error for recoverable pipeline failures (shown as a flash in the web UI)."""
 
 
 class ConfigNotFoundError(MathGraderError):
@@ -12,7 +12,7 @@ class ConfigNotFoundError(MathGraderError):
         self.path = path
         super().__init__(
             f"Config file not found: {path}. Periksa path --config "
-            "(letakkan sebelum subcommand) atau hapus opsi itu untuk memakai default."
+            "atau hapus opsi itu untuk memakai app/config/config.yaml."
         )
 
 
@@ -48,19 +48,6 @@ class KunciNotFoundError(MathGraderError):
         super().__init__(f"Kunci .tex not found: {path}")
 
 
-class NoJawabanPdfError(MathGraderError):
-    def __init__(self, jawaban_dir: Path) -> None:
-        self.jawaban_dir = jawaban_dir
-        super().__init__(
-            f"No PDF files found in {jawaban_dir}. "
-            "Place student answer PDFs under data/input/jawaban/."
-        )
-
-
-class InvalidPdfSelectionError(MathGraderError):
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(f"Invalid PDF selection: {reason}")
 
 
 class NoKunciTexError(MathGraderError):
@@ -79,36 +66,11 @@ class AmbiguousKunciDirError(MathGraderError):
         super().__init__(
             f"{len(self.names)} kunci .tex files in {kunci_dir} "
             f"({', '.join(self.names)}); one ingest = one kunci per topic. "
-            "Pass the file explicitly: ingest-kunci <file.tex> [--topic <id>]."
+            "Pilih satu file .tex di halaman awal lalu klik Ingest."
         )
 
 
-class InvalidKunciSelectionError(MathGraderError):
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(f"Invalid kunci selection: {reason}")
 
-
-class RunNotSpecifiedError(MathGraderError):
-    def __init__(
-        self, output_root: Path, available: list[str], *, hint: str | None = None
-    ) -> None:
-        self.output_root = output_root
-        self.available = list(available)
-        if self.available:
-            runs = "Available runs: " + ", ".join(self.available) + "."
-        else:
-            runs = "No run folders yet; process a PDF first."
-        advice = hint if hint is not None else "Pass --run <nama_pdf>."
-        super().__init__(
-            f"Cannot pick a run folder under {output_root}. {advice} {runs}"
-        )
-
-
-class InvalidRunSelectionError(MathGraderError):
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(f"Invalid run selection: {reason}")
 
 
 class NoRegionsForLabelingError(MathGraderError):
@@ -116,7 +78,7 @@ class NoRegionsForLabelingError(MathGraderError):
         self.crops_dir = crops_dir
         super().__init__(
             f"No page_*_regions.json under {crops_dir}. "
-            "Run crop ink (menu 3) before recognizing question numbers."
+            "Jalankan Propose crops dulu sebelum mengenali nomor soal."
         )
 
 
@@ -125,7 +87,7 @@ class PageImageMissingError(MathGraderError):
         self.image_path = image_path
         super().__init__(
             f"Page image missing for recrop: {image_path}. "
-            "Run crop ink (menu 3 / propose-crops) to render pages first."
+            "Jalankan Propose crops dulu untuk merender halaman."
         )
 
 
@@ -134,14 +96,9 @@ class CropsRegionsMissingError(MathGraderError):
         self.crops_dir = crops_dir
         super().__init__(
             f"No page_*_regions.json under {crops_dir}. "
-            "Run menu 3 (crop ink) or 4 (recrop) first."
+            "Jalankan Propose crops atau simpan kotak di editor crop dulu."
         )
 
-
-class NoRegionsJsonError(MathGraderError):
-    def __init__(self, crops_dir: Path) -> None:
-        self.crops_dir = crops_dir
-        super().__init__(f"No regions JSON found under {crops_dir}; cannot recrop.")
 
 
 class RegionsArtifactMissingError(MathGraderError):
@@ -166,22 +123,13 @@ class StandardDirMismatchError(MathGraderError):
         )
 
 
-class InteractiveTerminalRequiredError(MathGraderError):
-    def __init__(self) -> None:
-        super().__init__(
-            "Interactive menu requires a terminal. "
-            "Use `process`, `propose-crops`, `recrop`, `ingest-kunci`, "
-            "or other subcommands instead."
-        )
-
 
 class ExamSchemaMissingError(MathGraderError):
     def __init__(self, standard_dir: Path) -> None:
         self.standard_dir = standard_dir
         super().__init__(
             f"exam_schema.json not found under {standard_dir}. "
-            "Ingest kunci jawaban first (menu 2 / ingest-kunci) so the question "
-            "count is known."
+            "Ingest kunci jawaban dulu di halaman awal agar jumlah soal diketahui."
         )
 
 
@@ -191,8 +139,8 @@ class QuestionCropsInvalidError(MathGraderError):
         detail = "; ".join(self.errors)
         super().__init__(
             f"question_crops tidak valid: {detail}. "
-            "Perbaiki crops/question_crops/question_*.json lalu jalankan menu 6 "
-            "(relabel-questions), atau kenali ulang lewat menu 5 (label-questions)."
+            "Perbaiki nomor soal di halaman Label, atau kenali ulang lewat tombol "
+            "Deteksi otomatis (vision)."
         )
 
 
@@ -202,28 +150,17 @@ class QuestionArtifactsInvalidError(MathGraderError):
         detail = "; ".join(self.errors)
         super().__init__(
             f"question.json tidak valid: {detail}. "
-            "Perbaiki questions/question_*/question.json lalu lanjutkan lewat menu 8 "
-            "(finish-questions), atau kenali ulang lewat menu 7."
+            "Perbaiki di halaman Review lalu klik Nilai sekarang, atau transkripsi ulang "
+            "dari halaman run (Transkripsi lalu review)."
         )
 
 
 class QuestionCropsNotFoundError(MathGraderError):
     def __init__(self, json_dir: Path) -> None:
         self.json_dir = json_dir
-        super().__init__(f"{json_dir} belum ada; jalankan label-questions dulu")
+        super().__init__(f"{json_dir} belum ada; kenali nomor soal di halaman Label dulu")
 
 
-class OperationCancelledError(MathGraderError):
-    def __init__(self, step: str = "") -> None:
-        self.step = step
-        where = f" ({step})" if step else ""
-        super().__init__(f"Dibatalkan oleh pengguna{where} (Ctrl+C).")
-
-
-class InvalidMenuSelectionError(MathGraderError):
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__(f"Invalid menu selection: {reason}")
 
 
 class UnknownTopicError(MathGraderError):
@@ -355,7 +292,7 @@ class ValidationNotFoundError(MathGraderError):
     def __init__(self, path: Path) -> None:
         self.path = path
         super().__init__(
-            f"validation.json not found at {path}. Run `python -m app.cli validate` first."
+            f"validation.json not found at {path}. Jalankan Nilai sekarang di halaman Review."
         )
 
 
@@ -364,7 +301,7 @@ class ValidationStaleError(MathGraderError):
         self.path = path
         super().__init__(
             f"validation.json at {path} is older than question.json (student work changed). "
-            "Run `python -m app.cli validate` again."
+            "Jalankan Nilai sekarang di halaman Review lagi."
         )
 
 
@@ -394,7 +331,7 @@ class GradingNotFoundError(MathGraderError):
     def __init__(self, path: Path) -> None:
         self.path = path
         super().__init__(
-            f"No grading.json found in: {path}. Run `python -m app.cli grade` first."
+            f"No grading.json found in: {path}. Jalankan Nilai sekarang di halaman Review."
         )
 
 
@@ -409,5 +346,54 @@ class ReportPdfError(MathGraderError):
         self.reason = reason
         super().__init__(
             f"report.pdf tidak dikompilasi: {reason}. "
-            "report.tex tetap ada; kompilasi ulang lewat menu 8 atau subcommand `report`."
+            "report.tex tetap ada; kompilasi ulang dengan Nilai sekarang di halaman Review."
+        )
+
+
+class RunNotFoundError(MathGraderError):
+    def __init__(self, run_name: str) -> None:
+        self.run_name = run_name
+        super().__init__(
+            f"Run '{run_name}' tidak ditemukan. Pilih PDF di halaman awal lalu "
+            "jalankan Propose crops untuk membuat folder run."
+        )
+
+
+class ArtifactNotFoundError(MathGraderError):
+    def __init__(self, description: str) -> None:
+        self.description = description
+        super().__init__(f"Artefak tidak ditemukan: {description}")
+
+
+class UnsafeArtifactPathError(MathGraderError):
+    def __init__(self, raw: str) -> None:
+        self.raw = raw
+        super().__init__(f"Path artefak tidak diizinkan: {raw!r}")
+
+
+class UploadRejectedError(MathGraderError):
+    def __init__(self, filename: str, reason: str) -> None:
+        self.filename = filename
+        self.reason = reason
+        super().__init__(f"Upload '{filename}' ditolak: {reason}")
+
+
+class InvalidRegionsError(MathGraderError):
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = list(errors)
+        super().__init__("Kotak crop tidak valid: " + "; ".join(self.errors))
+
+
+class JobNotFoundError(MathGraderError):
+    def __init__(self, job_id: str) -> None:
+        self.job_id = job_id
+        super().__init__(f"Job '{job_id}' tidak ditemukan (server mungkin sudah dimulai ulang).")
+
+
+class JobAlreadyRunningError(MathGraderError):
+    def __init__(self, run_name: str, job_id: str) -> None:
+        self.run_name = run_name
+        self.job_id = job_id
+        super().__init__(
+            f"Run '{run_name}' masih punya job aktif ({job_id}); tunggu sampai selesai."
         )

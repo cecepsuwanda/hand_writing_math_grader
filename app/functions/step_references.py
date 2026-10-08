@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 
 from app.models.validation import StepCheck
+
+RECOVERS_PREFIX = "recovers:"
+
+_HP_PREFIX_RE = re.compile(
+    r"^(?:hp|himpunan\s+penyelesaian|final\s+answer|jawaban\s+akhir)\s*[:=]?\s*",
+    re.IGNORECASE,
+)
 
 
 def step_checks_for(
@@ -50,3 +58,26 @@ def final_reference_index(checks: Sequence[StepCheck]) -> int | None:
         return len(checks) - 1
     transitions = [i for i, check in enumerate(checks) if check == StepCheck.TRANSITION]
     return transitions[-1] if transitions else None
+
+
+def _compact_answer(text: str) -> str:
+    return "".join(_HP_PREFIX_RE.sub("", text.strip()).split()).lower()
+
+
+def final_step_number_for(
+    final_text: str,
+    step_texts: Sequence[str],
+    step_numbers: Sequence[int],
+) -> int:
+    """Number of the last step stating ``final_text``; the last step when none does."""
+    target = _compact_answer(final_text)
+    if target:
+        for text, number in zip(reversed(step_texts), reversed(step_numbers)):
+            if _compact_answer(text) == target:
+                return number
+    return step_numbers[-1]
+
+
+def is_recovered(reason: str | None) -> bool:
+    """A step judged against an earlier valid step after its own reference failed."""
+    return (reason or "").startswith(RECOVERS_PREFIX)

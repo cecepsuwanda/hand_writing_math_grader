@@ -12,7 +12,9 @@ from sympy.logic.boolalg import Boolean
 from app.exceptions import MathParseError
 from app.functions.math_normalize import split_implication_clauses
 from app.functions.step_references import (
+    RECOVERS_PREFIX,
     final_reference_index,
+    final_step_number_for,
     reference_indices,
     step_checks_for,
 )
@@ -66,6 +68,18 @@ _STATUS_SEVERITY = {
 _StepChecker = Callable[[StudentStep, ParsedStep | None, ParsedStep | None], StepValidation]
 
 
+def _recovered(result: StepValidation, anchor_step_number: int) -> StepValidation:
+    """VALID against the last valid step although the step it follows was wrong."""
+    return result.model_copy(
+        update={
+            "reason": (
+                f"{RECOVERS_PREFIX} equivalent to step {anchor_step_number}; "
+                f"{result.reason}"
+            )
+        }
+    )
+
+
 def _is_closed(item: ParsedStep | None) -> bool:
     """A relation with no free symbols (a numeric statement)."""
     return (
@@ -112,27 +126,63 @@ class SymPyStepValidator(StepValidator):
         )
         chains = [self._parse_chain(step) for step in steps]
         parsed = [chain[-1] if chain else None for chain in chains]
-        step_results = [
-            self._validate_chained_step(
+        step_results: list[StepValidation] = []
+        anchor: int | None = None
+        for index, (step, check, ref) in enumerate(
+            zip(steps, checks, reference_indices(checks))
+        ):
+            result = self._validate_chained_step(
                 step,
                 check,
                 reference=None if ref is None else parsed[ref],
                 chain=chains[index],
                 has_reference=ref is not None,
             )
-            for index, (step, check, ref) in enumerate(
-                zip(steps, checks, reference_indices(checks))
-            )
-        ]
+            if (
+                result.status == ValidationStatus.INVALID
+                and ref is not None
+                and anchor is not None
+                and anchor != ref
+            ):
+                retry = self._validate_chained_step(
+                    step,
+                    check,
+                    reference=parsed[anchor],
+                    chain=chains[index],
+                    has_reference=True,
+                )
+                if retry.status == ValidationStatus.VALID:
+                    result = _recovered(retry, steps[anchor].step_number)
+            step_results.append(result)
+            if check == StepCheck.TRANSITION and result.status == ValidationStatus.VALID:
+                anchor = index
 
         final_status = None
         if final_text and steps:
             final_ref = final_reference_index(checks)
+            final_step_number = final_step_number_for(
+                final_text,
+                [self._step_expression(step) for step in steps],
+                [step.step_number for step in steps],
+            )
             final_status = self._validate_final_answer(
                 final_text,
                 None if final_ref is None else parsed[final_ref],
-                last_step_number=steps[-1].step_number,
+                last_step_number=final_step_number,
             )
+            if (
+                final_status.status == ValidationStatus.INVALID
+                and final_ref is not None
+                and anchor is not None
+                and anchor != final_ref
+            ):
+                retry = self._validate_final_answer(
+                    final_text,
+                    parsed[anchor],
+                    last_step_number=final_step_number,
+                )
+                if retry.status == ValidationStatus.VALID:
+                    final_status = _recovered(retry, steps[anchor].step_number)
 
         result = QuestionValidation(
             question_number=question.question_number,

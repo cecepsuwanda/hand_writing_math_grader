@@ -1,4 +1,4 @@
-"""Shared ProcessController wiring for CLI and API (DRY)."""
+"""Shared ProcessController wiring for the web pipeline (DRY)."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def resolve_topic_pack(
     standard_dir: Path | None = None,
     prefer_schema: bool = True,
 ) -> TopicPack:
-    """Resolve pack from CLI topic, exam_schema, then config.grading.topic_id."""
+    """Resolve pack from the chosen topic, exam_schema, then config.grading.topic_id."""
     from app.topics.registry import get_pack
 
     standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
@@ -301,7 +301,7 @@ def build_ingest_kunci_controller(
     topic_id: str | None = None,
 ) -> IngestKunciController:
     standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
-    # Fresh ingest ignores stale schema.topic_id; uses CLI/config topic.
+    # Fresh ingest ignores stale schema.topic_id; uses chosen/config topic.
     pack = resolve_topic_pack(
         config,
         topic_id=topic_id,
@@ -322,7 +322,7 @@ def build_process_controller(
     on_progress=None,
     on_question_crops_missing=None,
 ) -> ProcessController:
-    """Wire MVC controllers for end-to-end ``process`` (CLI and API)."""
+    """Wire MVC controllers for end-to-end ``process`` (web jobs)."""
     recognition = _recognition_dir_or_default(config, recognition_dir)
     standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)

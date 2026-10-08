@@ -77,15 +77,6 @@ def safe_run_name(pdf: Path) -> str:
     return sanitize_run_name(Path(pdf).stem)
 
 
-def resolve_run_name(raw: str) -> str:
-    """Accept a run folder name or a PDF filename/path; return the run name."""
-    value = raw.strip()
-    path = Path(value)
-    if path.suffix.lower() == ".pdf":
-        return safe_run_name(path)
-    return sanitize_run_name(path.name if path.name else value)
-
-
 def build_run_layout(output_root: Path, run_name: str) -> RunLayout:
     return RunLayout(root=Path(output_root) / run_name)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from app.functions.step_references import is_recovered
 from app.models.grading import (
     ErrorType,
     QuestionGrade,
@@ -195,6 +196,8 @@ def grade_status_for(validation_status: ValidationStatus, earned: float, maximum
     if validation_status == ValidationStatus.UNCERTAIN:
         return StepGradeStatus.REVIEW
     if maximum <= 0:
+        if validation_status == ValidationStatus.INVALID:
+            return StepGradeStatus.INCORRECT
         return StepGradeStatus.CORRECT
     if earned <= 0:
         return StepGradeStatus.INCORRECT
@@ -212,6 +215,7 @@ def infer_error_type(
         if (
             previous is not None
             and previous.status == ValidationStatus.INVALID
+            and not is_recovered(validation.reason)
         ):
             return ErrorType.CARRY_FORWARD
         return ErrorType.NONE
@@ -221,6 +225,16 @@ def infer_error_type(
     if "parse" in (validation.reason or "").lower():
         return ErrorType.TRANSCRIPTION
     return ErrorType.CALCULATION
+
+
+def _step_before(
+    steps: Sequence[StepValidation], step_number: int
+) -> StepValidation | None:
+    """Step preceding the one numbered ``step_number``; the last step if absent."""
+    for index, step in enumerate(steps):
+        if step.step_number == step_number:
+            return steps[index - 1] if index > 0 else None
+    return steps[-1] if steps else None
 
 
 def deterministic_feedback(validation: StepValidation, error_type: ErrorType) -> str:
@@ -340,10 +354,7 @@ def aggregate_question_grade(
                 std_status, std_reason = std_entry
                 audit_steps[str(step_val.step_number)] = std_status.value
             else:
-                std_reason = "no matching standard step"
-                audit_steps[str(step_val.step_number)] = (
-                    ValidationStatus.INVALID.value
-                )
+                std_reason = "not aligned to the standard"
 
         earned = round(maximum * fraction, 4)
         prev = steps[index - 1] if index > 0 else None
@@ -416,7 +427,10 @@ def aggregate_question_grade(
             if consistency is None or final_consistency is None:
                 fraction = standard_fraction
                 label_status = standard_final_status
-            elif standard_fraction > final_consistency:
+            elif (
+                standard_final_status == ValidationStatus.VALID
+                and standard_fraction > final_consistency
+            ):
                 # The key matches but the student's own chain disagrees. Zeroing
                 # a final answer that matches the key punishes one bad link
                 # mid-chain, so pay from the key and hand the disagreement to a
@@ -425,6 +439,9 @@ def aggregate_question_grade(
                 label_status = ValidationStatus.UNCERTAIN
                 key_overrides_chain = True
                 review_required = True
+            elif final_consistency < standard_fraction:
+                fraction = final_consistency
+                label_status = consistency.status
             else:
                 fraction = standard_fraction
                 label_status = standard_final_status
@@ -437,7 +454,8 @@ def aggregate_question_grade(
 
         if consistency is not None:
             error_type = infer_error_type(
-                consistency, previous=steps[-1] if steps else None
+                consistency,
+                previous=_step_before(steps, consistency.step_number),
             )
             base_feedback = deterministic_feedback(consistency, error_type)
             step_number = consistency.step_number

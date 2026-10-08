@@ -21,7 +21,7 @@ class TopicPack(Protocol):
 
     @property
     def label(self) -> str:
-        """Human-readable menu label."""
+        """Human-readable label shown in the topic picker."""
 
     @property
     def topik_refs(self) -> tuple[str, ...]:

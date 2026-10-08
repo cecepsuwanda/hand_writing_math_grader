@@ -6,10 +6,12 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import httpx
+from fastapi.testclient import TestClient
 
-from app.cli import main
+from app.config import load_config
 from app.controllers.grade_controller import GradeController
 from app.controllers.process_controller import ProcessController
+from app.functions.run_layout import RunLayout
 from app.functions.standards_layout import topic_standard_dir
 from app.models.grading import GradeResult, Rubric
 from app.models.latex import LatexResult
@@ -25,7 +27,8 @@ from app.services.math.llm_judge import LlmStepJudge
 from app.services.standards.kunci_ingester import KunciIngester
 from app.services.vision.ollama_client import OllamaClient
 from app.services.vision.recognizer import OllamaVisionRecognizer
-from app.views.exit_view import reset_interactive_session_flag
+from app.web.jobs import Job, JobManager
+from app.web.main import create_app
 from tests.support.builders import (
     Q1_KUNCI,
     make_page,
@@ -33,31 +36,9 @@ from tests.support.builders import (
     make_report_result,
     sample_rubric,
     write_config,
+    write_run_pages,
 )
-from tests.support.fakes import RecordingProcessController
-
-_STDIN_TARGETS = ("sys.stdin",)
-
-
-def patch_tty(monkeypatch, interactive: bool = True, targets: tuple[str, ...] = _STDIN_TARGETS) -> None:
-    stdin = MagicMock()
-    stdin.isatty.return_value = interactive
-    for target in targets:
-        monkeypatch.setattr(target, stdin)
-
-
-def patch_inputs(monkeypatch, *answers: str) -> list[str]:
-    """Feed ``input()`` from ``answers``; returns the list of prompts seen."""
-    prompts: list[str] = []
-    remaining = iter(answers)
-
-    def fake_input(prompt: str = "") -> str:
-        prompts.append(prompt)
-        return next(remaining)
-
-    monkeypatch.setattr("builtins.input", fake_input)
-    return prompts
-
+from tests.support.fakes import FakeJobManager, RecordingProcessController
 
 def q1_standard(tmp_path: Path) -> Path:
     """Ingest :data:`Q1_KUNCI` (topic 1.5) into ``tmp_path/standards/topik_1``."""
@@ -109,24 +90,51 @@ def make_recognizer(
     return OllamaVisionRecognizer(client=client if client is not None else object(), **options)
 
 
-class CliHarness:
-    """Temp ``config.yaml`` + patched ``pipeline_factory`` builders, then ``main()``."""
+class WebHarness:
+    """Temp ``config.yaml`` + ``create_app`` with a synchronous job manager + ``TestClient``.
 
-    def __init__(self, tmp_path: Path, monkeypatch, **config) -> None:
+    Inputs, runs and standards all live under ``tmp_path``; pipeline builders are
+    patched per test (``controller()``) so no page ever reaches Ollama.
+    """
+
+    def __init__(self, tmp_path: Path, monkeypatch, *, jobs: JobManager | None = None, **config) -> None:
         self.tmp_path = tmp_path
         self._monkeypatch = monkeypatch
         self.jawaban_dir = tmp_path / "jawaban"
-        self.jawaban_dir.mkdir(exist_ok=True)
+        self.kunci_dir = tmp_path / "kunci"
         self.output_root = tmp_path / "output"
+        self.standards_root = tmp_path / "standards"
+        for folder in (self.jawaban_dir, self.kunci_dir):
+            folder.mkdir(exist_ok=True)
         config.setdefault("jawaban_dir", self.jawaban_dir)
+        config.setdefault("kunci_dir", self.kunci_dir)
         config.setdefault("output_root", self.output_root)
-        self.config_path = write_config(tmp_path, **config)
+        config.setdefault("standards_root", self.standards_root)
+        self.config = load_config(write_config(tmp_path, **config))
+        self.jobs = jobs or FakeJobManager()
+        self.app = create_app(self.config, jobs=self.jobs)
+        self.client = TestClient(self.app, follow_redirects=False)
         self.fake: RecordingProcessController | None = None
 
-    def pdf(self, name: str = "answer.pdf", *, folder: Path | None = None) -> Path:
-        path = (folder or self.jawaban_dir) / name
-        path.write_bytes(b"%PDF")
+    def pdf(self, name: str = "answer.pdf") -> Path:
+        path = self.jawaban_dir / name
+        path.write_bytes(b"%PDF-1.4 test")
         return path
+
+    def kunci(self, name: str = "kunci.tex", text: str = Q1_KUNCI) -> Path:
+        path = self.kunci_dir / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def standard(self) -> Path:
+        """Ingest :data:`Q1_KUNCI` into this harness's topic 1.5 standard."""
+        return q1_standard(self.tmp_path)
+
+    def run_dir(self, name: str = "answer", *page_sizes: tuple[int, int]) -> RunLayout:
+        """Run folder with rendered blank pages (one 200x300 page by default)."""
+        layout = RunLayout(root=self.output_root / name)
+        write_run_pages(layout.pages_dir, *page_sizes)
+        return layout
 
     def controller(self, **kwargs) -> RecordingProcessController:
         self.fake = RecordingProcessController(**kwargs)
@@ -135,25 +143,15 @@ class CliHarness:
         )
         return self.fake
 
-    def inputs(self, *answers: str) -> list[str]:
-        return patch_inputs(self._monkeypatch, *answers)
+    def htmx(self, method: str, url: str, **kwargs) -> httpx.Response:
+        headers = {"HX-Request": "true", **kwargs.pop("headers", {})}
+        return self.client.request(method, url, headers=headers, **kwargs)
 
-    def tty(self, interactive: bool = True, targets: tuple[str, ...] = _STDIN_TARGETS) -> None:
-        reset_interactive_session_flag()
-        patch_tty(self._monkeypatch, interactive, targets)
-
-    def run(self, *argv: str) -> int:
-        return main(["--config", str(self.config_path), *argv])
-
-    @property
-    def calls(self) -> list[tuple[str, Path | None, dict]]:
-        assert self.fake is not None, "call controller() first"
-        return self.fake.calls
-
-    @property
-    def builder_kwargs(self) -> list[dict]:
-        assert self.fake is not None, "call controller() first"
-        return self.fake.builder_kwargs
+    def job(self, response: httpx.Response) -> Job:
+        """The job a 303 / ``HX-Redirect`` response points at."""
+        location = response.headers.get("HX-Redirect") or response.headers["location"]
+        assert location.startswith("/jobs/"), location
+        return self.jobs.get(location.removeprefix("/jobs/"))
 
 
 class ProcessHarness:
@@ -256,6 +254,16 @@ class ProcessHarness:
         }
         kwargs.update(overrides)
         return self.controller().process_from_crops(**kwargs)
+
+    def transcribe_from_crops(self, **overrides) -> Path | None:
+        kwargs = {
+            "pages_dir": self.pages_dir,
+            "recognition_dir": self.recognition_dir,
+            "questions_dir": self.questions_dir,
+            "crops_dir": self.crops_dir,
+        }
+        kwargs.update(overrides)
+        return self.controller().transcribe_from_crops(**kwargs)
 
     def process_from_questions(self, **overrides) -> ProcessResult:
         kwargs = {

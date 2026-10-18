@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
 
@@ -218,6 +219,8 @@ def _build_split_question(
     exam_question: ExamQuestion | None,
     owns_source_final: bool,
     owns_figures: bool,
+    part_label: str = "",
+    status: SegmentationStatus = SegmentationStatus.MERGED,
 ) -> Question:
     renumbered: list[StudentStep] = []
     for index, step in enumerate(steps, start=1):
@@ -244,8 +247,9 @@ def _build_split_question(
             final_symbolic = last.symbolic
 
     return Question(
-        question_id=question_dir_name(number),
+        question_id=question_dir_name(number, part_label),
         question_number=number,
+        part_label=part_label,
         page_references=list(source.page_references),
         image_regions=list(source.image_regions),
         student_steps=renumbered,
@@ -253,7 +257,7 @@ def _build_split_question(
         student_final_symbolic=final_symbolic,
         figure_refs=list(source.figure_refs) if owns_figures else [],
         confidence=source.confidence,
-        segmentation_status=SegmentationStatus.MERGED,
+        segmentation_status=status,
     )
 
 
@@ -304,8 +308,9 @@ def _split_one_question(
     question: Question,
     schema: ExamSchema,
 ) -> list[Question]:
-    schema_questions = sorted(schema.questions, key=lambda q: q.number)
-    if len(schema_questions) < 2 or not question.student_steps:
+    """Split across soal numbers; sub-soal are separated later by ``split_questions_into_parts``."""
+    schema_questions = _soal_level_questions(schema)
+    if len(schema_questions) < 2 or not question.student_steps or question.part_label:
         return [question]
 
     buckets: dict[int, list[StudentStep]] = defaultdict(list)
@@ -459,13 +464,22 @@ def split_questions_by_exam_schema(
         if qnum not in new_latex and qnum in kept_numbers:
             _store_latex(new_latex, qnum, body)
 
-    split_out.sort(key=lambda q: q.question_number)
     # Coalesce duplicate numbers (e.g. split created Q2 while another fragment was already Q2).
-    coalesced: dict[int, Question] = {}
-    for question in split_out:
-        existing = coalesced.get(question.question_number)
+    return _coalesce(split_out), new_latex
+
+
+def _question_key(question: Question) -> tuple[int, str]:
+    return question.question_number, question.part_label
+
+
+def _coalesce(questions: list[Question]) -> list[Question]:
+    """Merge questions sharing (number, part_label), in key order."""
+    coalesced: dict[tuple[int, str], Question] = {}
+    for question in sorted(questions, key=_question_key):
+        key = _question_key(question)
+        existing = coalesced.get(key)
         if existing is None:
-            coalesced[question.question_number] = question
+            coalesced[key] = question
             continue
         combined_steps = list(existing.student_steps) + list(question.student_steps)
         renumbered = [
@@ -473,7 +487,7 @@ def split_questions_by_exam_schema(
             for index, step in enumerate(combined_steps, start=1)
         ]
         pages = sorted(set(existing.page_references) | set(question.page_references))
-        coalesced[question.question_number] = existing.model_copy(
+        coalesced[key] = existing.model_copy(
             update={
                 "student_steps": renumbered,
                 "page_references": pages,
@@ -485,5 +499,163 @@ def split_questions_by_exam_schema(
                 or existing.student_final_symbolic,
             }
         )
-    result_questions = [coalesced[n] for n in sorted(coalesced)]
-    return result_questions, new_latex
+    return [coalesced[key] for key in sorted(coalesced)]
+
+
+def _soal_level_questions(schema: ExamSchema) -> list[ExamQuestion]:
+    """One entry per soal number (its first sub-soal stands in for the group)."""
+    first: dict[int, ExamQuestion] = {}
+    for exam_question in schema.questions:
+        first.setdefault(exam_question.number, exam_question)
+    return [first[number] for number in sorted(first)]
+
+
+def _parts_by_number(schema: ExamSchema | None) -> dict[int, list[ExamQuestion]]:
+    parts: dict[int, list[ExamQuestion]] = defaultdict(list)
+    for exam_question in schema.questions if schema is not None else []:
+        if exam_question.part_label:
+            parts[exam_question.number].append(exam_question)
+    return dict(parts)
+
+
+_PART_MARK_RE = re.compile(r"^\s*(?:\d+\s*)?\(?\s*(?P<label>[a-z]{1,4})\s*[).:]\s", re.IGNORECASE)
+# Handwritten / kunci-style ``Bagian (a)`` / ``Bagian a,`` before the maths.
+_BAGIAN_MARK_RE = re.compile(
+    r"^\s*bagian\s*\(?\s*(?P<label>[a-z]{1,4})\s*\)?\s*[,.:]?\s*",
+    re.IGNORECASE,
+)
+
+
+def _step_part_mark(step: StudentStep, labels: set[str]) -> str | None:
+    """``a) ...`` / ``(b) ...`` / ``1c. ...`` / ``Bagian (a) ...`` at step start."""
+    text = f"{step.raw_text or ''} "
+    for pattern in (_BAGIAN_MARK_RE, _PART_MARK_RE):
+        match = pattern.match(text)
+        if match is None:
+            continue
+        label = match.group("label").lower()
+        if label in labels:
+            return label
+    return None
+
+
+def _specific_suffixes(norms: dict[str, str]) -> dict[str, str]:
+    shared = os.path.commonprefix(list(norms.values())) if len(norms) > 1 else ""
+    suffixes: dict[str, str] = {}
+    for label, norm in norms.items():
+        suffix = re.sub(r"^\([a-z]{1,4}\)", "", norm[len(shared) :])
+        if len(suffix) >= 4:
+            suffixes[label] = suffix
+    return suffixes
+
+
+def _part_signatures(parts: list[ExamQuestion]) -> list[tuple[str, str]]:
+    """Sub-soal specific stem text (shared lead-in removed), symbolic and LaTeX forms.
+
+    Longest first, so a sub-stem that contains another one wins.
+    """
+    signatures: set[tuple[str, str]] = set()
+    for stem_of in (schema_stem_text, lambda part: (part.stem or "").strip()):
+        norms = {part.part_label: normalize_for_match(stem_of(part)) for part in parts}
+        signatures.update(_specific_suffixes(norms).items())
+    return sorted(signatures, key=lambda item: (-len(item[1]), item[0]))
+
+
+def _signature_part(step: StudentStep, signatures: list[tuple[str, str]]) -> str | None:
+    texts = {step_text(step), (step.raw_text or "").strip(), (step.latex or "").strip()}
+    haystacks = [normalize_for_match(text) for text in texts if text]
+    for label, signature in signatures:
+        for haystack in haystacks:
+            start = haystack.find(signature)
+            while start >= 0:
+                if _is_bounded_at(haystack, start, start + len(signature)):
+                    return label
+                start = haystack.find(signature, start + 1)
+    return None
+
+
+def _split_into_parts(question: Question, parts: list[ExamQuestion]) -> list[Question]:
+    labels = [part.part_label for part in parts]
+    by_label = {part.part_label: part for part in parts}
+    signatures = _part_signatures(parts)
+    buckets: dict[str, list[StudentStep]] = {}
+    current: str | None = None
+    marked = False
+    for step in question.student_steps:
+        label = None
+        if not _is_figure_step(step):
+            label = _step_part_mark(step, set(labels)) or _signature_part(step, signatures)
+        if label is not None:
+            current, marked = label, True
+        buckets.setdefault(current or labels[0], []).append(step)
+    if not buckets:
+        buckets[labels[0]] = []
+
+    ordered = [label for label in labels if label in buckets]
+    final_owner = _source_final_owner(question, buckets)
+    expecting = [label for label in ordered if by_label[label].expects_figure]
+    figure_owner = expecting[0] if len(expecting) == 1 else ordered[-1]
+    # Without any part mark the whole answer is only assumed to be the first sub-soal.
+    status = (
+        question.segmentation_status
+        if marked or len(labels) == 1
+        else SegmentationStatus.PROVISIONAL
+    )
+    return [
+        _build_split_question(
+            number=question.question_number,
+            part_label=label,
+            steps=buckets[label],
+            source=question,
+            exam_question=by_label[label],
+            owns_source_final=(
+                label == final_owner if final_owner is not None else label == ordered[-1]
+            ),
+            owns_figures=label == figure_owner,
+            status=status,
+        )
+        for label in ordered
+    ]
+
+
+def split_questions_into_parts(
+    questions: list[Question],
+    schema: ExamSchema | None,
+    latex_by_number: dict[int, str] | None = None,
+) -> tuple[list[Question], dict[str, str]]:
+    """Split soal-level answers into the key's sub-soal (``part_label``).
+
+    Steps go to the sub-soal whose mark (``a)``, ``(b)``, ``1c.``) or specific
+    stem text they start with; earlier steps belong to the first sub-soal. A
+    ``part_label`` the key does not have is dropped. Returns
+    ``(questions, latex_by_question_id)``: whole soal keep their recognized
+    LaTeX, sub-soal get LaTeX rebuilt from their own steps.
+    """
+    latex_by_number = dict(latex_by_number or {})
+    parts_by_number = _parts_by_number(schema)
+    result: list[Question] = []
+    for question in questions:
+        parts = parts_by_number.get(question.question_number)
+        known = {part.part_label for part in parts or []}
+        if question.part_label and question.part_label not in known:
+            question = question.model_copy(
+                update={
+                    "part_label": "",
+                    "question_id": question_dir_name(question.question_number),
+                }
+            )
+        if parts and not question.part_label:
+            result.extend(_split_into_parts(question, parts))
+        else:
+            result.append(question)
+
+    result = _coalesce(result)
+    latex_by_id: dict[str, str] = {}
+    for question in result:
+        if question.part_label:
+            body = _rebuild_latex_from_steps(question.student_steps)
+        else:
+            body = latex_by_number.get(question.question_number, "")
+        if body.strip():
+            latex_by_id[question.question_id] = body
+    return result, latex_by_id

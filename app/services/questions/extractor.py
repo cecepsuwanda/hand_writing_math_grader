@@ -23,6 +23,7 @@ from app.functions.question_names import (
 from app.functions.question_split import (
     assign_provisional_by_stem,
     split_questions_by_exam_schema,
+    split_questions_into_parts,
 )
 from app.functions.recognition_artifact import PAGE_RECOGNITION_GLOB
 from app.models.exam_schema import ExamSchema
@@ -52,7 +53,7 @@ class QuestionExtractor:
         output_dir: Path,
     ) -> ExtractResult:
         key_numbers = (
-            [question.number for question in self._exam_schema.questions]
+            sorted({question.number for question in self._exam_schema.questions})
             if self._exam_schema is not None
             else []
         )
@@ -75,6 +76,11 @@ class QuestionExtractor:
             self._exam_schema,
             latex_by_number,
         )
+        questions, latex_by_id = split_questions_into_parts(
+            questions,
+            self._exam_schema,
+            latex_by_number,
+        )
         if not questions:
             raise EmptyExtractionError()
 
@@ -85,7 +91,7 @@ class QuestionExtractor:
             path = self._write_question(output_dir, question)
             artifact_paths.append(path)
             self._write_page_refs(output_dir, question)
-            latex_body = latex_by_number.get(question.question_number, "")
+            latex_body = latex_by_id.get(question.question_id, "")
             self._write_latex_source(output_dir, question, latex_body)
 
         logger.info(
@@ -100,7 +106,7 @@ class QuestionExtractor:
         )
 
     def _write_question(self, output_dir: Path, question: Question) -> Path:
-        question_dir = output_dir / question_dir_name(question.question_number)
+        question_dir = output_dir / question_dir_name(question.question_number, question.part_label)
         question_dir.mkdir(parents=True, exist_ok=True)
         # Never persist LaTeX in question.json (exclude empty latex on steps is default "").
         path = question_dir / question_artifact_filename()
@@ -110,7 +116,7 @@ class QuestionExtractor:
     def _write_latex_source(
         self, output_dir: Path, question: Question, latex_body: str
     ) -> None:
-        question_dir = output_dir / question_dir_name(question.question_number)
+        question_dir = output_dir / question_dir_name(question.question_number, question.part_label)
         path = question_dir / latex_source_filename()
         parts: list[str] = []
         if latex_body.strip():
@@ -127,7 +133,7 @@ class QuestionExtractor:
         path.write_text("\n".join(parts) + "\n", encoding="utf-8")
 
     def _write_page_refs(self, output_dir: Path, question: Question) -> None:
-        question_dir = output_dir / question_dir_name(question.question_number)
+        question_dir = output_dir / question_dir_name(question.question_number, question.part_label)
         snapshot = {
             "question_id": question.question_id,
             "page_references": question.page_references,

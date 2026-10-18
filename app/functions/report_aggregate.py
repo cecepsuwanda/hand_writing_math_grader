@@ -14,20 +14,30 @@ from app.models.report import (
 )
 
 
+QuestionKey = tuple[int, str]
+
+
+def question_key(key: int | QuestionKey) -> QuestionKey:
+    """``3`` → ``(3, "")``; ``(1, "a")`` unchanged (number + sub-soal label)."""
+    return (key, "") if isinstance(key, int) else (key[0], key[1])
+
+
 def aggregate_exam_report(
     grades: list[QuestionGrade],
     metadata: ReportMetadata,
-    expected_maximums: Mapping[int, float] | None = None,
-    missing_labels: Mapping[int, str] | None = None,
+    expected_maximums: Mapping[int | QuestionKey, float] | None = None,
+    missing_labels: Mapping[int | QuestionKey, str] | None = None,
 ) -> ExamReport:
-    """``expected_maximums`` (question number → rubric maximum) adds ungraded questions as 0.
+    """``expected_maximums`` (question key → rubric maximum) adds ungraded questions as 0.
 
+    Keys are a question number or ``(number, part_label)`` for a sub-soal.
     ``missing_labels`` says why such a row has no grade (default ``TIDAK DIJAWAB``).
     """
     rows = [
         QuestionReportRow(
             question_id=g.question_id,
             question_number=g.question_number,
+            part_label=g.part_label,
             score=g.score,
             maximum_score=g.maximum_score,
             review_status=g.review_status,
@@ -36,21 +46,25 @@ def aggregate_exam_report(
         )
         for g in grades
     ]
-    graded = {g.question_number for g in grades}
-    rows.extend(
-        QuestionReportRow(
-            question_id=question_dir_name(number),
-            question_number=number,
-            score=0.0,
-            maximum_score=maximum,
-            review_status=ReviewStatus.REVIEW_REQUIRED,
-            missing=True,
-            missing_label=(missing_labels or {}).get(number, MISSING_UNANSWERED),
+    graded = {(g.question_number, g.part_label) for g in grades}
+    labels = {question_key(key): label for key, label in (missing_labels or {}).items()}
+    for raw_key, maximum in (expected_maximums or {}).items():
+        number, part_label = question_key(raw_key)
+        if (number, part_label) in graded:
+            continue
+        rows.append(
+            QuestionReportRow(
+                question_id=question_dir_name(number, part_label),
+                question_number=number,
+                part_label=part_label,
+                score=0.0,
+                maximum_score=maximum,
+                review_status=ReviewStatus.REVIEW_REQUIRED,
+                missing=True,
+                missing_label=labels.get((number, part_label), MISSING_UNANSWERED),
+            )
         )
-        for number, maximum in (expected_maximums or {}).items()
-        if number not in graded
-    )
-    rows.sort(key=lambda r: r.question_number)
+    rows.sort(key=lambda r: (r.question_number, r.part_label))
     total = round(sum(r.score for r in rows), 4)
     maximum = round(sum(r.maximum_score for r in rows), 4)
     overall = ReviewStatus.AUTO_ACCEPT
@@ -70,7 +84,7 @@ def summary_csv_rows(report: ExamReport) -> tuple[list[str], list[str]]:
     header = ["student_id"]
     row = [report.metadata.student_id]
     for q in report.questions:
-        header.append(f"q{q.question_number}")
+        header.append(f"q{q.ref}")
         row.append(format_score(q.score))
     header.extend(["total", "status"])
     row.extend([format_score(report.total_score), report.overall_status.value])

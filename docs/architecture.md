@@ -53,7 +53,7 @@ Infrastructure      → Ollama, PyMuPDF, SymPy, filesystem, config
 | Interfaces | ABC/Protocol sempit | Implementasi konkret library |
 | Models | Pydantic untuk semua kontrak antar layer (termasuk semua `*Result`); default bersama di `models/defaults.py` | Dataclass hasil di controller; literal `"1.5"` / `"student_001"` tersebar |
 
-**Lapisan web.** `create_app` (`web/main.py`) menyimpan `WebState` (session, pipeline, jobs, templates) di `app.state`. `WebSession` memegang config + topik aktif (`explicit_topic_id` tetap `None` sampai user memilih topik). `WebPipeline` (`web/pipeline.py`) adalah façade: satu method per aksi halaman, wiring lewat `pipeline_factory.build_*` (yang di-patch di tes). Tahap panjang dijalankan `JobManager` (`web/jobs.py`): satu thread pekerja, satu job aktif per run (`JobAlreadyRunningError` → 409), progres `ProcessProgress` / pesan → `JobEvent`, dialirkan lewat SSE (`/jobs/<id>/events`, htmx-ext-sse) dan JSON (`/api/jobs/<id>`). `web/errors.py` memetakan `MathGraderError` ke status HTTP: flash partial dengan `HX-Retarget: #flash` untuk HTMX, JSON `{"detail"}` untuk `/api/*`, halaman error untuk navigasi biasa. `web/files.py` menolak path traversal dan membatasi upload (ukuran `web.max_upload_mb`, ekstensi).
+**Lapisan web.** `create_app` (`web/main.py`) menyimpan `WebState` (session, pipeline, jobs, templates) di `app.state`. `WebSession` memegang config + topik aktif (`explicit_topic_id` tetap `None` sampai user memilih topik). `WebPipeline` (`web/pipeline.py`) adalah façade: satu method per aksi halaman, wiring lewat `pipeline_factory.build_*` (yang di-patch di tes). Tahap panjang dijalankan `JobManager` (`web/jobs.py`): satu thread pekerja, satu job aktif per run (`JobAlreadyRunningError` → 409), progres `ProcessProgress` / pesan → `JobEvent`, dialirkan lewat SSE (`/jobs/<id>/events`, htmx-ext-sse) dan JSON (`/api/jobs/<id>`). `web/errors.py` memetakan `MathGraderError` ke status HTTP: flash partial dengan `HX-Retarget: #flash` untuk HTMX, JSON `{"detail"}` untuk `/api/*`, halaman error untuk navigasi biasa. `web/files.py` menolak path traversal dan membatasi upload (ukuran `web.max_upload_mb`, ekstensi). Tampilan: warna/spasi/bayangan berupa token CSS di `static/app.css` (tema gelap otomatis lewat `prefers-color-scheme`), ikon lewat makro `icon()` di `templates/partials/icons.html` (sprite Lucide), URL aset lewat `static_url` (`?v=<mtime>`, header `no-cache`).
 
 ## Peta folder
 
@@ -62,7 +62,7 @@ app/
 ├── web/                   # main (create_app), __main__ (python -m app.web), session,
 │                          # pipeline (WebPipeline), jobs (JobManager + SSE), files,
 │                          # deps, errors, schemas, routers/, templates/, static/
-│                          # (vendor: htmx, htmx-ext-sse, alpine, konva, katex)
+│                          # (vendor: htmx, htmx-ext-sse, alpine, konva, katex, font Inter, sprite ikon Lucide)
 ├── exceptions.py          # MathGraderError + subclass domain
 ├── config/                # AppConfig + config.yaml (+ override env OLLAMA_*),
 │                          # require_vision_model
@@ -90,26 +90,31 @@ app/
 │   ├── math/                # parser, sympy_validator, equivalence, role_checks,
 │   │                        # llm_judge, hybrid_validator
 │   ├── grading/             # step_grader, rubric, standard_comparer,
+│   │                        # concept_comparer (dual-track pack 3),
 │   │                        # feedback_annotator, report, latex_report
 │   └── standards/           # kunci_ingester, standard_dir (topik_<bab>)
-├── topics/                # topic pack: inequality_1_5 (1.5), abs_inequality_2 (2),
+├── topics/                # topic pack: inequality_1_5 (1.5), abs_inequality_2 (2), limit_4 (4),
+│                          # chapter_pack (ChapterPack) + function_3 … vector_11 (3, 5–11),
 │                          # registry (_PACKS), runtime (pack aktif)
-├── capabilities/          # registry 9 capability → rewrite_* di functions/*_normalize.py
+├── capabilities/          # registry capability → rewrite_* di functions/*_normalize.py
 ├── functions/             # run_layout, question_crops, ink_layout, image_crop,
 │                          # score_*, step_align, step_references, number_line,
-│                          # kunci_ingest, standards_layout,
+│                          # kunci_ingest, kunci_finals, function_ingest,
+│                          # standards_layout, results_view, graph_points,
+│                          # tex_tree, milestone_pattern, piecewise_normalize,
 │                          # latex_report, latex_compile, report_details, *_normalize,
 │                          # sse, report_artifact, artifact_guard, grading_artifact,
 │                          # validation_artifact, recognition_artifact,
 │                          # question_review (+ _artifact),
 │                          # workspace_reset (pengosongan per-run), …
-├── prompts/               # crop_math, crop_label, validation, grading
+├── prompts/               # crop_math, crop_label, validation, grading,
+│                          # concept_grade
 └── templates/             # report.html.j2, report.tex.j2
 ```
 
 ## Topic packs & capabilities
 
-Kosakata grading / ingest / role berbasis **topic pack** (`app/topics/`). Daftar pack dan capability: [`math-topics.md`](math-topics.md).
+Kosakata grading / ingest / role berbasis **topic pack** (`app/topics/`). Daftar pack dan capability: [`math-topics.md`](math-topics.md). Anggota wajib ada di Protocol `TopicPack`; flag opsional di luar Protocol (`grades_concept`, `rich_section_ingest`) dipakai UI hasil/review dan wiring grading tanpa memperluas kontrak inti.
 
 Urutan resolusi pack (`resolve_topic_pack` di `pipeline_factory`):
 
@@ -144,6 +149,8 @@ python -m app.web [--config path] [--host H] [--port P]   # default web.host/web
 | `GET /` | Dashboard: topik, kunci (upload + ingest), PDF (upload + Propose crops), daftar run |
 | `POST /topic`, `POST /kunci/upload`, `POST /kunci/ingest`, `POST /pdfs/upload` | Aksi dashboard (redirect 303 / `HX-Redirect`) |
 | `POST /pdfs/propose` | Job: kosongkan folder run PDF itu, render, usulkan kotak ink → editor crop |
+| `POST /pdfs/delete` | Hapus PDF jawaban; folder run terkait ikut dihapus bila ada (sync; 409 jika job aktif) |
+| `POST /runs/<run>/delete` | Hapus hasil proses saja (`data/output/<run>/`); PDF jawaban tetap (sync; 409 jika job aktif) |
 | `GET /runs/<run>` | Ringkasan run + langkah berikutnya |
 | `GET /runs/<run>/crops`, `GET/PUT /api/runs/<run>/pages/<n>/regions` | Editor crop Konva; PUT = simpan kotak manual + crop ulang (padding 0) |
 | `GET /runs/<run>/labels`, `POST /runs/<run>/labels/detect`, `POST /runs/<run>/labels` | Nomor soal per crop (job deteksi / simpan form `crop:<nama>`) |

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from types import MappingProxyType
 
+from app.functions.kunci_finals import extract_hp_final
 from app.models.exam_schema import ExamPart
 from app.models.grading import Rubric, RubricCriterion
 from app.models.recognition import SymbolicPayload
@@ -89,6 +90,13 @@ _CAPABILITY_IDS: tuple[str, ...] = (
     "transcendental",
 )
 
+_INGEST_SECTION_ROLES: tuple[tuple[str, str], ...] = (
+    (r"^Analisis\s+Tanda\b", "sign_chart"),
+    (r"^(?:Tentukan\s+)?Titik\s+(?:Potong|Kritis)\b", "critical_points"),
+    (r"^Gambar\s+Garis\b", "figure"),
+    (r"^(?:HP\s*:|(?:Tentukan\s+)?(?:HP|Himpunan\s+Penyelesaian)\b)", "hp"),
+)
+
 _ROLE_INSTRUCTIONS = """\
 - Set "role" on every step:
   - "algebra" — ordinary transformations / equations
@@ -156,6 +164,11 @@ class Inequality15Pack:
     figure_kinds = ("number_line",)
     capability_ids = _CAPABILITY_IDS
     recognition_role_instructions = _ROLE_INSTRUCTIONS
+    ingest_section_roles = _INGEST_SECTION_ROLES
+    figure_from_tikz = True
+
+    def extract_final(self, answer_tex: str) -> str | None:
+        return extract_hp_final(answer_tex)
 
     def rubric_from_parts(self, question_number: int, parts: list[ExamPart]) -> Rubric:
         kinds = {part.kind for part in parts}

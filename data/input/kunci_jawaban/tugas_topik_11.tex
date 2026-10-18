@@ -1,0 +1,258 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[top=2cm,bottom=2cm,left=2cm,right=2cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage[dvipsnames,svgnames]{xcolor}
+\usepackage{hyperref}
+
+% Anchor persamaan unik meski nomor di-reset per soal.
+\newcounter{eqblock}
+\newcommand{\reseteq}{%
+  \stepcounter{eqblock}%
+  \setcounter{equation}{0}%
+  \renewcommand{\theHequation}{\arabic{eqblock}.\arabic{equation}}%
+}
+
+\newcommand{\dg}[1]{\textcolor{Red}{#1}}
+
+\title{Tugas Minggu 13 : Vektor di Bidang dan Ruang}
+\author{Matematika untuk Sistem Informasi}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{enumerate}
+
+%===========================================================
+\item Diketahui $P_1(3, -7, 2)$ sebagai titik awal dan $P_2(-2, 5, -4)$ sebagai titik akhir di ruang $\mathbb{R}^3$. Tentukan:
+\begin{enumerate}
+
+%-----------------------------------------------------------
+\item Komponen vektor $\overrightarrow{P_1P_2}$.
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Ujung Dikurangi Pangkal}
+
+Komponen vektor diperoleh dari koordinat titik akhir dikurangi koordinat titik awal:
+\reseteq
+\begin{align}
+\overrightarrow{P_1P_2} &= (x_2 - x_1,\; y_2 - y_1,\; z_2 - z_1) \nonumber \\
+&= (-2 - 3,\; 5 - (-7),\; -4 - 2) = (-5, 12, -6)
+\end{align}
+Dalam vektor satuan standar, $\overrightarrow{P_1P_2} = -5\mathbf{i} + 12\mathbf{j} - 6\mathbf{k}$.
+% final: (-5, 12, -6)
+\end{itemize}
+
+%-----------------------------------------------------------
+\item Jarak di antara titik $P_1$ dan $P_2$.
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Jarak sebagai Norm Vektor Penghubung}
+
+Jarak dua titik sama dengan panjang vektor yang menghubungkannya. Gunakan hasil (1):
+\begin{align}
+d(P_1, P_2) &= \|\overrightarrow{P_1P_2}\| = \sqrt{(-5)^2 + 12^2 + (-6)^2} \nonumber \\
+&= \sqrt{25 + 144 + 36} = \sqrt{205} \approx 14{,}32
+\end{align}
+Jadi jarak antara $P_1$ dan $P_2$ adalah $\sqrt{205} \approx 14{,}32$ satuan.
+% final: \sqrt{205}
+\end{itemize}
+
+\end{enumerate}
+
+%===========================================================
+\item Diketahui $\mathbf{u} = (-3, 1, 2)$, $\mathbf{v} = (4, 0, 8)$, dan $\mathbf{w} = (6, -1, -4)$ adalah vektor-vektor di $\mathbb{R}^3$. Tentukan:
+\begin{enumerate}
+
+%-----------------------------------------------------------
+\item $(\mathbf{u} - \mathbf{v}) - \mathbf{w}$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Hitung $\mathbf{u} - \mathbf{v}$}
+
+Pengurangan vektor dilakukan komponen demi komponen:
+\reseteq
+\begin{align}
+\mathbf{u} - \mathbf{v} &= (-3 - 4,\; 1 - 0,\; 2 - 8) = (-7, 1, -6)
+\end{align}
+
+\item \textbf{Langkah 2: Kurangkan $\mathbf{w}$}
+
+Kurangkan $\mathbf{w}$ dari hasil (1):
+\begin{align}
+(\mathbf{u} - \mathbf{v}) - \mathbf{w} &= (-7 - 6,\; 1 - (-1),\; -6 - (-4)) = (-13, 2, -2)
+\end{align}
+Hasilnya berupa \textbf{vektor}.
+% final: (-13, 2, -2)
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $(\|\mathbf{u}\| - \|\mathbf{v}\|) - \|\mathbf{w}\|$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Hitung Norm Setiap Vektor}
+
+Kuadratkan setiap komponen, jumlahkan, lalu akarkan:
+\reseteq
+\begin{align}
+\|\mathbf{u}\| &= \sqrt{(-3)^2 + 1^2 + 2^2} = \sqrt{9 + 1 + 4} = \sqrt{14} \\
+\|\mathbf{v}\| &= \sqrt{4^2 + 0^2 + 8^2} = \sqrt{16 + 0 + 64} = \sqrt{80} = 4\sqrt{5} \\
+\|\mathbf{w}\| &= \sqrt{6^2 + (-1)^2 + (-4)^2} = \sqrt{36 + 1 + 16} = \sqrt{53}
+\end{align}
+
+\item \textbf{Langkah 2: Kurangkan Ketiga Bilangan}
+
+Norm adalah bilangan real (skalar), sehingga yang dihitung di sini adalah selisih bilangan biasa:
+\begin{align}
+(\|\mathbf{u}\| - \|\mathbf{v}\|) - \|\mathbf{w}\| &= \sqrt{14} - 4\sqrt{5} - \sqrt{53} \nonumber \\
+&\approx 3{,}742 - 8{,}944 - 7{,}280 \approx -12{,}48
+\end{align}
+Hasilnya berupa \textbf{skalar} dan boleh negatif karena bukan panjang suatu vektor. Bandingkan dengan panjang hasil (a): $\|(-13, 2, -2)\| = \sqrt{177} \approx 13{,}30$; nilainya berbeda karena norm tidak dapat dikurangkan komponen demi komponen.
+% final: \sqrt{14} - 4\sqrt{5} - \sqrt{53}
+\end{itemize}
+
+\end{enumerate}
+
+%===========================================================
+\item Tentukan apakah $\mathbf{u}$ dan $\mathbf{v}$ membentuk sudut lancip, sudut tumpul, atau saling tegak lurus.
+\[
+\text{(a) } \mathbf{u} = (1, -5, 4),\; \mathbf{v} = (3, 3, 3) \qquad
+\text{(b) } \mathbf{u} = (2, 3),\; \mathbf{v} = (5, -7) \qquad
+\text{(c) } \mathbf{u} = (-6, 0, 4),\; \mathbf{v} = (3, 1, 6)
+\]
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Aturan Tanda Hasil Kali Titik}
+
+Dari $\cos\theta = \dfrac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\|\,\|\mathbf{v}\|}$ dan penyebut yang selalu positif, jenis sudut cukup ditentukan oleh tanda $\mathbf{u} \cdot \mathbf{v}$ (Bagian~7 Topik~11):
+\[
+\mathbf{u} \cdot \mathbf{v} > 0 \Rightarrow \text{lancip}, \qquad
+\mathbf{u} \cdot \mathbf{v} = 0 \Rightarrow \text{tegak lurus}, \qquad
+\mathbf{u} \cdot \mathbf{v} < 0 \Rightarrow \text{tumpul}.
+\]
+
+\item \textbf{Langkah 2: Hitung Hasil Kali Titik Setiap Pasangan}
+
+Kalikan komponen yang seletak lalu jumlahkan:
+\reseteq
+\begin{align}
+\text{(a)}\quad \mathbf{u} \cdot \mathbf{v} &= (1)(3) + (-5)(3) + (4)(3) = 3 - 15 + 12 = 0 \\
+\text{(b)}\quad \mathbf{u} \cdot \mathbf{v} &= (2)(5) + (3)(-7) = 10 - 21 = -11 \\
+\text{(c)}\quad \mathbf{u} \cdot \mathbf{v} &= (-6)(3) + (0)(1) + (4)(6) = -18 + 0 + 24 = 6
+\end{align}
+
+\item \textbf{Langkah 3: Simpulkan}
+
+Berdasarkan tanda pada (1)--(3):
+\begin{itemize}
+\item[(a)] $\mathbf{u} \cdot \mathbf{v} = 0$, sehingga $\mathbf{u}$ dan $\mathbf{v}$ \textbf{saling tegak lurus} ($\theta = 90^\circ$).
+% final: \text{saling tegak lurus}
+\item[(b)] $\mathbf{u} \cdot \mathbf{v} = -11 < 0$, sehingga $\mathbf{u}$ dan $\mathbf{v}$ membentuk \textbf{sudut tumpul} (vektor di $\mathbb{R}^2$).
+% final: \text{sudut tumpul}
+\item[(c)] $\mathbf{u} \cdot \mathbf{v} = 6 > 0$, sehingga $\mathbf{u}$ dan $\mathbf{v}$ membentuk \textbf{sudut lancip}.
+% final: \text{sudut lancip}
+\end{itemize}
+\end{itemize}
+
+%===========================================================
+\item Tentukan vektor yang tegak lurus terhadap vektor
+\[
+\mathbf{u} = \begin{bmatrix} -7 \\ 3 \\ 1 \end{bmatrix} \quad \text{dan} \quad
+\mathbf{v} = \begin{bmatrix} 2 \\ 0 \\ 4 \end{bmatrix}.
+\]
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Gunakan Hasil Kali Silang}
+
+Hasil kali silang $\mathbf{u} \times \mathbf{v}$ selalu tegak lurus terhadap $\mathbf{u}$ maupun $\mathbf{v}$ (Bagian~8.1 Topik~11). Baris kedua determinan berisi $\mathbf{u}$, baris ketiga berisi $\mathbf{v}$:
+\reseteq
+\begin{align}
+\mathbf{u} \times \mathbf{v} &= \begin{vmatrix} \mathbf{i} & \mathbf{j} & \mathbf{k} \\ -7 & 3 & 1 \\ 2 & 0 & 4 \end{vmatrix}
+= \begin{vmatrix} 3 & 1 \\ 0 & 4 \end{vmatrix}\mathbf{i}
+- \begin{vmatrix} -7 & 1 \\ 2 & 4 \end{vmatrix}\mathbf{j}
++ \begin{vmatrix} -7 & 3 \\ 2 & 0 \end{vmatrix}\mathbf{k}
+\end{align}
+
+\item \textbf{Langkah 2: Hitung Ketiga Minor}
+
+Setiap determinan $2 \times 2$ dihitung dengan $ad - bc$:
+\begin{align}
+\mathbf{u} \times \mathbf{v} &= (12 - 0)\mathbf{i} - (-28 - 2)\mathbf{j} + (0 - 6)\mathbf{k} \nonumber \\
+&= 12\mathbf{i} + 30\mathbf{j} - 6\mathbf{k} = (12, 30, -6)
+\end{align}
+
+\item \textbf{Langkah 3: Cek Tegak Lurus}
+
+Hasil kali titik $\mathbf{w} = (12, 30, -6)$ dengan kedua vektor asal harus nol:
+\begin{align}
+\mathbf{u} \cdot \mathbf{w} &= (-7)(12) + (3)(30) + (1)(-6) = -84 + 90 - 6 = 0 \\
+\mathbf{v} \cdot \mathbf{w} &= (2)(12) + (0)(30) + (4)(-6) = 24 + 0 - 24 = 0
+\end{align}
+Jadi vektor yang tegak lurus terhadap $\mathbf{u}$ dan $\mathbf{v}$ adalah
+\[
+\mathbf{u} \times \mathbf{v} = (12, 30, -6) = 6\,(2, 5, -1).
+\]
+Setiap kelipatan $k(2, 5, -1)$ dengan $k \neq 0$ juga tegak lurus terhadap $\mathbf{u}$ dan $\mathbf{v}$, karena mengalikan dengan skalar hanya mengubah panjang (dan mungkin membalik arah), bukan garis kerjanya.
+% final: (12, 30, -6)
+\end{itemize}
+
+%===========================================================
+\item Diketahui vektor
+\[
+\mathbf{u} = \begin{bmatrix} 2 \\ -1 \\ 3 \end{bmatrix}, \quad
+\mathbf{v} = \begin{bmatrix} 4 \\ -1 \\ 2 \end{bmatrix}, \quad \text{dan} \quad
+\mathbf{w} = \begin{bmatrix} 2 \\ 6 \\ 7 \end{bmatrix}.
+\]
+Tentukan hasil kali triple skalar $\mathbf{u} \cdot (\mathbf{v} \times \mathbf{w})$.
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Determinan dengan Ekspansi Baris Pertama}
+
+Triple skalar sama dengan determinan matriks yang baris-barisnya $\mathbf{u}$, $\mathbf{v}$, $\mathbf{w}$ (Bagian~8.2 Topik~11):
+\reseteq
+\begin{align}
+\mathbf{u} \cdot (\mathbf{v} \times \mathbf{w}) &= \begin{vmatrix} 2 & -1 & 3 \\ 4 & -1 & 2 \\ 2 & 6 & 7 \end{vmatrix}
+= 2\begin{vmatrix} -1 & 2 \\ 6 & 7 \end{vmatrix}
+- (-1)\begin{vmatrix} 4 & 2 \\ 2 & 7 \end{vmatrix}
++ 3\begin{vmatrix} 4 & -1 \\ 2 & 6 \end{vmatrix} \nonumber \\
+&= 2(-7 - 12) + 1(28 - 4) + 3(24 + 2) \nonumber \\
+&= -38 + 24 + 78 = 64
+\end{align}
+
+\item \textbf{Langkah 2: Cara Alternatif, Silang lalu Titik}
+
+Hitung $\mathbf{v} \times \mathbf{w}$ terlebih dahulu:
+\begin{align}
+\mathbf{v} \times \mathbf{w} &= \begin{vmatrix} \mathbf{i} & \mathbf{j} & \mathbf{k} \\ 4 & -1 & 2 \\ 2 & 6 & 7 \end{vmatrix}
+= (-7 - 12)\mathbf{i} - (28 - 4)\mathbf{j} + (24 + 2)\mathbf{k} = (-19, -24, 26)
+\end{align}
+Kemudian kalikan titik dengan $\mathbf{u}$:
+\begin{align}
+\mathbf{u} \cdot (\mathbf{v} \times \mathbf{w}) &= (2)(-19) + (-1)(-24) + (3)(26) = -38 + 24 + 78 = 64
+\end{align}
+Hasilnya sama dengan (1).
+
+\item \textbf{Langkah 3: Tafsiran Geometris}
+
+Karena $\mathbf{u} \cdot (\mathbf{v} \times \mathbf{w}) = 64 \neq 0$, ketiga vektor \textbf{tidak sebidang}. Nilai mutlaknya adalah volume paralelepipedum yang dibentuk $\mathbf{u}$, $\mathbf{v}$, dan $\mathbf{w}$:
+\begin{align}
+V &= |\mathbf{u} \cdot (\mathbf{v} \times \mathbf{w})| = |64| = 64 \text{ satuan volume}
+\end{align}
+Jadi hasil kali triple skalar $\mathbf{u} \cdot (\mathbf{v} \times \mathbf{w}) = 64$.
+% final: 64
+\end{itemize}
+
+\end{enumerate}
+
+\end{document}

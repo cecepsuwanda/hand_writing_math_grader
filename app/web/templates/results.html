@@ -1,36 +1,67 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
 {% block title %}Hasil · {{ view.run | short_pdf }}{% endblock %}
 {% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(view.run) }}">{{ view.run | short_pdf }}</a> / Hasil{% endblock %}
 {% block content %}
 {% set report = view.report %}
+{% set labels = view.part_labels %}
 <section class="card">
   <div class="row-between">
-    <h1>Hasil penilaian</h1>
+    <div class="card-head">
+      <span class="icon-bubble">{{ icon("award", "icon-lg") }}</span>
+      <h1>Hasil penilaian</h1>
+    </div>
     <span class="row">
       {% for kind in view.report_files %}
-      <a class="btn btn-small btn-secondary" href="{{ run_url(view.run, '/files/' ~ kind.value) }}">{{ kind.value | upper }}</a>
+      <a class="btn btn-small btn-secondary" href="{{ run_url(view.run, '/files/' ~ kind.value) }}">{{ icon("download") }}{{ kind.value | upper }}</a>
       {% endfor %}
     </span>
   </div>
+  {% if view.crop_warnings %}
+  {% for msg in view.crop_warnings %}
+  <div class="flash flash-warn"><span class="flash-body"><span>{{ msg }}</span></span></div>
+  {% endfor %}
+  {% endif %}
   {% if report %}
-  <p class="score-total">
-    <strong>{{ "%g" | format(report.total_score) }}</strong> / {{ "%g" | format(report.maximum_total) }}
-    <span class="badge {% if report.overall_status.value == 'AUTO_ACCEPT' %}badge-ok{% else %}badge-warn{% endif %}">{{ report.overall_status.value }}</span>
-  </p>
-  <p class="muted small">NIM {{ report.metadata.student_id }} · {{ report.metadata.generated_at }}
-    · vision <code>{{ report.metadata.vision_model or "—" }}</code> · reasoning <code>{{ report.metadata.reasoning_model or "—" }}</code></p>
+  {% set pct = (report.total_score / report.maximum_total * 100) if report.maximum_total else 0 %}
+  <div class="score-hero">
+    <svg class="score-ring" viewBox="0 0 120 120" role="img" aria-label="Skor {{ pct | round | int }} persen">
+      <circle class="ring-track" cx="60" cy="60" r="50"></circle>
+      <circle class="ring-value {% if pct >= 80 %}ring-ok{% elif pct >= 50 %}ring-warn{% else %}ring-error{% endif %}"
+              cx="60" cy="60" r="50" pathLength="100" transform="rotate(-90 60 60)"
+              stroke-dasharray="{{ '%.1f' | format(pct) }} 100"></circle>
+      <text x="60" y="68" text-anchor="middle">{{ pct | round | int }}%</text>
+    </svg>
+    <div>
+      <p class="score-total">
+        <strong>{{ report.total_score | score }}</strong> / {{ report.maximum_total | score }}
+        <span class="badge {% if report.overall_status.value == 'AUTO_ACCEPT' %}badge-ok{% else %}badge-warn{% endif %}">{{ report.overall_status.value }}</span>
+      </p>
+      <p class="muted small">NIM {{ report.metadata.student_id }} · <time datetime="{{ report.metadata.generated_at }}">{{ (report.metadata.generated_at | string)[:16] | replace("T", " ") }} UTC</time>
+        · vision <code>{{ report.metadata.vision_model or "—" }}</code> · reasoning <code>{{ report.metadata.reasoning_model or "—" }}</code></p>
+    </div>
+  </div>
   <div class="table-scroll">
   <table class="table">
     <thead><tr><th>Soal</th><th>Nilai</th><th>Status</th><th>Langkah</th><th>Bagian</th></tr></thead>
     <tbody>
       {% for row in report.questions %}
+      {% set item = view.grades | selectattr('question_id', 'equalto', row.question_id) | first %}
       <tr class="{% if row.missing %}muted{% endif %}">
-        <td><a href="#grade-{{ row.question_id }}">{{ row.question_number }}</a></td>
-        <td>{{ "%g" | format(row.score) }} / {{ "%g" | format(row.maximum_score) }}</td>
+        <td><a href="#grade-{{ row.question_id }}">{{ row.question_number }}{{ row.part_label }}</a></td>
+        <td class="num">
+          {{ row.score | score }} / {{ row.maximum_score | score }}
+          {% if view.grades_concept and item and item.concept_max is not none %}
+          <div class="small muted">
+            <span class="badge">Konsep {{ item.concept_score | score }}/{{ item.concept_max | score }}</span>
+            <span class="badge">Simbolik {{ item.symbolic_score | score }}/{{ item.symbolic_max | score }}</span>
+          </div>
+          {% endif %}
+        </td>
         <td>{% if row.missing %}<span class="badge badge-failed">{{ row.missing_label or "TIDAK ADA" }}</span>
             {% else %}<span class="badge {% if row.review_status.value == 'AUTO_ACCEPT' %}badge-ok{% else %}badge-warn{% endif %}">{{ row.review_status.value }}</span>{% endif %}</td>
         <td>{{ row.step_count }}</td>
-        <td class="small">{% for part, status in row.part_statuses.items() %}<span class="badge">{{ part }}: {{ status }}</span> {% endfor %}</td>
+        <td class="small">{% for part, status in row.part_statuses.items() %}<span class="badge">{{ labels.get(part, part) }}: {{ status }}</span> {% endfor %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -40,9 +71,9 @@
   <p class="muted">Belum ada laporan untuk run ini.</p>
   {% endif %}
   <div class="row">
-    <a class="btn btn-secondary" href="{{ run_url(view.run, '/review') }}">Edit transkripsi</a>
+    <a class="btn btn-secondary" href="{{ run_url(view.run, '/review') }}">{{ icon("pencil") }}Edit transkripsi</a>
     <form method="post" action="{{ run_url(view.run, '/finish-questions') }}">
-      <button class="btn btn-secondary">Nilai ulang</button>
+      <button class="btn btn-secondary">{{ icon("rotate-ccw") }}Nilai ulang</button>
     </form>
   </div>
 </section>
@@ -52,28 +83,38 @@
   {% set grade = item.grade %}
   {% if grade %}
   <div class="row-between">
-    <h2>Soal {{ grade.question_number }} <small class="muted">{{ item.question_id }}</small></h2>
-    <strong>{{ "%g" | format(grade.score) }} / {{ "%g" | format(grade.maximum_score) }}</strong>
+    <h2>Soal {{ grade.question_number }}{{ grade.part_label }} <small class="muted">{{ item.question_id }}</small></h2>
+    <div class="row">
+      {% if view.grades_concept and item.concept_max is not none %}
+      <span class="badge">Konsep {{ item.concept_score | score }}/{{ item.concept_max | score }}</span>
+      <span class="badge">Simbolik {{ item.symbolic_score | score }}/{{ item.symbolic_max | score }}</span>
+      {% endif %}
+      <strong>{{ grade.score | score }} / {{ grade.maximum_score | score }}</strong>
+    </div>
   </div>
+
+  <h3>Langkah mahasiswa</h3>
   <div class="table-scroll">
   <table class="table">
     <thead><tr><th>Langkah</th><th>Status</th><th>Nilai</th><th>Jenis kesalahan</th><th>Umpan balik</th></tr></thead>
     <tbody>
-      {% for step in grade.steps %}
+      {% for step in item.step_rows %}
       <tr class="status-{{ step.status.value }}">
-        <td>{% if step.part_id %}{{ step.part_id }}{% else %}{{ step.step_number }}{% endif %}</td>
+        <td>{{ step.step_number }}</td>
         <td><span class="badge badge-step-{{ step.status.value }}">{{ step.status.value }}</span></td>
-        <td>{{ "%g" | format(step.score) }} / {{ "%g" | format(step.max_score) }}</td>
+        <td class="num">{{ step.score | score }} / {{ step.max_score | score }}</td>
         <td>{% if step.error_type.value != "none" %}{{ step.error_type.value }}{% endif %}</td>
         <td class="small">{{ step.feedback }}</td>
       </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">Tidak ada langkah bernomor.</td></tr>
       {% endfor %}
       {% if grade.final_answer %}
       {% set step = grade.final_answer %}
       <tr class="status-{{ step.status.value }}">
         <td>Jawaban akhir</td>
         <td><span class="badge badge-step-{{ step.status.value }}">{{ step.status.value }}</span></td>
-        <td>{{ "%g" | format(step.score) }} / {{ "%g" | format(step.max_score) }}</td>
+        <td class="num">{{ step.score | score }} / {{ step.max_score | score }}</td>
         <td>{% if step.error_type.value != "none" %}{{ step.error_type.value }}{% endif %}</td>
         <td class="small">{{ step.feedback }}</td>
       </tr>
@@ -81,6 +122,38 @@
     </tbody>
   </table>
   </div>
+
+  {% if item.part_rows %}
+  <h3>Komponen penilaian</h3>
+  {% if item.expected_milestones %}
+  <p class="muted small">Skor bagian = cakupan isi milestone kunci (bukan urutan langkah siswa).</p>
+  {% endif %}
+  {% set milestone_titles = {} %}
+  {% for slot in item.expected_milestones %}
+    {% set _ = milestone_titles.update({slot.role: slot.title}) %}
+  {% endfor %}
+  <div class="table-scroll">
+  <table class="table">
+    <thead><tr><th>Bagian</th><th>Status</th><th>Nilai</th><th>Jenis kesalahan</th><th>Umpan balik</th></tr></thead>
+    <tbody>
+      {% for step in item.part_rows %}
+      <tr class="status-{{ step.status.value }}">
+        <td>
+          {{ labels.get(step.part_id, step.part_id) }}
+          {% if milestone_titles.get(step.part_id) %}
+          <div class="muted small">{{ milestone_titles.get(step.part_id) }}</div>
+          {% endif %}
+        </td>
+        <td><span class="badge badge-step-{{ step.status.value }}">{{ step.status.value }}</span></td>
+        <td class="num">{{ step.score | score }} / {{ step.max_score | score }}</td>
+        <td>{% if step.error_type.value != "none" %}{{ step.error_type.value }}{% endif %}</td>
+        <td class="small">{{ step.feedback }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
   {% else %}
   <h2>{{ item.question_id }}</h2>
   <p class="error-text">grading.json tidak valid.</p>

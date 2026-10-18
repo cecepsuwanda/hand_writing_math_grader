@@ -21,10 +21,20 @@ class StepReviewFlags(BaseModel):
     flags: list[ReviewFlag] = Field(default_factory=list)
 
 
+class ExpectedMilestoneSlot(BaseModel):
+    """Kunci langkah pattern slot for Review / Results (pack-3 UX)."""
+
+    role: str
+    title: str = ""
+    summary: str = ""
+    order: int = Field(ge=0, default=0)
+
+
 class QuestionReviewItem(BaseModel):
     path: Path
     question: Question
     flagged_steps: list[StepReviewFlags] = Field(default_factory=list)
+    expected_milestones: list[ExpectedMilestoneSlot] = Field(default_factory=list)
 
 
 class QuestionReviewResult(BaseModel):

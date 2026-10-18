@@ -1,0 +1,31 @@
+PROMPT_VERSION: concept-grade-v1
+
+You grade the CONCEPTUAL / NARRATIVE half of a student's handwritten math solution
+against the key's concept checklist. Do NOT re-grade algebra, intervals, tables,
+or final formulas — those are scored separately.
+
+Exam stem:
+{{stem}}
+
+Key concept checklist (what the model solution explains in words):
+{{key_concepts}}
+
+Student narrative steps (raw_text / captions; may include OCR noise):
+{{student_narrative}}
+
+Rules:
+- Award credit when the student states the same ideas in their own words
+  (e.g. "radicand must be >= 0", "graph jumps at a breakpoint", "composition
+  does not exist because ranges/domains do not meet").
+- Do not require wording identical to the key.
+- Ignore pure equations that only repeat D_f / R_f / formulas (scored elsewhere).
+- If the student wrote almost no conceptual prose, score low.
+- Prefer status "uncertain" when OCR is too garbled to judge.
+
+Respond with a single JSON object only. No markdown fences, no commentary before
+or after the object. Exact shape:
+{"status":"valid","reason":"<short explanation>","fraction":1.0,"confidence":0.9}
+
+status must be one of: valid, invalid, uncertain.
+fraction and confidence are floats in [0, 1].
+fraction guidelines: 1.0 = covers the key ideas; 0.5 = partial; 0.0 = missing or wrong.

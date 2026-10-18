@@ -39,7 +39,18 @@ def main(argv: list[str] | None = None) -> int:
     host = args.host or config.web.host
     port = args.port or config.web.port
     logger.info("Math Grader berjalan di http://%s:%s", host, port)
-    uvicorn.run(create_app(config), host=host, port=port)
+    try:
+        uvicorn.run(create_app(config), host=host, port=port)
+    except OSError as exc:
+        # Windows: WinError 10048 when another process still holds the port.
+        logger.error(
+            "Tidak bisa bind %s:%s (%s). Tutup server lama atau jalankan "
+            "dengan --port lain (contoh: python -m app.web --port 8765).",
+            host,
+            port,
+            exc,
+        )
+        return 1
     return 0
 
 

@@ -27,33 +27,37 @@ def merge_page_recognitions(
 ) -> list[Question]:
     """Merge page-scoped recognition into multi-page Question objects.
 
-    Groups by question_number when valid (> 0). Fragments with invalid numbers
-    become provisional questions with sequential numbers after both the read
-    numbers and ``reserved_numbers`` (the answer-key numbers), so an unnumbered
-    crop never takes the slot of a key question the student skipped.
+    Groups by (question_number, part_label) when the number is valid (> 0).
+    Fragments with invalid numbers become provisional questions with sequential
+    numbers after both the read numbers and ``reserved_numbers`` (the
+    answer-key numbers), so an unnumbered crop never takes the slot of a key
+    question the student skipped.
     """
     sorted_pages = sorted(pages, key=lambda p: p.page_number)
-    numbered: dict[int, list[tuple[int, RecognizedQuestion]]] = defaultdict(list)
+    numbered: dict[tuple[int, str], list[tuple[int, RecognizedQuestion]]] = defaultdict(list)
     provisional: list[tuple[int, RecognizedQuestion]] = []
 
     for page in sorted_pages:
         for question in page.questions:
             if question.question_number > 0:
-                numbered[question.question_number].append((page.page_number, question))
+                key = (question.question_number, question.part_label)
+                numbered[key].append((page.page_number, question))
             else:
                 provisional.append((page.page_number, question))
 
     questions: list[Question] = []
-    for question_number in sorted(numbered):
+    for question_number, part_label in sorted(numbered):
         questions.append(
             _build_question(
                 question_number=question_number,
-                occurrences=numbered[question_number],
+                part_label=part_label,
+                occurrences=numbered[(question_number, part_label)],
                 status=SegmentationStatus.MERGED,
             )
         )
 
-    next_provisional = _first_provisional_number(numbered.keys(), reserved_numbers)
+    read_numbers = {number for number, _ in numbered}
+    next_provisional = _first_provisional_number(read_numbers, reserved_numbers)
     for page_number, fragment in provisional:
         questions.append(
             _build_question(
@@ -114,6 +118,7 @@ def _build_question(
     question_number: int,
     occurrences: list[tuple[int, RecognizedQuestion]],
     status: SegmentationStatus,
+    part_label: str = "",
 ) -> Question:
     occurrences = sorted(occurrences, key=lambda item: item[0])
     page_references = sorted({page_number for page_number, _ in occurrences})
@@ -208,8 +213,9 @@ def _build_question(
 
     confidence = min(confidences) if confidences else None
     return Question(
-        question_id=question_dir_name(question_number),
+        question_id=question_dir_name(question_number, part_label),
         question_number=question_number,
+        part_label=part_label,
         page_references=page_references,
         image_regions=image_regions,
         student_steps=student_steps,

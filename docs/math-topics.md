@@ -90,7 +90,17 @@ Pack = implementasi `TopicPack` di `app/topics/<id>/` + entri di `_PACKS` (`app/
 |---------|-----|----------------|--------|
 | `1.5` | 1.5 Pertidaksamaan | `standards/topik_1` | **MVP, default** — ingest, roles, `step_checks`, rubric, grading, tes |
 | `2` | 2 Pertidaksamaan nilai mutlak | `standards/topik_2` | **Registered** — delegasi roles/`step_checks`/rubric/role instructions ke `1.5`; tes masih minimal |
-| — | 3–11 | `standards/topik_<bab>` | Belum ada pack. Tambah `app/topics/<id>/` + entri `_PACKS` saat acceptance grading bab itu siap |
+| `4` | 4 Limit | `standards/topik_4` | **Registered** — roles `algebra` / `indeterminate` / `one_sided` / `figure` / `hp`; final dari `% final:` (cadangan: nilai kalimat `Jadi`); acceptance ingest `tugas_topik_4.tex` (19 sub-soal) |
+| `3` | 3 Fungsi | `standards/topik_3` | **Registered** (`Function3Pack`, isolasi) — dual-track **50/50**: simbolik 5 + **`concept` 5** (fallback heuristic bila JSON LLM rusak); ingest kaya (`VALUE_TABLE` pairs, prose unwrap `$…$`, final `ada`/`tidak ada`); figure soft bila tikz tanpa number_line; sub-soal **1a/1b, 4a/4b, 5a/5b, 6a/6b** + grafik 2–3; peringatan crop kosong → TIDAK DIJAWAB; acceptance `tugas_topik_3.tex` (10 (sub-)soal) |
+| `5` | 5 Kekontinuan | `standards/topik_5` | **Registered** (`ChapterPack`) — `one_sided` / `function_value` / `continuity` + `figure`; acceptance `tugas_topik_5.tex` (7) |
+| `6` | 6 Turunan | `standards/topik_6` | **Registered** (`ChapterPack`) — `definition` / `one_sided_derivative` / `tangent_line` + `figure`; acceptance `tugas_topik_6.tex` (12) |
+| `7` | 7 Integral | `standards/topik_7` | **Registered** (`ChapterPack`) — `antiderivative` / `integral_property` / `ftc` / `substitution` / `evaluate_bounds`; acceptance `tugas_topik_7.tex` (15) |
+| `8` | 8 Fungsi Transenden | `standards/topik_8` | **Registered** (`ChapterPack`) — `domain` / `log_rule` / `chain_rule` / `substitution`; acceptance `tugas_topik_8.tex` (12) |
+| `9` | 9 Matriks | `standards/topik_9` | **Registered** (`ChapterPack`) — `size_check` / `transpose` / `trace` / `matrix_equation`; acceptance `tugas_topik_9.tex` (10) |
+| `10` | 10 Determinan dan Invers | `standards/topik_10` | **Registered** (`ChapterPack`) — `determinant` / `cofactor` / `inverse` / `singular_condition`; acceptance `tugas_topik_10.tex` (6) |
+| `11` | 11 Vektor | `standards/topik_11` | **Registered** (`ChapterPack`) — `components` / `norm` / `dot` / `cross`; capability tambahan `vector_tuple`; acceptance `tugas_topik_11.tex` (9) |
+
+`ChapterPack` (`app/topics/chapter_pack.py`) menurunkan roles, `step_checks`, rubric dan role instructions dari deklarasi `MilestonePart` (judul seksi kunci, cue teks langkah, poin). Rubric: milestone memakai poinnya, `figure` 2, `final_answer` 3, `algebra` sisanya dari 10 (tes konsistensi memastikan `algebra` > 0 untuk setiap pack). Urutan dropdown = urutan silabus (`1.5, 2, 3, …, 11`).
 
 Pemilihan pack: dropdown **Topik** di halaman awal web UI (berlaku untuk ingest kunci dan semua job), `grading.topic_id` di `config.yaml`, atau `topic_id` di `exam_schema.json` selama user belum memilih topik.
 
@@ -98,13 +108,14 @@ Pemilihan pack: dropdown **Topik** di halaman awal web UI (berlaku untuk ingest 
 
 ## Capabilities
 
-Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recognizer + validator. Terdaftar di `app/capabilities/registry.py`; pack memilih lewat `capability_ids` (pack `1.5` dan `2` saat ini mengaktifkan semuanya).
+Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recognizer + validator. Terdaftar di `app/capabilities/registry.py`; pack memilih lewat `capability_ids` (pack `1.5` dan `2` mengaktifkan semuanya; pack bab ≥ 3 memakai `ALL_CAPABILITY_IDS`, tanpa `indexed_roots`; pack `3` menambah `piecewise`; pack `11` menambah `vector_tuple`). Ingest kunci menormalisasi di bawah pack aktif (`using_pack`), jadi capability opt-in ikut berlaku untuk `final_symbolic` / `steps_symbolic`. Pack `3`: halaman Review/Hasil menampilkan **Pola kunci** (judul `Langkah N` → role); skor tetap coverage per role, bukan matching urutan langkah siswa. Setelah ubah ingest, re-ingest `tugas_topik_3.tex` agar `ExamMilestone.title` terisi.
 
 | Capability id | Bab terkait |
 |---------------|-------------|
 | `abs` | 2 |
 | `indexed_roots` (akar bernama, `x_1` / `x_{1}` / `x₁` → `x`) | 1.5, 2 |
 | `interval` (selang, `\cup` / `∪` / ASCII `U`) | 1.3, 3.2 |
+| `piecewise` (`\begin{cases}` / `{a if c,…}` → `Piecewise(...)`) | 3 |
 | `limit` | 4, 5 |
 | `derivative` | 6 |
 | `integral` | 7 |
@@ -112,6 +123,7 @@ Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recogni
 | `matrix` | 9 |
 | `det_inverse` | 10 |
 | `vector` | 11 |
+| `vector_tuple` (opt-in: `(a, b, c)` → `MATRIX` kolom; di pack lain `(a, b)` = selang) | 11 |
 
 ## Status per bab
 
@@ -120,19 +132,19 @@ Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recogni
 | 1.1–1.4 | Sistem bilangan, garis bilangan, selang, sifat | Pendukung MVP | Konseptual; cek notasi selang + LLM |
 | 1.5 | Pertidaksamaan (bentuk umum + HP) | **MVP** | SymPy-first (solve/reduce inequality), garis bilangan = set-equivalence |
 | 2 | Pertidaksamaan nilai mutlak | **Pack terdaftar** | SymPy-first Abs + compound/`Or`; kasus naratif → UNCERTAIN → LLM |
-| 3 | Fungsi | Adapter normalisasi saja (tanpa pack & tanpa tes) | Domain sebagai pertidaksamaan + `\in` selang; grafik/range naratif → LLM |
-| 4 | Limit | Adapter normalisasi saja (tanpa pack & tanpa tes) | SymPy `limit` dua sisi / sepihak; trig tak terputuskan → UNCERTAIN → LLM |
-| 5 | Kekontinuan | Adapter normalisasi saja (tanpa pack & tanpa tes) | lim dua sisi = f(a); ε-δ / prosa → UNCERTAIN → LLM |
-| 6 | Turunan | Adapter normalisasi saja (tanpa pack & tanpa tes) | SymPy `diff` via token DIFF; definisi / rantai bersarang → UNCERTAIN → LLM |
-| 7 | Integral | Adapter normalisasi saja (tanpa pack & tanpa tes) | SymPy `integrate` via token INT; `+C` di-strip; substitusi naratif → LLM |
-| 8 | Fungsi transenden | Adapter normalisasi saja (tanpa pack & tanpa tes) | DIFF/INT ln·exp; sifat naratif → UNCERTAIN → LLM |
-| 9 | Matriks | Adapter normalisasi saja (tanpa pack & tanpa tes) | SymPy `Matrix` +/−/×/skalar/transpos via token MATRIX |
-| 10 | Determinan dan invers | Adapter normalisasi saja (tanpa pack & tanpa tes) | `Matrix.det` / `.inv` via token DET/INV |
-| 11 | Vektor | Adapter normalisasi saja (tanpa pack & tanpa tes) | MATRIX kolom + NORM/DOT; sudut/triple/prosa → UNCERTAIN → LLM |
+| 3 | Fungsi | **Pack terdaftar** (dual-track 50/50; isolasi dari bab lain) | Simbolik (5): domain/range/tabel/grafik endpoints/komposisi/`% final:`; recognition `cases`→`Piecewise` + `GRAPH_POINTS`. Narasi (5): role `concept` dinilai LLM vs milestone kunci; tanpa reasoning model → heuristic / UNCERTAIN + review |
+| 4 | Limit | **Pack terdaftar** (ingest + rubric + roles; acceptance ingest hijau) | SymPy `limit` dua sisi / sepihak per token `LIMIT(...)`; rantai `lim … = a = b` dan trig tak terputuskan → UNCERTAIN → LLM |
+| 5 | Kekontinuan | **Pack terdaftar** (acceptance ingest hijau) | lim dua sisi = f(a); ε-δ / prosa → UNCERTAIN → LLM |
+| 6 | Turunan | **Pack terdaftar** (acceptance ingest hijau) | `f'(x) = …` / `f''(x)` / `f'_-(a)` dibaca sebagai nilai; rantai berisi `LIMIT`/`DIFF`/`INT` → UNCERTAIN → LLM |
+| 7 | Integral | **Pack terdaftar** (acceptance ingest hijau) | `\int … dx` → token INT; `[F]_a^b` / `\Bigl[F\Bigr]_a^b` dievaluasi; `\sqrt`/`\sqrt[n]` dipertahankan; `\int … = …` dalam rantai → UNCERTAIN → LLM |
+| 8 | Fungsi transenden | **Pack terdaftar** (acceptance ingest hijau) | `\ln\|u\|` → `ln Abs(u)`; `\sec`/`\csc`/`\cot`, `\cos^2 x`; ekor `\approx …` dibuang; sifat naratif → UNCERTAIN → LLM |
+| 9 | Matriks | **Pack terdaftar** (acceptance ingest hijau) | SymPy `Matrix` via token MATRIX/TRANSPOSE/TRACE; ruas kiri bernama (`A + B =`, `A^{-1} =`) dibuang; relasi matriks `… = …` → UNCERTAIN → LLM |
+| 10 | Determinan dan invers | **Pack terdaftar** (acceptance ingest hijau) | `Matrix.det` / `.inv` / `.adjugate` via DET/INV/ADJ; `\det(A) = <kerja skalar>` dicek sebagai rantai skalar |
+| 11 | Vektor | **Pack terdaftar** (acceptance ingest hijau) | Tuple → MATRIX kolom (`vector_tuple`), NORM/DOT/CROSS (bernama + literal); sudut/prosa → UNCERTAIN → LLM |
 
 ## Aturan scope
 
 - Satu domain aktif pada satu waktu untuk fitur grading baru.
 - Testdata dan rubric standar harus mencerminkan bab yang sedang di-support.
 - Klaim "support bab X" hanya setelah bab itu punya pack + acceptance test hijau.
-- Pack berikutnya yang disarankan: **4 Limit** (capability `limit` sudah ada).
+- Semua bab silabus (1.5, 2, 3–11) sudah punya pack + acceptance ingest. Langkah berikutnya: acceptance grading end-to-end per bab dengan jawaban mahasiswa sungguhan, dan evaluasi relasi matriks (`DET(M) = -2`) di parser agar bab 9–11 tidak bergantung pada LLM.

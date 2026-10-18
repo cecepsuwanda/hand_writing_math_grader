@@ -45,6 +45,23 @@ def clear_output_workspace(
     return removed
 
 
+def delete_run_directory(run_root: Path) -> str:
+    """Remove an entire run folder (``rmtree``), not only its children.
+
+    Returns:
+        The directory's basename.
+    """
+    run_root = Path(run_root)
+    name = run_root.name
+    if run_root.is_dir() and not run_root.is_symlink():
+        shutil.rmtree(run_root)
+        logger.info("Deleted run directory: %s", run_root)
+    elif run_root.is_file() or run_root.is_symlink():
+        run_root.unlink(missing_ok=True)
+        logger.info("Deleted run path: %s", run_root)
+    return name
+
+
 def clear_directory_contents(directory: Path) -> list[str]:
     """Delete all children of ``directory``, creating it if missing."""
     directory = Path(directory)

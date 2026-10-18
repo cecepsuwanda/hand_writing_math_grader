@@ -32,9 +32,31 @@ _ASSIGN_PREFIX_RE = re.compile(
     re.DOTALL,
 )
 
+# \operatorname{tr}(A) / \mathrm{adj}(A) → TRACE(A) / ADJ(A); a bare literal
+# operand (\operatorname{tr} MATRIX(...)) is wrapped: TRACE(MATRIX(...)).
+_NAMED_OPERATOR_RE = re.compile(
+    r"\\(?:operatorname|mathrm|text)\s*\{\s*(?P<name>tr|trace|adj)\s*\}\s*"
+    rf"(?:(?=\()|(?P<operand>{_MATRIX_LIKE}))",
+    re.IGNORECASE,
+)
+_NAMED_OPERATOR_TOKENS = {"tr": "TRACE", "trace": "TRACE", "adj": "ADJ"}
+
+# ``\det(A) = <scalar work>`` / ``TRACE(4D^T - C) = 23 + 4 + 8``: a named (not
+# literal) matrix is opaque, so the step is the scalar work on the right.
+_OPAQUE_SCALAR_LHS_RE = re.compile(
+    r"^\s*(?:\\det\s*\(\s*[A-Za-z]\w*\s*\)|TRACE\((?:[^()]|\([^()]*\))*\))\s*=\s*(?=\S)"
+)
+_DET_CALL_RE = re.compile(r"\\det\s*(?=\()")
+
+
+def _named_operator_repl(match: re.Match[str]) -> str:
+    token = _NAMED_OPERATOR_TOKENS[match.group("name").lower()]
+    operand = match.group("operand")
+    return f" {token}({operand})" if operand else f" {token}"
+
 
 def rewrite_det_inverse_notation(text: str) -> str:
-    """Rewrite det / inverse forms into ``DET(...)`` / ``INV(...)`` tokens.
+    """Rewrite det / inverse / trace / adjugate forms into ``DET`` / ``INV`` / ``TRACE`` / ``ADJ`` tokens.
 
     Expects ``rewrite_matrix_notation`` to have already produced ``MATRIX(...)``.
     Does not rewrite bare ``|...|`` (conflicts with Abs).
@@ -52,6 +74,11 @@ def rewrite_det_inverse_notation(text: str) -> str:
         return f"DET({matrix_tok})"
 
     cleaned = _DET_PREFIX_RE.sub(_det_repl, cleaned)
+    cleaned = _NAMED_OPERATOR_RE.sub(_named_operator_repl, cleaned)
+    lhs = _OPAQUE_SCALAR_LHS_RE.match(cleaned)
+    if lhs is not None and "MATRIX(" not in lhs.group(0):
+        cleaned = cleaned[lhs.end():]
+    cleaned = _DET_CALL_RE.sub(" DET", cleaned)
 
     assign = _ASSIGN_PREFIX_RE.match(cleaned)
     if assign is not None:

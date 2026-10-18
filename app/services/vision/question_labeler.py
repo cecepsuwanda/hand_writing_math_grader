@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.functions.json_extract import extract_json_object
 from app.functions.kunci_ingest import format_recognition_question_block
+from app.functions.question_names import split_question_ref
 from app.interfaces.llm_client import LlmClient
 from app.models.exam_schema import ExamSchema
 
@@ -50,7 +51,7 @@ class OllamaQuestionLabeler:
         numbers: list[int] = []
         for value in values:
             try:
-                number = int(value)
+                number = _parent_number(value)
             except (TypeError, ValueError):
                 continue
             if self._numbers and number not in self._numbers:
@@ -58,3 +59,10 @@ class OllamaQuestionLabeler:
             if number not in numbers:
                 numbers.append(number)
         return numbers
+
+
+def _parent_number(value: object) -> int:
+    """``1`` / ``"1"`` / ``"1a"`` → ``1`` (crops are mapped per soal, not sub-soal)."""
+    if isinstance(value, (int, float)):
+        return int(value)
+    return split_question_ref(str(value))[0]

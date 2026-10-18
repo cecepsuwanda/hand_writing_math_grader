@@ -1,9 +1,13 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
 {% block title %}{{ job.title }} · Math Grader{% endblock %}
 {% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(job.run) }}">{{ job.run | short_pdf }}</a> / Job{% endblock %}
 {% block content %}
 <section class="card">
-  <h1>{{ job.title }}</h1>
+  <div class="card-head">
+    <span class="icon-bubble">{{ icon("cpu", "icon-lg") }}</span>
+    <h1>{{ job.title }}</h1>
+  </div>
   <p class="muted small">Run <code>{{ job.run }}</code> · job <code>{{ job.id }}</code></p>
   {% if job.finished %}
     <div>{% include "partials/job_progress.html" %}</div>

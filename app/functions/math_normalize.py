@@ -6,8 +6,13 @@ import re
 from collections.abc import Sequence
 
 from app.capabilities.registry import ALL_CAPABILITY_IDS, apply_capabilities
-from app.functions.frac_normalize import rewrite_frac_notation
+from app.functions.frac_normalize import rewrite_frac_notation, rewrite_sqrt_notation
 from app.functions.interval_normalize import rewrite_set_builder
+from app.functions.piecewise_normalize import (
+    restore_piecewise_tokens,
+    stash_piecewise_tokens,
+)
+from app.functions.transcendental_normalize import rewrite_trig_application
 from app.topics.runtime import get_active_pack
 
 _FINAL_ANSWER_PREFIX_RE = re.compile(
@@ -52,6 +57,9 @@ _LATEX_REPLACEMENTS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\\sin\b"), "sin"),
     (re.compile(r"\\cos\b"), "cos"),
     (re.compile(r"\\tan\b"), "tan"),
+    (re.compile(r"\\sec\b"), "sec"),
+    (re.compile(r"\\csc\b"), "csc"),
+    (re.compile(r"\\cot\b"), "cot"),
     (re.compile(r"\\ln\b"), "ln"),
     (re.compile(r"\\log\b"), "log"),
     (re.compile(r"\\exp\b"), "exp"),
@@ -74,6 +82,16 @@ def _resolve_capability_ids(
     return ALL_CAPABILITY_IDS
 
 
+# ``2x\sin x`` must not become the symbol ``xsin``.
+_GLUED_FUNCTION_RE = re.compile(
+    r"(?<=[A-Za-z0-9)}])(?=\\(?:sin|cos|tan|sec|csc|cot|ln|log|exp|sqrt)(?![A-Za-z]))"
+)
+# ``\ln|u|`` must not become the command ``\lnAbs`` once the bars are rewritten.
+_FUNCTION_BEFORE_BAR_RE = re.compile(
+    r"(\\(?:sin|cos|tan|sec|csc|cot|ln|log|exp))\s*(?=\||\\left\s*\||\\[bB]igg?l\s*\|)"
+)
+# ``= \frac{1}{3}\ln 33 \approx 1{,}1655``: a rounded value is not an equality claim.
+_APPROX_TAIL_RE = re.compile(r"\s*(?:\\approx(?![A-Za-z])|≈)[^=<>]*")
 _BRACED_DECIMAL_COMMA_RE = re.compile(r"(\d)\s*\{,\}\s*(\d)")
 _OPENERS = "([{"
 _CLOSERS = ")]}"
@@ -129,13 +147,20 @@ def normalize_math_text(
             )
     else:
         text = _IMPLICATION_RE.sub(" and ", text or "")
-    cleaned = rewrite_decimal_commas(text.strip())
+    cleaned = _GLUED_FUNCTION_RE.sub(" ", rewrite_decimal_commas(text.strip()))
+    cleaned = _FUNCTION_BEFORE_BAR_RE.sub(r"\1 ", _APPROX_TAIL_RE.sub("", cleaned))
     caps = _resolve_capability_ids(capability_ids)
 
-    # Matrix / det / vector before '&' → space (LaTeX column separators).
-    early = [c for c in ("matrix", "det_inverse", "vector") if c in caps]
-    rest = [c for c in caps if c not in {"matrix", "det_inverse", "vector"}]
-    cleaned = apply_capabilities(cleaned, early)
+    # Piecewise cases before brace/`&` stripping; stash before matrix/vector
+    # so ASCII ``<a,b>`` / brace rewrites cannot eat ``Piecewise`` bodies.
+    early_ids = ("piecewise", "matrix", "det_inverse", "vector", "vector_tuple")
+    early = [c for c in early_ids if c in caps]
+    rest = [c for c in caps if c not in early_ids]
+    piecewise_early = [c for c in early if c == "piecewise"]
+    other_early = [c for c in early if c != "piecewise"]
+    cleaned = apply_capabilities(cleaned, piecewise_early)
+    cleaned, piecewise_slots = stash_piecewise_tokens(cleaned)
+    cleaned = apply_capabilities(cleaned, other_early)
     cleaned = cleaned.replace("&", " ")
     cleaned = "\n".join(
         line for line in cleaned.splitlines() if not line.strip().startswith("%")
@@ -156,9 +181,10 @@ def normalize_math_text(
 
     for pattern, repl in _LATEX_REPLACEMENTS:
         cleaned = pattern.sub(repl, cleaned)
-    cleaned = rewrite_frac_notation(cleaned)
+    cleaned = rewrite_sqrt_notation(rewrite_frac_notation(cleaned))
     cleaned = cleaned.replace(r"\{", "(").replace(r"\}", ")")
     cleaned = cleaned.replace("{", "(").replace("}", ")")
     cleaned = re.sub(r"\\[a-zA-Z]+", "", cleaned)
-    cleaned = " ".join(cleaned.split())
+    cleaned = rewrite_trig_application(" ".join(cleaned.split()))
+    cleaned = restore_piecewise_tokens(cleaned, piecewise_slots)
     return cleaned

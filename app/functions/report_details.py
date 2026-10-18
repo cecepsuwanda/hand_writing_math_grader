@@ -93,4 +93,6 @@ def load_question_report_details(
                 missing_crops=[p.name for p in paths if not p.is_file()],
             )
         )
-    return sorted(details, key=lambda d: d.question.question_number)
+    return sorted(
+        details, key=lambda d: (d.question.question_number, d.question.part_label)
+    )

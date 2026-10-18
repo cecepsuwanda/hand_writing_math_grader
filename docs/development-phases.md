@@ -79,7 +79,7 @@ Setiap perubahan: implementasi → tulis/perluas tes → jalankan `pytest -q` �
 
 ## Topic packs (pasca Phase 9)
 
-Pack `1.5` (default/MVP) dan `2` (terdaftar, delegasi ke `1.5`). Bab 3–11 belum punya pack. Status dan urutan: [`math-topics.md`](math-topics.md).
+Semua pack `1.5`–`11` terdaftar di `app/topics/registry.py` (`1.5` = MVP default; `2` mendelegasikan ke `1.5`; bab 3–11 via pack sendiri / `ChapterPack`). Status acceptance dan urutan silabus: [`math-topics.md`](math-topics.md).
 
 ## Definition of Done
 

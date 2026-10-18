@@ -1,0 +1,26 @@
+{
+  "question": 3,
+  "maximum_score": 10.0,
+  "criteria": [
+    {
+      "id": "algebra",
+      "points": 3.0
+    },
+    {
+      "id": "critical_points",
+      "points": 1.0
+    },
+    {
+      "id": "sign_chart",
+      "points": 1.0
+    },
+    {
+      "id": "figure",
+      "points": 2.0
+    },
+    {
+      "id": "final_answer",
+      "points": 3.0
+    }
+  ]
+}

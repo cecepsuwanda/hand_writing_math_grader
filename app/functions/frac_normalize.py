@@ -1,6 +1,10 @@
-"""Pure string transforms for LaTeX ``\\frac`` before brace flattening."""
+"""Pure string transforms for LaTeX ``\\frac`` / ``\\sqrt`` before brace flattening."""
 
 from __future__ import annotations
+
+import re
+
+_SQRT_RE = re.compile(r"\\sqrt(?![A-Za-z])\s*")
 
 
 def _extract_brace_group(text: str, start: int) -> tuple[str, int] | None:
@@ -73,3 +77,42 @@ def rewrite_frac_notation(text: str) -> str:
         result.append(f"(({num_rewritten})/({den_rewritten}))")
         index = after_den
     return "".join(result)
+
+
+def _bracket_group(text: str, start: int) -> tuple[str, int] | None:
+    """``[n]`` (root index) at ``start`` → ``(inner, index_after)``."""
+    if start >= len(text) or text[start] != "[":
+        return None
+    close = text.find("]", start)
+    if close < 0:
+        return None
+    return text[start + 1 : close], close + 1
+
+
+def rewrite_sqrt_notation(text: str) -> str:
+    """``\\sqrt{a}`` → `` sqrt(a)``, ``\\sqrt[n]{a}`` → ``((a)^(1/(n)))`` (balanced, nested)."""
+    result: list[str] = []
+    index = 0
+    while True:
+        match = _SQRT_RE.search(text, index)
+        if match is None:
+            result.append(text[index:])
+            return "".join(result)
+        cursor = match.end()
+        root = _bracket_group(text, cursor)
+        if root is not None:
+            cursor = root[1]
+            while cursor < len(text) and text[cursor].isspace():
+                cursor += 1
+        radicand = _extract_brace_group(text, cursor)
+        if radicand is None:
+            result.append(text[index : match.end()])
+            index = match.end()
+            continue
+        inner = rewrite_sqrt_notation(radicand[0])
+        result.append(text[index : match.start()])
+        if root is not None:
+            result.append(f"(({inner})^(1/({root[0].strip()})))")
+        else:
+            result.append(f" sqrt({inner})")
+        index = radicand[1]

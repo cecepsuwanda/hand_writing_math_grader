@@ -62,7 +62,7 @@ Silabus, status per bab, dan topic pack: [`math-topics.md`](math-topics.md).
 
 Recognition memakai **ink bbox**: clustering tinta deterministik (`ink_layout`), lalu crop Pillow + konfirmasi user (`page_*_regions.json` editable) + `crop_math`. Konteks ujian ke vision hanya **stem + `expects_figure`** dari `exam_schema` — jangan kirim steps/HP ke OCR.
 
-Koreksi transkripsi hanya oleh **user**, di checkpoint tinjau `question.json` setelah Extract (`QuestionReviewController`); sistem cuma memberi tanda (`ReviewFlag`) dan tidak pernah mengubah langkah sendiri. Penanda harus pack-agnostic: cek `symbolic.kind`, bukan nama role.
+Koreksi transkripsi hanya oleh **user**, di checkpoint tinjau `question.json` setelah Extract (`QuestionReviewController`); sistem cuma memberi tanda (`ReviewFlag`) dan tidak pernah mengubah langkah sendiri. Penanda memakai `symbolic.kind` / role `figure`, plus `step_checks` pack (mis. `NOT_SYMBOLIC` untuk `concept` di topik 3) agar narasi tidak selalu bertanda `missing_symbolic`. Halaman Review/Hasil membaca `active_topic` (datalist role, dual-track Konsep/Simbolik bila `grades_concept`). Pack `3` (`rich_section_ingest`): Review menampilkan checklist **Pola kunci** dari `ExamMilestone.title` + role agar user menyesuaikan kolom Peran; Hasil menyandingkan judul langkah kunci ke baris komponen; feedback milestone berprefiks `role (Judul): …`.
 
 Saat recognition, LLM **tidak boleh**:
 
@@ -81,6 +81,7 @@ Jika ragu: tandai `uncertain` / confidence rendah / `review_required`, dan perta
 4. **Grading:** skor langkah = konsistensi; soft-align ke `exam_schema` / solutions `.tex` = audit; skor `final_answer` = min(konsistensi, standard SymPy).
 5. Partial credit; jangan nolkan semua skor hanya karena final answer salah.
 6. Error type deterministik: `calculation` / `carry_forward` / `transcription` / `uncertain`; `conceptual` hanya dari annotator LLM (feedback, tidak mengubah skor).
+7. **Dual-track (pack `3` saja):** rubrik 50/50 — 5 poin simbolik (SymPy / set / graph points) + 5 poin `concept` (narasi, `ConceptComparer` + `concept_grade.txt`). Pack lain tidak punya bucket `concept`. Tanpa model reasoning, `concept` = `uncertain` (fraksi 0.5) + review.
 
 Output LLM divalidasi terhadap schema Pydantic. Status `uncertain` dan `REVIEW_REQUIRED` diizinkan.
 
@@ -90,18 +91,56 @@ Setiap skor harus dapat ditelusuri dari artefak run: soal + stem (`question_crop
 
 ## Kunci jawaban (ingest)
 
-Tombol **Ingest** di halaman awal (`POST /kunci/ingest`) mem-parse satu file `data/input/kunci_jawaban/*.tex` menjadi `exam_schema.json` (termasuk `topic_id`), `solutions/question_NNN.tex`, dan `rubrics/question_NNN.json`.
+Tombol **Ingest** di halaman awal (`POST /kunci/ingest`) mem-parse satu file `data/input/kunci_jawaban/*.tex` menjadi `exam_schema.json` (termasuk `topic_id`), `solutions/question_NNN.tex`, dan `rubrics/question_NNN.json`. Folder berisi beberapa `.tex` memakai `tugas_topik_<bab>.tex` milik pack aktif (`"4"` → `tugas_topik_4.tex`); bila tidak ada, ingest ditolak sebagai ambigu. Stem cadangan untuk recognition (tanpa `exam_schema.json`) memilih file yang sama.
 
-Kontrak markup itemize di dalam `\textbf{Penyelesaian}` (pack `1.5`):
+**Kontrak markup kunci (semua pack).** Parser inti (`app/functions/kunci_ingest.py`, pemindai env seimbang di `tex_tree.py`) membaca struktur; pack hanya menyumbang data (`ingest_section_roles`, `figure_from_tikz`, `extract_final`).
 
-| Item | Hasil schema |
+| Markup | Hasil schema |
+|--------|----------------|
+| `\item` level teratas di `enumerate` luar (atau `% soal ke N`) | satu soal, `number` = urutan / N |
+| Teks sebelum `\textbf{Jawab:}` / `\textbf{Penyelesaian}` | `stem` (tikz → `[gambar]`) |
+| `\item \textbf{Langkah N: Judul}` di itemize jawaban | section; judul dicocokkan ke `ingest_section_roles` pack (prefiks `Langkah N:` dibuang) |
+| `Metode N: Label` / `Cara N: Label` | `methods[]` (`id` slug, mis. Pemfaktoran→`factoring`, Rumus ABC→`quadratic_formula`); milestone dari Cara pertama |
+| baris `align` (dipecah `\\` / `&` di kedalaman 0; isi `bmatrix`/`cases` utuh) | `steps` / langkah milestone |
+| `% final: <latex>` (boleh berulang, digabung ` ; `) | `final` + milestone `hp`; **selalu menang** atas heuristik pack |
+| tanpa `% final:` | `extract_final` pack: `HP: $…$` / `\text{HP} = …` (pack `1.5`, `2`), nilai kanan terakhir kalimat `Jadi $…$` (pack `3`–`11`) |
+| `% concept: <teks>` / `% value_table: (x,y); …` | pack `3` saja (`rich_section_ingest`): checklist narasi / pasangan tabel digabung ke milestone |
+| `\newcommand{\m}[1]{…}` di preamble, `\textcolor` | diekspansi / dibuang sebelum parse |
+
+**Sub-soal (`part_label`).** Disimpan sebagai nomor induk + huruf (`ExamQuestion.part_label`, artefak `question_001a`):
+
+- `enumerate` bersarang sebelum `Jawab:` induk, dengan `Jawab:` di tiap item → sub-soal `a`, `b`, … (atau label `\item[(x)]`); stem = lead-in induk + stem item.
+- Daftar `\item[(a)]` … di dalam jawaban → sub-soal per label; baris `align` bertanda `\text{(a)}` ikut sub-soal itu. Stem = lead-in + segmen `(a) …` dari stem induk.
+- `enumerate` sebelum `Jawab:` yang itemnya tanpa `Jawab:` = daftar pertanyaan; tetap satu soal (stem `(a) … (b) …`).
+- `% final:` diletakkan di dalam item / chunk sub-soal masing-masing.
+
+Pemetaan crop → soal tetap per nomor induk (label `1a` di halaman Label = soal 1). Saat transkripsi, jawaban soal dipecah ke sub-soal kunci lewat tanda `a)` / `(b)` / `1c.` / `Bagian (a)` di awal langkah atau teks stem khas sub-soal; tanpa tanda, semua langkah masuk sub-soal pertama dengan status `PROVISIONAL` (perlu review). Topik 3 soal komposisi (4–6) memakai Jawab per anak (seperti soal 1), bukan daftar pertanyaan + satu Jawab induk.
+
+Section pack `1.5` / `2`:
+
+| Judul section | Hasil schema |
 |------|----------------|
-| `Langkah-langkah…` | `steps` (shared algebra) |
-| `Metode N: Label` | `methods[]` (`id` slug, mis. Pemaktoran→`factoring`, Rumus ABC→`quadratic_formula`) |
 | `Tentukan Titik Kritis` / `Titik Potong` | milestone + part `critical_points` |
 | `Analisis Tanda` | milestone + part `sign_chart` |
 | `Gambar Garis Bilangan…` / tikzpicture | `expects_figure` + part `figure` + `number_line` (dari HP) |
 | `HP: $…$` | `final` + milestone `hp` |
+
+Section pack `4` (Limit): `Coba Substitusi Langsung` → part `indeterminate`; `Hitung Limit Kiri …` / `Limit Kanan` / `Limit Sepihak` → part `one_sided`; tikz di jawaban hanya ilustrasi (`figure_from_tikz = False`).
+
+Section pack bab 3, 5–11 (`ChapterPack`; judul dicocokkan di awal setelah `Langkah N:` dibuang, langkahnya masuk `milestones`, bukan `steps` bersama). Pack tanpa judul yang cocok tetap menghasilkan `algebra` + `hp`:
+
+| Pack | Judul section → part |
+|------|----------------------|
+| `3` | `Identifikasi…` / `Periksa Titik Ujung` → `concept` (prosa); `Domain dan Range` → pecah `domain`+`range`; `Tentukan Domain`/`Range` → masing-masing; `Tabel Nilai` → `value_table` (tabular); `Bagian (a)/(b)` → `composition`; `Gambar(kan) Grafik` → `figure` |
+| `5` | `(Hitung) Limit Kiri/Kanan/Sepihak` → `one_sided`; `Hitung $f(…)` → `function_value`; `Bandingkan` / `Syarat Kontinu` / `Kekontinuan di` → `continuity`; `Gambar(kan) Grafik` → `figure` |
+| `6` | `Tulis Definisi` / `Bagi dengan … Limit` → `definition`; `Hitung Turunan Kiri` / `Turunan Kiri/Kanan/Sepihak` → `one_sided_derivative`; `(Hitung) Kemiringan Garis Singgung` / `Garis Singgung/Normal` → `tangent_line`; `Gambar(kan)` → `figure` |
+| `7` | `Cari Anti Turunan` / `Integralkan per Suku` → `antiderivative`; `Keluarkan Konstanta` / `Sifat Linear/Aditif` / `Batas Ditukar` → `integral_property`; `Kenali Integran` / `Gunakan Rumus … TDK` → `ftc`; `Pilih $u` / `Ubah Batas` / `Substitusi dan …` → `substitution`; `Substitusikan Batas dan Kurangkan` → `evaluate_bounds` |
+| `8` | `(Tentukan) Domain` → `domain`; `Uraikan dengan Sifat Logaritma` / `Gunakan Rumus` / `Tentukan $u` → `log_rule`; `Fungsi Dalam` / `Turunan Setiap Faktor` / `Aturan Rantai` → `chain_rule`; `Pilih $u` / `Pembilang Kelipatan` / `Ubah Batas` → `substitution` |
+| `9` | `Periksa Ukuran` → `size_check`; `Transposkan` / `Cek dengan Sifat $(AB)^T` → `transpose`; `Jumlahkan Diagonal Utama` / `Cek dengan Sifat Trace` → `trace`; `Samakan Entri` / `Eliminasi` → `matrix_equation` |
+| `10` | `(Hitung) Determinan` / `Ekspansi` / `Pilih Baris` → `determinant`; `Hitung … Kofaktor/Minor` / `Matriks Kofaktor` → `cofactor`; `Bagi dengan Determinan` → `inverse`; `Syarat Tidak Memiliki Invers` / `Eliminasi` → `singular_condition` |
+| `11` | `Ujung Dikurangi Pangkal` → `components`; `Jarak sebagai Norm` / `Hitung Norm` → `norm`; `Hasil Kali Titik` / `Cek Tegak Lurus` → `dot`; `Gunakan Hasil Kali Silang` / `Hitung Ketiga Minor` → `cross` |
+
+Final bab 3, 5–11 selalu dari `% final:`; tanpa penanda, cadangannya nilai kanan terakhir kalimat `Jadi $…$`. Beberapa `% final:` dalam satu (sub)soal digabung ` ; ` dan dinilai sebagai satu jawaban (SymPy → UNCERTAIN → LLM). Kesimpulan prosa (`\text{sudut tumpul}`, `\text{tidak ada}`) tidak punya `final_symbolic`. Matriks ditulis satu baris `\begin{bmatrix} … \end{bmatrix}`; vektor bab 11 sebagai tuple `(a, b, c)` (dibaca `MATRIX` kolom hanya di pack `11`).
 
 **Skor per bucket rubrik:** `algebra` = konsistensi langkah saja (soft-align best-method = audit). Bucket `critical_points` / `sign_chart` / `figure` di-score terpisah; `final_answer` = min(konsistensi, standard SymPy). Skor `figure` = set-equivalence `number_line` (endpoint open/closed + daerah arsir / union) vs gambar mahasiswa (`FigureRef.symbolic.repr` / caption); schema lama tanpa `number_line` → presence. Recognition (`app/prompts/crop_math.txt`) mengisi `role` per langkah (`algebra` / `critical_points` / `sign_chart` / `figure` / `hp`); figure step memakai `NUMBER_LINE(...)` di `symbolic.repr`.
 

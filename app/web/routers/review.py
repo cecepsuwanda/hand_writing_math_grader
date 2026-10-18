@@ -28,6 +28,9 @@ def review_page(
             "run": layout.name,
             "review": pipeline.review(layout.name),
             "symbolic_kinds": list(get_args(SymbolicKind)),
+            "grades_concept": bool(
+                getattr(pipeline.grading_pack(), "grades_concept", False)
+            ),
         },
     )
 

@@ -87,6 +87,226 @@ x &\geq -\frac{10}{3} \quad \text{(Sederhanakan, tanda berubah)}
 \end{enumerate}
 '''
 
+# tugas_topik_1.tex style: \textbf{Jawab:}, \textbf{Langkah N: ...}, methods
+# nested under the critical-points step, $\text{HP} = ...$.
+TOPIK1_KUNCI = r'''
+\begin{enumerate}
+%===========================================================
+\item $2x^2 - 5x - 3 < 0$
+
+\textbf{Jawab:}
+
+\begin{itemize}
+\item \textbf{Langkah 1: Ubah ke Bentuk Baku}
+\begin{align}
+2x^2 - 5x - 3 &< 0 \quad \text{(Pertidaksamaan awal)} \\
+\text{Cari akar-akar persamaan } 2x^2 - 5x - 3 &= 0
+\end{align}
+
+\item \textbf{Langkah 2: Tentukan Titik Kritis}
+
+\begin{itemize}
+\item \textit{Metode 1: Pemfaktoran}
+\begin{align}
+(2x + 1)(x - 3) &= 0 \quad \text{(Faktorkan)} \\
+x &= -\frac{1}{2} \quad \text{atau} \quad x = 3
+\end{align}
+
+\item \textit{Metode 2: Rumus ABC}
+\begin{align}
+x_1,x_2 &= \frac{-b \pm \sqrt{b^2 - 4ac}}{2a} \\
+x_1 &= 3
+\end{align}
+\end{itemize}
+
+\item \textbf{Langkah 3: Analisis Tanda}
+\begin{align}
+\text{Selang } x < -\frac{1}{2}: \quad &\text{Pilih } x = -1
+\end{align}
+
+\item \textbf{Langkah 4: Gambar Garis Bilangan}
+\begin{center}
+\begin{tikzpicture}
+\draw (0,0)--(1,0);
+\end{tikzpicture}
+\end{center}
+
+\item \textbf{Langkah 5: Tentukan HP}
+
+$\text{HP} = \left(-\frac{1}{2}, 3\right)$
+\end{itemize}
+\end{enumerate}
+'''
+
+# tugas_topik_2.tex style: alternative ``Cara N`` paths, each a full nested
+# itemize of Langkah; extra prose after Jawab; HP written as a chain.
+TOPIK2_KUNCI = r'''
+\begin{enumerate}
+\item $|x + 2| < 1$
+
+\textbf{Jawab:}
+
+\begin{itemize}
+\item \textbf{Cara 1: Sifat 2, $|x| < a \iff -a < x < a$}
+
+\begin{itemize}
+\item \textbf{Langkah 1: Terapkan Sifat 2}
+\begin{align}
+|x+2| &< 1 \\
+-3 &< x < -1 \quad \text{(Solusi)}
+\end{align}
+
+\item \textbf{Langkah 2: Tentukan HP}
+
+$\text{HP} = (-3, -1)$
+\end{itemize}
+
+\item \textbf{Cara 2: Sifat 1, $|x| = \sqrt{x^2}$}
+
+\begin{itemize}
+\item \textbf{Langkah 1: Terapkan Sifat 1}
+\begin{align}
+(x+2)^2 &< 1 \\
+(x + 1)(x + 3) &< 0
+\end{align}
+
+\item \textbf{Langkah 2: Tentukan Titik Kritis}
+\begin{align}
+x + 1 &= 0 \Rightarrow x = -1
+\end{align}
+
+\item \textbf{Langkah 3: Gambar Garis Bilangan}
+\begin{center}
+\begin{tikzpicture}
+\draw (0,0)--(1,0);
+\end{tikzpicture}
+\end{center}
+
+\item \textbf{Langkah 4: Tentukan HP}
+
+$\text{HP} = (-3, -1)$
+\end{itemize}
+\end{itemize}
+
+%===========================================================
+\item $\displaystyle \left|\frac{x-1}{3x+1}\right| \leq \frac{7}{2}$
+
+\textbf{Jawab:}
+
+Syarat penyebut: $3x + 1 \neq 0$, sehingga $x \neq -\frac{1}{3}$.
+
+\begin{itemize}
+\item \textbf{Cara 1: Sifat 2, $|x| \leq a \iff -a \leq x \leq a$}
+
+\begin{itemize}
+\item \textbf{Langkah 1: Terapkan Sifat 2}
+\begin{align}
+-\frac{7}{2} &\leq \frac{x-1}{3x+1} \leq \frac{7}{2}
+\end{align}
+
+\item \textbf{Langkah 2: Tentukan HP}
+
+$\text{HP} = \left(\left(-\infty, -\frac{1}{3}\right) \cup \left[-\frac{5}{23}, \infty\right)\right) \cap \left(\left(-\infty, -\frac{9}{19}\right] \cup \left(-\frac{1}{3}, \infty\right)\right) = \left(-\infty, -\frac{9}{19}\right] \cup \left[-\frac{5}{23}, \infty\right)$
+\end{itemize}
+\end{itemize}
+\end{enumerate}
+'''
+
+# tugas_topik_3.tex style: a soal listing sub-questions (a)/(b) in its statement,
+# answered by one shared Jawab; the list belongs to the stem.
+TOPIK3_KUNCI = r'''
+\begin{enumerate}
+\item Diketahui $f(x) = \sqrt{x}$ dan $g(x) = x^2$.
+\begin{enumerate}
+  \item Periksa apakah $(f \circ g)$ ada?
+  \item Jika ada, tentukan $(f \circ g)(x)$.
+\end{enumerate}
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Bagian (a), Periksa Syarat}
+\begin{align}
+R_g \cap D_f &= [0, \infty) \neq \emptyset
+\end{align}
+\item \textbf{Langkah 2: Bagian (b), Rumus}
+\begin{align}
+(f \circ g)(x) &= \sqrt{x^2} = |x|
+\end{align}
+\end{itemize}
+\end{enumerate}
+'''
+
+# tugas_topik_4.tex style: soal 1 = nested enumerate whose items each carry a
+# Jawab (sub-soal 1a, 1b); soal 2 = one Jawab answering ``\item[(a)]`` /
+# ``\item[(b)]`` listed in a tabular under a stem figure.
+TOPIK4_KUNCI = r'''
+\begin{enumerate}
+\item Hitunglah nilai limit fungsi berikut:
+\begin{enumerate}
+\item $\displaystyle\lim_{x \to -1} (1 - 2x)$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Substitusi Langsung}
+\begin{align}
+\lim_{x \to -1} (1 - 2x) &= 1 - 2(-1) \quad \text{(Substitusi $x = -1$)} \\
+&= 1 + 2 = 3
+\end{align}
+% final: 3
+\end{itemize}
+
+\item $\displaystyle\lim_{t \to 3} \frac{t^2 + 4t - 21}{t - 3}$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Faktorkan}
+\begin{align}
+\lim_{t \to 3} \frac{t^2 + 4t - 21}{t - 3} &= \lim_{t \to 3} (t + 7) = 10
+\end{align}
+% final: 10
+\end{itemize}
+\end{enumerate}
+
+\item Diberikan grafik fungsi berikut:
+\begin{center}
+\begin{tikzpicture}
+\draw (0,1)--(1,0);
+\end{tikzpicture}
+\end{center}
+Cari limit/nilai fungsi berikut.
+\begin{center}
+\begin{tabular}{ll}
+(a) $\displaystyle\lim_{x \to 1^-} f(x)$ & (b) $f(2)$
+\end{tabular}
+\end{center}
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Baca Limit}
+\begin{enumerate}
+  \item[(a)] Dari kiri $x = 1$:
+  \begin{align}
+  \lim_{x \to 1^-} f(x) &= \lim_{x \to 1^-} (-x + 1) = 0
+  \end{align}
+  % final: 0
+\end{enumerate}
+\item \textbf{Langkah 2: Baca Nilai Fungsi}
+\begin{enumerate}
+  \item[(b)] Titik penuh di $x = 2$ adalah $(2,2)$, jadi $f(2) = 2$.
+  % final: 2
+\end{enumerate}
+\end{itemize}
+\end{enumerate}
+'''
+
+KUNCI_DIR = Path(__file__).resolve().parents[2] / "data" / "input" / "kunci_jawaban"
+
+
+def read_kunci(name: str) -> str:
+    """Repo kunci file (``tugas_topik_4.tex``) for chapter acceptance tests."""
+    return (KUNCI_DIR / name).read_text(encoding="utf-8")
+
+
 # PyMuPDF refuses to save a document with zero pages, so keep a minimal PDF.
 _EMPTY_PDF = (
     b"%PDF-1.1\n"
@@ -236,7 +456,7 @@ def write_config(
     return path
 
 
-def single_question_json(question_number: int, relation: str) -> str:
+def single_question_json(question_number: int | str, relation: str) -> str:
     """Crop-math response with one relation step (vision recognizer payload)."""
     return json.dumps(
         {
@@ -303,16 +523,18 @@ def make_question(
     steps: list[StudentStep] | None = None,
     figures: list[FigureRef] | None = None,
     raw_text: str = "",
+    part_label: str = "",
 ) -> Question:
-    """Question from LaTeX step strings (or explicit ``steps``); id follows ``number``."""
+    """Question from LaTeX step strings (or explicit ``steps``); id follows ``number`` + ``part_label``."""
     student_steps = (
         steps
         if steps is not None
         else [make_step(i, text, raw_text=raw_text) for i, text in enumerate(latex, start=1)]
     )
     return Question(
-        question_id=f"question_{number:03d}",
+        question_id=question_dir_name(number, part_label),
         question_number=number,
+        part_label=part_label,
         student_steps=student_steps,
         student_final_answer=final,
         student_final_symbolic=symbolic(final_symbolic),
@@ -376,11 +598,12 @@ def make_validation(
     *statuses: StatusSpec,
     final: StatusSpec | None = ValidationStatus.VALID,
     number: int = 1,
+    part_label: str = "",
 ) -> QuestionValidation:
     """Steps numbered from 1; each spec is a status or ``(status, reason)``."""
     return QuestionValidation(
         question_number=number,
-        question_id=f"question_{number:03d}",
+        question_id=question_dir_name(number, part_label),
         steps=[_step_validation(i, spec) for i, spec in enumerate(statuses, start=1)],
         final_answer_status=None if final is None else _step_validation(0, final),
     )
@@ -427,11 +650,13 @@ def make_report_question_grade(
     *,
     review: ReviewStatus = ReviewStatus.AUTO_ACCEPT,
     steps: int = 2,
+    part_label: str = "",
 ) -> QuestionGrade:
     per = maximum / max(steps, 1)
     return QuestionGrade(
-        question_id=f"question_{number:03d}",
+        question_id=question_dir_name(number, part_label),
         question_number=number,
+        part_label=part_label,
         score=score,
         maximum_score=maximum,
         steps=[
@@ -522,7 +747,7 @@ def write_report_workspace(
     (may name missing files) goes to ``crops/question_crops/`` when given.
     """
     layout = RunLayout(root=root)
-    qdir = layout.questions_dir / question_dir_name(question.question_number)
+    qdir = layout.questions_dir / question_dir_name(question.question_number, question.part_label)
     qdir.mkdir(parents=True, exist_ok=True)
     (qdir / "question.json").write_text(question.model_dump_json(indent=2), encoding="utf-8")
     if grade is not None:

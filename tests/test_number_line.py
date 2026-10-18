@@ -216,9 +216,11 @@ class TestCompareFigure:
         assert status == ValidationStatus.UNCERTAIN
         assert reason == FIGURE_UNCOMPARED_REASON
 
-    def test_compare_figure_without_key_number_line_needs_review(self, 
+    def test_compare_figure_without_key_number_line_soft_credit(self,
         tmp_path: Path,
     ) -> None:
+        from app.services.grading.standard_comparer import FIGURE_NO_GEOMETRY_REASON
+
         schema = ExamSchema(
             source="legacy",
             questions=[
@@ -232,9 +234,11 @@ class TestCompareFigure:
         )
         comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
         q = make_question(figures=[make_figure(caption="diagram", path="f.png")])
-        status, reason = comparer.compare_figure(q)
-        assert status == ValidationStatus.UNCERTAIN
-        assert reason == FIGURE_UNCOMPARED_REASON
+        mark = comparer.compare_figure(q)
+        status, reason = mark[0], mark[1]
+        assert status == ValidationStatus.VALID
+        assert reason == FIGURE_NO_GEOMETRY_REASON
+        assert len(mark) >= 3 and mark[2] == pytest.approx(0.5)
         status, _ = comparer.compare_figure(make_question('x>1'))
         assert status == ValidationStatus.INVALID
 

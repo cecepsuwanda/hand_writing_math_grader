@@ -14,7 +14,7 @@ from app.config import AppConfig, require_vision_model
 from app.controllers.crop_controller import CropController
 from app.controllers.process_controller import ProcessController
 from app.controllers.question_label_controller import QuestionLabelController
-from app.exceptions import ArtifactNotFoundError, QuestionArtifactsInvalidError
+from app.exceptions import ArtifactNotFoundError, QuestionArtifactsInvalidError, RunNotFoundError
 from app.functions.grading_artifact import load_question_grade, paired_grading_artifact_paths
 from app.functions.pages_artifact import crops_regions_present, load_pages_from_dir
 from app.functions.paths import (
@@ -25,6 +25,7 @@ from app.functions.paths import (
 )
 from app.functions.question_crops import (
     crop_to_questions,
+    empty_crop_warnings,
     list_crops_in_reading_order,
     load_question_crops,
     mapping_from_crop_labels,
@@ -79,6 +80,10 @@ class WebPipeline:
     def config(self) -> AppConfig:
         return self._session.config
 
+    @property
+    def pack(self) -> TopicPack:
+        return self._session.pack
+
     # --- dashboard ------------------------------------------------------------
 
     def dashboard(self) -> DashboardView:
@@ -97,7 +102,6 @@ class WebPipeline:
                 for pack in list_packs()
             ],
             active_topic_id=active.id,
-            active_topic_label=active.label,
             standard_dir=str(self._standard_dir()),
             standard_ready=self._standard_ready(active.id),
             kunci_files=[p.name for p in list_kunci_tex(config.input.kunci_jawaban_dir)],
@@ -162,6 +166,29 @@ class WebPipeline:
         pdf = files.require_input_file(self.config.input.jawaban_dir, pdf_name, suffix=".pdf")
         return safe_run_name(pdf)
 
+    def delete_run(self, run_name: str) -> str:
+        """Remove processed artifacts for ``run_name``; leave the jawaban PDF untouched."""
+        layout = self.run(run_name)
+        return pipeline_factory.delete_run_workspace(layout)
+
+    def delete_pdf(self, pdf_name: str) -> tuple[str, str | None]:
+        """Remove a jawaban PDF; cascade-delete its run folder when present.
+
+        Returns:
+            ``(pdf_name, removed_run_name_or_None)``.
+        """
+        pdf = files.require_input_file(self.config.input.jawaban_dir, pdf_name, suffix=".pdf")
+        run_name = safe_run_name(pdf)
+        removed_run: str | None = None
+        try:
+            layout = files.require_run(self.config.output.root_dir, run_name)
+        except RunNotFoundError:
+            layout = None
+        if layout is not None:
+            removed_run = pipeline_factory.delete_run_workspace(layout)
+        pdf.unlink()
+        return pdf.name, removed_run
+
     def propose_crops(self, pdf_name: str, reporter: JobReporter) -> RunLayout:
         """Empty this PDF's run folder, render it, and propose ink boxes."""
         config = self.config
@@ -196,7 +223,6 @@ class WebPipeline:
             run=layout.name,
             pages=pages,
             current=current,
-            crop_names=self._crop_names(layout, current.page_number, len(current.regions)),
         )
 
     def page_regions(self, run_name: str, page_number: int) -> PageRegionsOut:
@@ -254,9 +280,11 @@ class WebPipeline:
 
     def review(self, run_name: str) -> QuestionReviewResult:
         layout = self.run(run_name)
-        return pipeline_factory.build_question_review_controller(self.config).collect(
-            layout.questions_dir
-        )
+        return pipeline_factory.build_question_review_controller(
+            self.config,
+            topic_pack=self.pack,
+            standard_dir=self._standard_dir(),
+        ).collect(layout.questions_dir)
 
     def save_question(self, run_name: str, payload: dict) -> QuestionReviewResult:
         layout = self.run(run_name)
@@ -264,7 +292,11 @@ class WebPipeline:
             question = Question.model_validate(payload)
         except ValidationError as exc:
             raise QuestionArtifactsInvalidError([_validation_summary(exc)]) from exc
-        controller = pipeline_factory.build_question_review_controller(self.config)
+        controller = pipeline_factory.build_question_review_controller(
+            self.config,
+            topic_pack=self.pack,
+            standard_dir=self._standard_dir(),
+        )
         return controller.save_question(layout.questions_dir, question)
 
     @staticmethod
@@ -334,23 +366,87 @@ class WebPipeline:
         )
 
     def results(self, run_name: str) -> ResultsView:
+        from app.functions.kunci_ingest import load_exam_schema
+        from app.functions.milestone_pattern import build_expected_milestones
+        from app.functions.question_names import split_question_ref
+        from app.functions.results_view import (
+            PART_DISPLAY_LABELS,
+            dual_track_scores,
+            split_grade_rows,
+        )
+        from app.functions.standard_extract import schema_question
+
         layout = self.run(run_name)
         try:
             report = load_exam_report(layout.root)
         except ValueError as exc:
             raise QuestionArtifactsInvalidError([str(exc)]) from exc
+        pack = self.grading_pack()
+        grades_concept = bool(getattr(pack, "grades_concept", False))
+        attach_pattern = bool(getattr(pack, "rich_section_ingest", False))
+        schema = None
+        if attach_pattern:
+            try:
+                schema = load_exam_schema(self.grading_standard_dir())
+            except (OSError, ValueError):
+                schema = None
         grades: list[QuestionResult] = []
         for path in paired_grading_artifact_paths(layout.questions_dir):
             try:
                 grade = load_question_grade(path)
             except ValueError:
                 grade = None
-            grades.append(QuestionResult(question_id=path.parent.name, grade=grade))
+            step_rows, part_rows = split_grade_rows(grade)
+            concept_score = concept_max = symbolic_score = symbolic_max = None
+            if grades_concept:
+                concept_score, concept_max, symbolic_score, symbolic_max = (
+                    dual_track_scores(grade)
+                )
+            expected = []
+            if attach_pattern and schema is not None:
+                try:
+                    number, part_label = split_question_ref(path.parent.name)
+                except ValueError:
+                    number, part_label = 0, ""
+                if number:
+                    expected = build_expected_milestones(
+                        schema_question(schema, number, part_label)
+                    )
+            grades.append(
+                QuestionResult(
+                    question_id=path.parent.name,
+                    grade=grade,
+                    step_rows=step_rows,
+                    part_rows=part_rows,
+                    concept_score=concept_score,
+                    concept_max=concept_max,
+                    symbolic_score=symbolic_score,
+                    symbolic_max=symbolic_max,
+                    expected_milestones=expected,
+                )
+            )
+        try:
+            crop_map = load_question_crops(layout.crops_dir)
+        except ValueError:
+            crop_map = None
+        schema_numbers = sorted(
+            {row.question_number for row in (report.questions if report else [])}
+        )
+        try:
+            if schema is None:
+                schema = load_exam_schema(self.grading_standard_dir())
+            if schema is not None and schema.questions:
+                schema_numbers = sorted({q.number for q in schema.questions})
+        except (OSError, ValueError):
+            pass
         return ResultsView(
             run=layout.name,
             report=report,
             grades=grades,
             report_files=files.existing_report_files(layout),
+            grades_concept=grades_concept,
+            part_labels=dict(PART_DISPLAY_LABELS),
+            crop_warnings=empty_crop_warnings(crop_map, schema_numbers),
         )
 
     def question_grade(self, run_name: str, question_ref: str) -> tuple[Path, QuestionGrade]:
@@ -368,6 +464,20 @@ class WebPipeline:
             raise QuestionArtifactsInvalidError([str(exc)]) from exc
 
     # --- helpers --------------------------------------------------------------
+
+    def grading_pack(self) -> TopicPack:
+        """Pack that matches ``build_process_controller`` / grade+report wiring."""
+        return pipeline_factory.resolve_topic_pack(
+            self.config,
+            topic_id=self._session.explicit_topic_id,
+            standard_dir=self.grading_standard_dir(),
+        )
+
+    def grading_standard_dir(self) -> Path:
+        """Standards folder used by grading jobs (schema-first when topic unset)."""
+        return pipeline_factory.resolve_standard_dir(
+            self.config, topic_id=self._session.explicit_topic_id
+        )
 
     def _standard_dir(self, topic_id: str | None = None) -> Path:
         return topic_standard_dir(

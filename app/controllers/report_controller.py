@@ -17,12 +17,12 @@ from app.exceptions import (
 from app.functions.artifact_guard import changed_files, snapshot_files
 from app.functions.grading_artifact import load_question_grades, paired_grading_artifact_paths
 from app.functions.question_names import (
-    parse_question_ref,
     report_html_filename,
     report_json_filename,
+    split_question_ref,
     summary_csv_filename,
 )
-from app.functions.report_aggregate import aggregate_exam_report
+from app.functions.report_aggregate import QuestionKey, aggregate_exam_report
 from app.functions.report_details import load_question_report_details
 from app.functions.run_layout import CROPS_SUBDIR
 from app.functions.validation_artifact import question_artifact_paths
@@ -90,7 +90,7 @@ class ReportController:
         question_paths = question_artifact_paths(questions_dir)
         snapshot = snapshot_files(grading_paths + question_paths)
         maximums, labels = self._expected_rows(
-            question_paths, {g.question_number for g in grades}
+            question_paths, {(g.question_number, g.part_label) for g in grades}
         )
         exam = aggregate_exam_report(
             grades,
@@ -137,50 +137,52 @@ class ReportController:
         return result
 
     def _expected_rows(
-        self, question_paths: list[Path], graded: set[int]
-    ) -> tuple[dict[int, float], dict[int, str]]:
-        """Maximum + label for every exam question without a grade, so it counts as 0.
+        self, question_paths: list[Path], graded: set[QuestionKey]
+    ) -> tuple[dict[QuestionKey, float], dict[QuestionKey, str]]:
+        """Maximum + label for every exam (sub-)question without a grade, so it counts as 0.
 
         A question folder without ``grading.json`` is ``TIDAK DINILAI``; an exam
         question with no folder at all is ``TIDAK DIJAWAB``. With an answer key, a
         folder numbered outside it (a provisional number for an unnumbered crop)
         is only warned about: it has no key to be graded against.
         """
-        parts_by_number = {
-            q.number: list(q.parts)
+        parts_by_key: dict[QuestionKey, list[ExamPart]] = {
+            (q.number, q.part_label): list(q.parts)
             for q in (self._exam_schema.questions if self._exam_schema else [])
         }
         ungraded = {
-            number
-            for number in (_folder_question_number(p.parent) for p in question_paths)
-            if number is not None and number not in graded
+            key
+            for key in (_folder_question_key(p.parent) for p in question_paths)
+            if key is not None and key not in graded
         }
-        if parts_by_number:
-            for number in sorted(ungraded - set(parts_by_number)):
+        if parts_by_key:
+            for number, part_label in sorted(ungraded - set(parts_by_key)):
                 logger.warning(
-                    f"Soal {number} (nomor sementara, di luar kunci) tidak dinilai"
+                    f"Soal {number}{part_label} (nomor sementara, di luar kunci) tidak dinilai"
                 )
-            ungraded &= set(parts_by_number)
-        maximums: dict[int, float] = {}
-        labels: dict[int, str] = {}
-        for number in sorted((set(parts_by_number) - graded) | ungraded):
-            maximum = self._maximum_for(number, parts_by_number.get(number, []))
+            ungraded &= set(parts_by_key)
+        maximums: dict[QuestionKey, float] = {}
+        labels: dict[QuestionKey, str] = {}
+        for key in sorted((set(parts_by_key) - graded) | ungraded):
+            maximum = self._maximum_for(key, parts_by_key.get(key, []))
             if maximum is None:
                 continue
-            maximums[number] = maximum
-            labels[number] = MISSING_UNGRADED if number in ungraded else MISSING_UNANSWERED
+            maximums[key] = maximum
+            labels[key] = MISSING_UNGRADED if key in ungraded else MISSING_UNANSWERED
         return maximums, labels
 
-    def _maximum_for(self, number: int, parts: list[ExamPart]) -> float | None:
+    def _maximum_for(self, key: QuestionKey, parts: list[ExamPart]) -> float | None:
         if self._rubrics is None:
             return None
+        number, part_label = key
         try:
-            return self._rubrics.load(number).maximum_score
+            return self._rubrics.load(number, part_label).maximum_score
         except RubricNotFoundError as exc:
+            ref = f"{number}{part_label}"
             if self._default_rubric is not None:
-                logger.warning(f"Soal {number}: {exc}; nilai maksimum dari rubric bawaan topik")
+                logger.warning(f"Soal {ref}: {exc}; nilai maksimum dari rubric bawaan topik")
                 return self._default_rubric(number, parts).maximum_score
-            logger.warning(f"Soal {number} tidak masuk nilai maksimum: {exc}")
+            logger.warning(f"Soal {ref} tidak masuk nilai maksimum: {exc}")
             return None
 
     @staticmethod
@@ -234,8 +236,8 @@ class ReportController:
             return None
 
 
-def _folder_question_number(question_dir: Path) -> int | None:
+def _folder_question_key(question_dir: Path) -> QuestionKey | None:
     try:
-        return int(parse_question_ref(question_dir.name).removeprefix("question_"))
+        return split_question_ref(question_dir.name)
     except ValueError:
         return None

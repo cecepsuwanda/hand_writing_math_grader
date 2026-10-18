@@ -33,6 +33,7 @@ class ReportMetadata(BaseModel):
 class QuestionReportRow(BaseModel):
     question_id: str
     question_number: int
+    part_label: str = ""
     score: float
     maximum_score: float
     review_status: ReviewStatus
@@ -41,6 +42,11 @@ class QuestionReportRow(BaseModel):
     missing: bool = False
     # Why a missing row has no grade (e.g. TIDAK DIJAWAB / TIDAK DINILAI).
     missing_label: str = ""
+
+    @property
+    def ref(self) -> str:
+        """Display reference: ``1`` or ``1a``."""
+        return f"{self.question_number}{self.part_label}"
 
 
 class ExamReport(BaseModel):

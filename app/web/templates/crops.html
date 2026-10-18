@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
 {% block title %}Crop hal {{ view.current.page_number }} · {{ view.run | short_pdf }}{% endblock %}
 {% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(view.run) }}">{{ view.run | short_pdf }}</a> / Crop{% endblock %}
 {% block main_class %}container-wide{% endblock %}
@@ -35,16 +36,16 @@
       {% endfor %}
     </ol>
     <a class="btn btn-secondary btn-block" href="{{ run_url(view.run) }}" @click="guardLeave($event)">Selesai → run</a>
-    <a class="btn btn-block" href="{{ run_url(view.run, '/labels') }}" @click="guardLeave($event)">Lanjut: nomor soal</a>
+    <a class="btn btn-block" href="{{ run_url(view.run, '/labels') }}" @click="guardLeave($event)">{{ icon("tags") }}Lanjut: nomor soal</a>
   </aside>
 
   <section class="editor-canvas card">
     <div class="toolbar">
       <span class="muted small">Seret di area kosong untuk menggambar kotak. Klik kotak untuk memilih; <kbd>Del</kbd> menghapus, <kbd>Esc</kbd> batal pilih.</span>
       <span class="row">
-        <button type="button" class="btn btn-small btn-secondary" @click="zoomBy(0.8)" title="Perkecil">−</button>
+        <button type="button" class="btn btn-small btn-secondary" @click="zoomBy(0.8)" title="Perkecil" aria-label="Perkecil">{{ icon("zoom-out") }}</button>
         <span class="small" x-text="Math.round(zoom * 100) + '%'"></span>
-        <button type="button" class="btn btn-small btn-secondary" @click="zoomBy(1.25)" title="Perbesar">+</button>
+        <button type="button" class="btn btn-small btn-secondary" @click="zoomBy(1.25)" title="Perbesar" aria-label="Perbesar">{{ icon("zoom-in") }}</button>
         <button type="button" class="btn btn-small btn-secondary" @click="fit()">Pas lebar</button>
       </span>
     </div>
@@ -79,17 +80,17 @@
           <div class="row">
             <button type="button" class="btn btn-tiny btn-secondary" @click.stop="move(i, -1)" :disabled="i === 0" title="Naikkan urutan">↑</button>
             <button type="button" class="btn btn-tiny btn-secondary" @click.stop="move(i, 1)" :disabled="i === boxes.length - 1" title="Turunkan urutan">↓</button>
-            <button type="button" class="btn btn-tiny btn-danger" @click.stop="remove(box.id)">Hapus</button>
+            <button type="button" class="btn btn-tiny btn-danger" @click.stop="remove(box.id)">{{ icon("trash-2") }}Hapus</button>
           </div>
         </li>
       </template>
     </ol>
     <div class="row">
-      <button type="button" class="btn btn-small btn-secondary" @click="sortReading()" :disabled="boxes.length < 2">Urutkan atas → bawah</button>
-      <button type="button" class="btn btn-small btn-secondary" @click="reload()" :disabled="saving">Batalkan perubahan</button>
+      <button type="button" class="btn btn-small btn-secondary" @click="sortReading()" :disabled="boxes.length < 2">{{ icon("arrow-up-down") }}Urutkan atas → bawah</button>
+      <button type="button" class="btn btn-small btn-secondary" @click="reload()" :disabled="saving">{{ icon("undo-2") }}Batalkan perubahan</button>
     </div>
     <button type="button" class="btn btn-block" @click="save()" :disabled="saving || !boxes.length">
-      <span x-text="saving ? 'Menyimpan…' : 'Simpan & crop ulang'"></span>
+      {{ icon("save") }}<span x-text="saving ? 'Menyimpan…' : 'Simpan & crop ulang'"></span>
     </button>
     <p class="error-text small" x-show="error" x-text="error" x-cloak></p>
 

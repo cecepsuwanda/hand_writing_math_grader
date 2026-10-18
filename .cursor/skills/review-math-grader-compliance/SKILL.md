@@ -51,7 +51,8 @@ description: >-
 - [ ] `question_crops/` divalidasi: file tidak valid → `QuestionCropsInvalidError`; folder hilang → peringatan
 - [ ] `raw_text` / gambar asli dipertahankan
 - [ ] SymPy dicoba sebelum LLM; output LLM divalidasi schema; `uncertain` diizinkan
-- [ ] Skor langkah = konsistensi; `final_answer` = min(konsistensi, standar); partial credit; audit fields ada
+- [ ] Skor langkah = konsistensi; `final_answer` = min(konsistensi, standar), kecuali override HP yang cocok kunci; partial credit; audit fields ada
+- [ ] Bila pack `grades_concept`: dual-track konsep (`ConceptComparer`) tidak merusak artefak/report jalur standar
 
 ### Produk & artefak
 

@@ -1,0 +1,388 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[top=2cm,bottom=2cm,left=2cm,right=2cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage[dvipsnames,svgnames]{xcolor}
+\usepackage{hyperref}
+
+% Anchor persamaan unik meski nomor di-reset per soal.
+\newcounter{eqblock}
+\newcommand{\reseteq}{%
+  \stepcounter{eqblock}%
+  \setcounter{equation}{0}%
+  \renewcommand{\theHequation}{\arabic{eqblock}.\arabic{equation}}%
+}
+
+\newcommand{\dg}[1]{\textcolor{Red}{#1}}
+
+\title{Tugas Minggu 11 : Matriks dan Operasinya}
+\author{Matematika untuk Sistem Informasi}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{enumerate}
+
+%===========================================================
+\item Diketahui matriks
+\[
+P = \begin{bmatrix} -2 & 0 & 1 \\ 2 & 1 & -3 \end{bmatrix} \quad \text{dan} \quad
+Q = \begin{bmatrix} 0 & 3 & 1 \\ -1 & 1 & 2 \end{bmatrix}.
+\]
+Hitunglah:
+\begin{enumerate}
+
+%-----------------------------------------------------------
+\item $P + Q$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Periksa Ukuran}
+
+$P$ dan $Q$ sama-sama berukuran $2 \times 3$, sehingga dapat dijumlahkan.
+
+\item \textbf{Langkah 2: Jumlahkan Entri Seletak}
+
+Hasilnya juga berukuran $2 \times 3$:
+\reseteq
+\begin{align}
+P + Q &= \begin{bmatrix} -2 + 0 & 0 + 3 & 1 + 1 \\ 2 + (-1) & 1 + 1 & -3 + 2 \end{bmatrix}
+= \begin{bmatrix} -2 & 3 & 2 \\ 1 & 2 & -1 \end{bmatrix}
+\end{align}
+% final: \begin{bmatrix} -2 & 3 & 2 \\ 1 & 2 & -1 \end{bmatrix}
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $-3Q$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Kalikan Setiap Entri dengan $-3$}
+
+Perkalian skalar tidak mengubah ukuran matriks:
+\reseteq
+\begin{align}
+-3Q &= \begin{bmatrix} -3 \cdot 0 & -3 \cdot 3 & -3 \cdot 1 \\ -3 \cdot (-1) & -3 \cdot 1 & -3 \cdot 2 \end{bmatrix}
+= \begin{bmatrix} 0 & -9 & -3 \\ 3 & -3 & -6 \end{bmatrix}
+\end{align}
+% final: \begin{bmatrix} 0 & -9 & -3 \\ 3 & -3 & -6 \end{bmatrix}
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $2Q - 3P$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Hitung $2Q$ dan $3P$}
+
+Kalikan setiap entri dengan skalarnya:
+\reseteq
+\begin{align}
+2Q &= \begin{bmatrix} 0 & 6 & 2 \\ -2 & 2 & 4 \end{bmatrix}, \qquad
+3P = \begin{bmatrix} -6 & 0 & 3 \\ 6 & 3 & -9 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 2: Kurangkan Entri Seletak}
+
+Keduanya berukuran $2 \times 3$:
+\reseteq
+\begin{align}
+2Q - 3P &= \begin{bmatrix} 0 - (-6) & 6 - 0 & 2 - 3 \\ -2 - 6 & 2 - 3 & 4 - (-9) \end{bmatrix}
+= \begin{bmatrix} 6 & 6 & -1 \\ -8 & -1 & 13 \end{bmatrix}
+\end{align}
+% final: \begin{bmatrix} 6 & 6 & -1 \\ -8 & -1 & 13 \end{bmatrix}
+\end{itemize}
+
+\end{enumerate}
+
+%===========================================================
+\item Diketahui matriks-matriks berikut:
+\[
+A = \begin{bmatrix} 3 & 0 \\ -1 & 2 \\ 1 & 1 \end{bmatrix}, \quad
+B = \begin{bmatrix} 1 & 4 & 2 \\ 3 & 1 & 5 \end{bmatrix}, \quad
+C = \begin{bmatrix} 1 & 5 & 2 \\ -1 & 0 & 1 \\ 3 & 2 & 4 \end{bmatrix}, \quad
+D = \begin{bmatrix} 6 & 1 & 3 \\ -1 & 1 & 2 \\ 4 & 1 & 3 \end{bmatrix}.
+\]
+Transpos yang sering dipakai:
+\[
+A^T = \begin{bmatrix} 3 & -1 & 1 \\ 0 & 2 & 1 \end{bmatrix}, \quad
+B^T = \begin{bmatrix} 1 & 3 \\ 4 & 1 \\ 2 & 5 \end{bmatrix}, \quad
+C^T = \begin{bmatrix} 1 & -1 & 3 \\ 5 & 0 & 2 \\ 2 & 1 & 4 \end{bmatrix}, \quad
+D^T = \begin{bmatrix} 6 & -1 & 4 \\ 1 & 1 & 1 \\ 3 & 2 & 3 \end{bmatrix}.
+\]
+Hitunglah:
+\begin{enumerate}
+
+%-----------------------------------------------------------
+\item $B^T A^T + 2D$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Periksa Ukuran}
+
+$B^T_{3 \times 2} \cdot A^T_{2 \times 3}$ menghasilkan matriks $3 \times 3$, sama dengan ukuran $2D$, sehingga keduanya dapat dijumlahkan.
+
+\item \textbf{Langkah 2: Hitung $B^T A^T$ (Baris Kali Kolom)}
+
+Setiap baris $B^T$ dikalikan dengan setiap kolom $A^T$:
+\reseteq
+\begin{align}
+B^T A^T &= \begin{bmatrix} 1 & 3 \\ 4 & 1 \\ 2 & 5 \end{bmatrix} \begin{bmatrix} 3 & -1 & 1 \\ 0 & 2 & 1 \end{bmatrix}
+= \begin{bmatrix} 3 + 0 & -1 + 6 & 1 + 3 \\ 12 + 0 & -4 + 2 & 4 + 1 \\ 6 + 0 & -2 + 10 & 2 + 5 \end{bmatrix}
+= \begin{bmatrix} 3 & 5 & 4 \\ 12 & -2 & 5 \\ 6 & 8 & 7 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 3: Tambahkan $2D$}
+
+Dengan $2D = \begin{bmatrix} 12 & 2 & 6 \\ -2 & 2 & 4 \\ 8 & 2 & 6 \end{bmatrix}$:
+\reseteq
+\begin{align}
+B^T A^T + 2D &= \begin{bmatrix} 3 + 12 & 5 + 2 & 4 + 6 \\ 12 - 2 & -2 + 2 & 5 + 4 \\ 6 + 8 & 8 + 2 & 7 + 6 \end{bmatrix}
+= \begin{bmatrix} 15 & 7 & 10 \\ 10 & 0 & 9 \\ 14 & 10 & 13 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 4: Cek dengan Sifat $(AB)^T = B^T A^T$}
+
+Hitung $AB$ lalu transposkan:
+\reseteq
+\begin{align}
+AB &= \begin{bmatrix} 3 & 12 & 6 \\ -1 + 6 & -4 + 2 & -2 + 10 \\ 1 + 3 & 4 + 1 & 2 + 5 \end{bmatrix}
+= \begin{bmatrix} 3 & 12 & 6 \\ 5 & -2 & 8 \\ 4 & 5 & 7 \end{bmatrix} \\
+(AB)^T &= \begin{bmatrix} 3 & 5 & 4 \\ 12 & -2 & 5 \\ 6 & 8 & 7 \end{bmatrix} = B^T A^T
+\end{align}
+% final: \begin{bmatrix} 15 & 7 & 10 \\ 10 & 0 & 9 \\ 14 & 10 & 13 \end{bmatrix}
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $\operatorname{tr}(4D^T - C)$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Hitung $4D^T - C$}
+
+Kalikan $D^T$ dengan 4, lalu kurangkan $C$ entri demi entri:
+\reseteq
+\begin{align}
+4D^T - C &= \begin{bmatrix} 24 & -4 & 16 \\ 4 & 4 & 4 \\ 12 & 8 & 12 \end{bmatrix} - \begin{bmatrix} 1 & 5 & 2 \\ -1 & 0 & 1 \\ 3 & 2 & 4 \end{bmatrix}
+= \begin{bmatrix} \dg{23} & -9 & 14 \\ 5 & \dg{4} & 3 \\ 9 & 6 & \dg{8} \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 2: Jumlahkan Diagonal Utama}
+
+Entri diagonal ditandai merah:
+\reseteq
+\begin{align}
+\operatorname{tr}(4D^T - C) &= 23 + 4 + 8 = 35
+\end{align}
+
+\item \textbf{Langkah 3: Cek dengan Sifat Trace}
+
+Karena $\operatorname{tr}(kA) = k\operatorname{tr}(A)$, $\operatorname{tr}(A^T) = \operatorname{tr}(A)$, dan trace bersifat linear:
+\reseteq
+\begin{align}
+\operatorname{tr}(4D^T - C) &= 4\operatorname{tr}(D) - \operatorname{tr}(C) = 4(6 + 1 + 3) - (1 + 0 + 4) = 40 - 5 = 35
+\end{align}
+% final: 35
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $(2C^T - D)A$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Periksa Ukuran}
+
+$(2C^T - D)$ berukuran $3 \times 3$ dan $A$ berukuran $3 \times 2$, sehingga hasilnya berukuran $3 \times 2$.
+
+\item \textbf{Langkah 2: Hitung $2C^T - D$}
+
+Kalikan $C^T$ dengan 2, lalu kurangkan $D$:
+\reseteq
+\begin{align}
+2C^T - D &= \begin{bmatrix} 2 & -2 & 6 \\ 10 & 0 & 4 \\ 4 & 2 & 8 \end{bmatrix} - \begin{bmatrix} 6 & 1 & 3 \\ -1 & 1 & 2 \\ 4 & 1 & 3 \end{bmatrix}
+= \begin{bmatrix} -4 & -3 & 3 \\ 11 & -1 & 2 \\ 0 & 1 & 5 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 3: Kalikan dengan $A$}
+
+Setiap baris $(2C^T - D)$ dikalikan dengan kedua kolom $A$:
+\reseteq
+\begin{align}
+(2C^T - D)A &= \begin{bmatrix} -4 & -3 & 3 \\ 11 & -1 & 2 \\ 0 & 1 & 5 \end{bmatrix} \begin{bmatrix} 3 & 0 \\ -1 & 2 \\ 1 & 1 \end{bmatrix}
+= \begin{bmatrix} -12 + 3 + 3 & 0 - 6 + 3 \\ 33 + 1 + 2 & 0 - 2 + 2 \\ 0 - 1 + 5 & 0 + 2 + 5 \end{bmatrix}
+= \begin{bmatrix} -6 & -3 \\ 36 & 0 \\ 4 & 7 \end{bmatrix}
+\end{align}
+% final: \begin{bmatrix} -6 & -3 \\ 36 & 0 \\ 4 & 7 \end{bmatrix}
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $(2C^T - 3D^T)^T$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Hitung $2C^T - 3D^T$}
+
+Kalikan $C^T$ dengan 2 dan $D^T$ dengan 3, lalu kurangkan:
+\reseteq
+\begin{align}
+2C^T - 3D^T &= \begin{bmatrix} 2 & -2 & 6 \\ 10 & 0 & 4 \\ 4 & 2 & 8 \end{bmatrix} - \begin{bmatrix} 18 & -3 & 12 \\ 3 & 3 & 3 \\ 9 & 6 & 9 \end{bmatrix}
+= \begin{bmatrix} -16 & 1 & -6 \\ 7 & -3 & 1 \\ -5 & -4 & -1 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 2: Transposkan}
+
+Baris menjadi kolom:
+\reseteq
+\begin{align}
+(2C^T - 3D^T)^T &= \begin{bmatrix} -16 & 7 & -5 \\ 1 & -3 & -4 \\ -6 & 1 & -1 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 3: Cara Cepat dengan Sifat Transpos}
+
+Dari $(A - B)^T = A^T - B^T$, $(kA)^T = kA^T$, dan $(A^T)^T = A$ diperoleh $(2C^T - 3D^T)^T = 2C - 3D$:
+\reseteq
+\begin{align}
+2C - 3D &= \begin{bmatrix} 2 - 18 & 10 - 3 & 4 - 9 \\ -2 + 3 & 0 - 3 & 2 - 6 \\ 6 - 12 & 4 - 3 & 8 - 9 \end{bmatrix}
+= \begin{bmatrix} -16 & 7 & -5 \\ 1 & -3 & -4 \\ -6 & 1 & -1 \end{bmatrix}
+\end{align}
+Hasilnya sama, tanpa perlu menghitung transpos sama sekali.
+% final: \begin{bmatrix} -16 & 7 & -5 \\ 1 & -3 & -4 \\ -6 & 1 & -1 \end{bmatrix}
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $\operatorname{tr}(B^T A^T + 2C^T)$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Gunakan $B^T A^T$ dari (a)}
+
+Tambahkan $2C^T$:
+\reseteq
+\begin{align}
+B^T A^T + 2C^T &= \begin{bmatrix} 3 & 5 & 4 \\ 12 & -2 & 5 \\ 6 & 8 & 7 \end{bmatrix} + \begin{bmatrix} 2 & -2 & 6 \\ 10 & 0 & 4 \\ 4 & 2 & 8 \end{bmatrix}
+= \begin{bmatrix} \dg{5} & 3 & 10 \\ 22 & \dg{-2} & 9 \\ 10 & 10 & \dg{15} \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 2: Jumlahkan Diagonal Utama}
+
+Entri diagonal ditandai merah:
+\reseteq
+\begin{align}
+\operatorname{tr}(B^T A^T + 2C^T) &= 5 + (-2) + 15 = 18
+\end{align}
+
+\item \textbf{Langkah 3: Cek dengan Sifat Trace}
+
+Karena $B^T A^T = (AB)^T$ dan transpos tidak mengubah trace:
+\reseteq
+\begin{align}
+\operatorname{tr}(B^T A^T + 2C^T) &= \operatorname{tr}(AB) + 2\operatorname{tr}(C) = (3 - 2 + 7) + 2(1 + 0 + 4) = 8 + 10 = 18
+\end{align}
+% final: 18
+\end{itemize}
+
+%-----------------------------------------------------------
+\item $C^T D^T - (DC)^T$
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Hitung $C^T D^T$}
+
+Setiap baris $C^T$ dikalikan dengan setiap kolom $D^T$:
+\reseteq
+\begin{align}
+C^T D^T &= \begin{bmatrix} 1 & -1 & 3 \\ 5 & 0 & 2 \\ 2 & 1 & 4 \end{bmatrix} \begin{bmatrix} 6 & -1 & 4 \\ 1 & 1 & 1 \\ 3 & 2 & 3 \end{bmatrix} \nonumber \\
+&= \begin{bmatrix} 6 - 1 + 9 & -1 - 1 + 6 & 4 - 1 + 9 \\ 30 + 0 + 6 & -5 + 0 + 4 & 20 + 0 + 6 \\ 12 + 1 + 12 & -2 + 1 + 8 & 8 + 1 + 12 \end{bmatrix}
+= \begin{bmatrix} 14 & 4 & 12 \\ 36 & -1 & 26 \\ 25 & 7 & 21 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 2: Hitung $DC$ dan $(DC)^T$}
+
+Setiap baris $D$ dikalikan dengan setiap kolom $C$, lalu hasilnya ditransposkan:
+\reseteq
+\begin{align}
+DC &= \begin{bmatrix} 6 & 1 & 3 \\ -1 & 1 & 2 \\ 4 & 1 & 3 \end{bmatrix} \begin{bmatrix} 1 & 5 & 2 \\ -1 & 0 & 1 \\ 3 & 2 & 4 \end{bmatrix} \nonumber \\
+&= \begin{bmatrix} 6 - 1 + 9 & 30 + 0 + 6 & 12 + 1 + 12 \\ -1 - 1 + 6 & -5 + 0 + 4 & -2 + 1 + 8 \\ 4 - 1 + 9 & 20 + 0 + 6 & 8 + 1 + 12 \end{bmatrix}
+= \begin{bmatrix} 14 & 36 & 25 \\ 4 & -1 & 7 \\ 12 & 26 & 21 \end{bmatrix} \\
+(DC)^T &= \begin{bmatrix} 14 & 4 & 12 \\ 36 & -1 & 26 \\ 25 & 7 & 21 \end{bmatrix}
+\end{align}
+
+\item \textbf{Langkah 3: Kurangkan}
+
+Kedua matriks identik, sehingga
+\reseteq
+\begin{align}
+C^T D^T - (DC)^T &= \begin{bmatrix} 0 & 0 & 0 \\ 0 & 0 & 0 \\ 0 & 0 & 0 \end{bmatrix} = O_{3 \times 3}
+\end{align}
+
+\item \textbf{Langkah 4: Penjelasan dengan Sifat Transpos}
+
+Menurut sifat $(AB)^T = B^T A^T$, berlaku $(DC)^T = C^T D^T$. Jadi $C^T D^T - (DC)^T$ \emph{selalu} matriks nol, untuk sembarang $C$ dan $D$ yang dapat dikalikan.
+% final: \begin{bmatrix} 0 & 0 & 0 \\ 0 & 0 & 0 \\ 0 & 0 & 0 \end{bmatrix}
+\end{itemize}
+
+\end{enumerate}
+
+%===========================================================
+\item Tentukan nilai $a$, $b$, $c$, dan $d$ pada persamaan matriks berikut:
+\[
+\begin{bmatrix} a - b & b + c \\ 3d + c & 2a - 4d \end{bmatrix} = \begin{bmatrix} 8 & 1 \\ 7 & 6 \end{bmatrix}.
+\]
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Samakan Entri Seletak}
+
+Kedua matriks berukuran $2 \times 2$, sehingga diperoleh empat persamaan:
+\reseteq
+\begin{align}
+a - b &= 8 \\
+b + c &= 1 \\
+3d + c &= 7 \\
+2a - 4d &= 6
+\end{align}
+
+\item \textbf{Langkah 2: Eliminasi $a$ dari (1) dan (4)}
+
+Kalikan (1) dengan 2 menjadi $2a - 2b = 16$, lalu kurangkan dari (4):
+\begin{align}
+(2a - 4d) - (2a - 2b) &= 6 - 16 \;\Rightarrow\; 2b - 4d = -10 \nonumber \\
+b - 2d &= -5
+\end{align}
+
+\item \textbf{Langkah 3: Eliminasi $c$ dari (2) dan (3)}
+
+Kurangkan (2) dari (3):
+\begin{align}
+(3d + c) - (b + c) &= 7 - 1 \;\Rightarrow\; 3d - b = 6 \nonumber \\
+b - 3d &= -6
+\end{align}
+
+\item \textbf{Langkah 4: Eliminasi $b$ dari (5) dan (6), lalu Substitusi Balik}
+
+Kurangkan (6) dari (5):
+\begin{align}
+(b - 2d) - (b - 3d) &= -5 - (-6) \;\Rightarrow\; d = 1 \nonumber \\
+b &= -5 + 2d = -3 \quad \text{(Dari (5))} \nonumber \\
+a &= 8 + b = 5 \quad \text{(Dari (1))} \nonumber \\
+c &= 1 - b = 4 \quad \text{(Dari (2))} \nonumber
+\end{align}
+
+\item \textbf{Langkah 5: Verifikasi}
+
+$a - b = 5 + 3 = 8$, $b + c = -3 + 4 = 1$, $3d + c = 3 + 4 = 7$, $2a - 4d = 10 - 4 = 6$. Semua sesuai (soal ini sama dengan Latihan Mandiri~8.2 pada Topik~9).
+
+Jadi $a = 5$, $b = -3$, $c = 4$, dan $d = 1$.
+% final: a = 5
+% final: b = -3
+% final: c = 4
+% final: d = 1
+\end{itemize}
+
+\end{enumerate}
+
+\end{document}

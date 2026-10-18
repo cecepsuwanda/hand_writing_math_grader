@@ -15,11 +15,11 @@ class RubricLoader:
     def __init__(self, standard_dir: Path) -> None:
         self._standard_dir = Path(standard_dir)
 
-    def load(self, question_number: int) -> Rubric:
+    def load(self, question_number: int, part_label: str = "") -> Rubric:
         path = (
             self._standard_dir
             / "rubrics"
-            / f"{question_dir_name(question_number)}.json"
+            / f"{question_dir_name(question_number, part_label)}.json"
         )
         if not path.is_file():
             raise RubricNotFoundError(path)

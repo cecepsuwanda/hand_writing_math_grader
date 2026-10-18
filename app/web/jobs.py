@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import Executor, ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from app.exceptions import JobAlreadyRunningError, JobNotFoundError, MathGraderError
 from app.models.process import ProcessProgress
+
+_RESERVE_JOB_ID = "reserved"
 
 logger = logging.getLogger(__name__)
 
@@ -105,22 +108,46 @@ class JobManager:
             max_workers=1, thread_name_prefix="grader-job"
         )
         self._jobs: dict[str, Job] = {}
+        self._reserved: set[str] = set()
         self._changed = threading.Condition()
 
     def submit(self, *, run: str, kind: JobKind, task: JobTask) -> Job:
         """Queue ``task``; it returns the URL to continue on.
 
         Raises:
-            JobAlreadyRunningError: ``run`` already has a queued or running job.
+            JobAlreadyRunningError: ``run`` already has a queued or running job,
+                or is reserved (e.g. mid-delete).
         """
         with self._changed:
             active = self._active_for(run)
             if active is not None:
                 raise JobAlreadyRunningError(run, active.id)
+            if run in self._reserved:
+                raise JobAlreadyRunningError(run, _RESERVE_JOB_ID)
             job = Job(id=uuid.uuid4().hex[:12], run=run, kind=kind)
             self._jobs[job.id] = job
         self._executor.submit(self._execute, job.id, task)
         return self.get(job.id)
+
+    @contextmanager
+    def reserve_run(self, run: str) -> Iterator[None]:
+        """Block new jobs for ``run`` while deleting PDF/run artifacts.
+
+        Raises:
+            JobAlreadyRunningError: an active job or another reservation exists.
+        """
+        with self._changed:
+            active = self._active_for(run)
+            if active is not None:
+                raise JobAlreadyRunningError(run, active.id)
+            if run in self._reserved:
+                raise JobAlreadyRunningError(run, _RESERVE_JOB_ID)
+            self._reserved.add(run)
+        try:
+            yield
+        finally:
+            with self._changed:
+                self._reserved.discard(run)
 
     def get(self, job_id: str) -> Job:
         with self._changed:
@@ -132,6 +159,17 @@ class JobManager:
             if not jobs:
                 return None
             return max(jobs, key=lambda j: j.created_at).model_copy(deep=True)
+
+    def active_for(self, run: str) -> Job | None:
+        """Queued or running job for ``run``, if any.
+
+        A reserved run (delete in progress) is reported as a synthetic finished=False
+        sentinel via :meth:`reserve_run` + :meth:`submit` checks; this method only
+        surfaces real jobs so callers can quote a real ``job_id``.
+        """
+        with self._changed:
+            active = self._active_for(run)
+            return None if active is None else active.model_copy(deep=True)
 
     def wait(self, job_id: str, *, after_seq: int, timeout: float) -> Job:
         """Block until ``job_id`` has an event newer than ``after_seq``, finishes, or times out."""

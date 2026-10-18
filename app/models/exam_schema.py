@@ -32,6 +32,14 @@ class NumberLineSpec(BaseModel):
     intervals: list[NumberLineInterval] = Field(default_factory=list)
 
 
+class GraphPoint(BaseModel):
+    """Cartesian endpoint mark for graph grading (filled = closed)."""
+
+    x: str
+    y: str
+    closed: bool = True
+
+
 class ExamPart(BaseModel):
     kind: ExamPartKind
     order: int = Field(ge=1)
@@ -46,6 +54,8 @@ class ExamMethod(BaseModel):
 
 class ExamMilestone(BaseModel):
     role: ExamMilestoneRole
+    # Section title after stripping ``Langkah N:`` (e.g. ``Tentukan Domain``).
+    title: str = ""
     latex: str = ""
     symbolic: SymbolicPayload | None = None
     steps: list[str] = Field(default_factory=list)
@@ -54,6 +64,8 @@ class ExamMilestone(BaseModel):
 
 class ExamQuestion(BaseModel):
     number: int = Field(ge=1)
+    # Sub-soal letter under ``number`` (``"a"`` → ``question_001a``); ``""`` = whole soal.
+    part_label: str = Field(default="", pattern=r"^[a-z]{0,4}$")
     stem: str
     stem_symbolic: SymbolicPayload | None = None
     steps: list[str] = Field(default_factory=list)
@@ -64,7 +76,14 @@ class ExamQuestion(BaseModel):
     final_symbolic: SymbolicPayload | None = None
     expects_figure: bool = False
     number_line: NumberLineSpec | None = None
+    # Pack-3 graph soals: open/closed endpoints; ignored when empty (other topics).
+    graph_points: list[GraphPoint] = Field(default_factory=list)
     parts: list[ExamPart] = Field(default_factory=list)
+
+    @property
+    def ref(self) -> str:
+        """Display reference: ``1`` or ``1a``."""
+        return f"{self.number}{self.part_label}"
 
 
 class ExamSchema(BaseModel):

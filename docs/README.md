@@ -19,7 +19,12 @@ Satu topik, satu dokumen. Dokumen lain cukup menautkan.
 | [development-phases.md](development-phases.md) | Status phase 1–9 + acceptance criteria |
 | [math-topics.md](math-topics.md) | Silabus bab 1–11, status per bab, topic pack, capability |
 | [testing.md](testing.md) | Konvensi pytest: tanpa file baru, OOP `Test*`, `tests/support/`, peta kelas |
-| [evaluasi-kode.md](evaluasi-kode.md) | Laporan audit menyeluruh, evaluasi arsitektur, dan perbaikan tipe/linter |
+
+## Arsip
+
+| Dokumen | Isi |
+|---------|-----|
+| [archive/evaluasi-kode-2026-10.md](archive/evaluasi-kode-2026-10.md) | Snapshot audit Okt 2026 (historis; bukan sumber kebenaran) |
 
 ## Panduan agent
 

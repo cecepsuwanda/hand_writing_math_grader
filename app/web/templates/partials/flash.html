@@ -1,4 +1,6 @@
-<div class="flash flash-{{ level }}" x-data="{ show: true }" x-show="show" role="status">
-  <span>{{ message }}</span>
+{% from "partials/icons.html" import flash_icon %}
+<div class="flash flash-{{ level }}" role="status" x-data="{ show: true }" x-show="show"
+     {% if level == "ok" %}data-autodismiss="5000" x-init="setTimeout(() => show = false, +$el.dataset.autodismiss)"{% endif %}>
+  <span class="flash-body">{{ flash_icon(level) }}<span>{{ message }}</span></span>
   <button type="button" class="flash-close" @click="show = false" aria-label="Tutup">&times;</button>
 </div>

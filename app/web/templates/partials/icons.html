@@ -1,0 +1,7 @@
+{% macro icon(name, cls="") -%}
+<svg class="icon {{ cls }}" aria-hidden="true" focusable="false"><use href="{{ static_url('vendor/lucide-sprite.svg') }}#{{ name }}"></use></svg>
+{%- endmacro %}
+
+{% macro flash_icon(level) -%}
+{{ icon({"ok": "circle-check", "warn": "triangle-alert", "error": "circle-x"}.get(level, "info")) }}
+{%- endmacro %}

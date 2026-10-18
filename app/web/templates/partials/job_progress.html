@@ -1,11 +1,12 @@
+{% from "partials/icons.html" import icon %}
 {% set last = job.last_progress %}
 <div class="job-status">
-  <span class="badge badge-{{ job.status.value }}">{{ job.status.value }}</span>
+  <span class="badge badge-{{ job.status.value }}">{% if not job.finished %}{{ icon("loader-circle", "spin") }}{% endif %}{{ job.status.value }}</span>
   {% if last %}
-  <progress max="{{ last.total }}" value="{{ last.completed or 0 }}"></progress>
+  <span class="progress"><progress max="{{ last.total }}" value="{{ last.completed or 0 }}"></progress></span>
   <span class="small">{{ last.message }} {{ last.completed or 0 }}/{{ last.total }}</span>
   {% elif not job.finished %}
-  <progress></progress>
+  <span class="progress"><progress></progress></span>
   {% endif %}
 </div>
 {% if job.events %}

@@ -18,10 +18,20 @@ from app.functions.ink_layout import (
     propose_solution_regions_from_image,
     remove_long_vertical_runs,
 )
+from sympy import Matrix, oo, sympify
+from app.exceptions import MathParseError
+from app.functions.integral_normalize import rewrite_integral_notation
 from app.functions.kunci_ingest import format_recognition_stems_block
+from app.functions.limit_normalize import rewrite_limit_notation
+from app.functions.math_normalize import normalize_math_text
+from app.functions.piecewise_normalize import (
+    rewrite_piecewise_cases,
+    rewrite_pseudo_if_piecewise,
+)
+from app.functions.vector_normalize import rewrite_vector_tuples
 from app.functions.question_merge import collect_latex_documents, merge_page_recognitions
 from app.functions.step_role import coalesce_step_role
-from app.functions.symbolic_from_latex import coalesce_step_symbolic
+from app.functions.symbolic_from_latex import coalesce_step_symbolic, latex_to_symbolic_payload
 from app.models.exam_schema import ExamPart, ExamQuestion, ExamSchema
 from app.models.recognition import (
     DetectedRegion,
@@ -31,8 +41,11 @@ from app.models.recognition import (
     Region,
     SymbolicPayload,
 )
+from app.services.math.parser import LimitClaim, parse_math_step
 from app.services.vision.ink_region_proposer import InkRegionProposer
 from app.services.vision.recognizer import OllamaVisionRecognizer
+from app.topics.registry import get_pack
+from app.topics.runtime import using_pack
 from tests.support.builders import draw_writing, new_page, single_question_json, write_png
 from tests.support.fakes import FakeClient, FakeProposer
 from tests.support.harness import make_recognizer
@@ -331,6 +344,397 @@ class TestSymbolicMerge:
         from_raw_nl = coalesce_step_symbolic("NUMBER_LINE([-2,oo))", None)
         assert from_raw_nl is not None
         assert from_raw_nl.kind == "figure"
+
+
+class TestPiecewiseNotation:
+    """Bab 3: ``cases`` / pseudo-if → SymPy ``Piecewise``; protect (a,b) points."""
+
+    _CASES = (
+        r"f(x)=\begin{cases} x+1, & x < -1 \\\\ "
+        r"x^2, & -1 \le x < 2 \\\\ "
+        r"2-x, & x \ge 2 \end{cases}"
+    )
+
+    def test_rewrite_piecewise_cases_evan_like(self) -> None:
+        out = rewrite_piecewise_cases(self._CASES)
+        assert "Piecewise(" in out
+        assert "x+1" in out and "x**2" in out and "2-x" in out
+        assert "And(-1 <= x, x < 2)" in out
+        assert "if " not in out.lower()
+
+    def test_rewrite_pseudo_if_piecewise(self) -> None:
+        out = rewrite_pseudo_if_piecewise(
+            "{x+1 if x < -1, x**2 if -1 <= x < 2, 2-x if x >= 2}"
+        )
+        assert out.startswith("Piecewise(")
+        assert "x+1" in out and "x**2" in out
+
+    def test_coalesce_rebuilds_cases_over_bad_llm_if(self) -> None:
+        bad = SymbolicPayload(
+            kind="relation",
+            repr="{x+1 if x < -1, x**2 if -1 <= x < 2, 2-x if x >= 2}",
+        )
+        with using_pack(get_pack("3")):
+            fixed = coalesce_step_symbolic(self._CASES, bad)
+        assert fixed is not None
+        assert "Piecewise(" in fixed.repr
+        assert "if " not in fixed.repr.lower()
+
+    def test_coalesce_keeps_point_pair_not_fake_interval(self) -> None:
+        raw = r"x = 2 \rightarrow y = (2)^2 = 4 \rightarrow (2, 4)"
+        bad = SymbolicPayload(
+            kind="relation",
+            repr="* x = 2 => y = (2)^2 = 4 => 2 < x < 4",
+        )
+        fixed = coalesce_step_symbolic(raw, bad)
+        assert fixed is not None
+        assert "(2, 4)" in fixed.repr or "(2,4)" in fixed.repr.replace(" ", "")
+        assert "2 < x < 4" not in fixed.repr
+
+    def test_coalesce_strips_uncertain_meta_from_rebuild(self) -> None:
+        raw = (
+            r"x = -1 \rightarrow y = 1 \rightarrow (-1, 1) "
+            r"[uncertain: (0,0) might be a mistake]"
+        )
+        fixed = coalesce_step_symbolic(raw, None)
+        assert fixed is not None
+        assert "uncertain" not in fixed.repr.lower()
+        assert "mistake" not in fixed.repr.lower()
+
+    def test_coalesce_lifts_graph_points_from_raw_figure(self) -> None:
+        raw = "Grafik GRAPH_POINTS((-1,0,open);(-1,1,closed))"
+        fixed = coalesce_step_symbolic(
+            raw,
+            SymbolicPayload(kind="figure", repr=""),
+        )
+        assert fixed is not None
+        assert fixed.kind == "figure"
+        assert fixed.repr.startswith("GRAPH_POINTS(")
+
+    def test_normalize_under_pack3_rewrites_cases(self) -> None:
+        with using_pack(get_pack("3")):
+            out = normalize_math_text(self._CASES)
+        assert "Piecewise(" in out
+        assert "begin" not in out.lower()
+        assert "MATRIX" not in out
+        assert "And(-1 <= x, x < 2)" in out
+
+    def test_coalesce_cases_parses_as_piecewise(self) -> None:
+        from sympy import Piecewise
+
+        bad = SymbolicPayload(
+            kind="relation",
+            repr="{x+1 if x < -1, x**2 if -1 <= x < 2, 2-x if x >= 2}",
+        )
+        with using_pack(get_pack("3")):
+            fixed = coalesce_step_symbolic(self._CASES, bad)
+            assert fixed is not None
+            step = parse_math_step(fixed.repr)
+        assert step.kind == "expression"
+        assert isinstance(step.value, Piecewise)
+
+
+class TestLimitNotation:
+    """Bab 4: ``\\lim`` forms from tugas_topik_4.tex become bounded ``LIMIT`` tokens."""
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"\lim_{x \to -1} (1 - 2x)", "LIMIT((1 - 2x), x, -1, +-)"),
+            (r"\lim_{x \to 1^-} (-x + 1) = -1 + 1 = 0", "LIMIT((-x + 1), x, 1, -) = -1 + 1 = 0"),
+            (r"\lim_{x \to 1^{+}} f(x)", "LIMIT(f(x), x, 1, +)"),
+            (
+                r"\lim_{t \to 3} \frac{t - 3}{t - 3} = \lim_{t \to 3} (t + 7)",
+                r"LIMIT(\frac{t - 3}{t - 3}, t, 3, +-) = LIMIT((t + 7), t, 3, +-)",
+            ),
+            (r"\lim_{x \to -\infty} \frac{1}{x}", r"LIMIT(\frac{1}{x}, x, -\infty, +-)"),
+            (
+                r"\frac{9}{2} \cdot \left(\lim_{t \to 0} \frac{\sin 3t}{3t}\right)^2",
+                r"\frac{9}{2} \cdot \left(LIMIT(\frac{\sin 3t}{3t}, t, 0, +-)\right)^2",
+            ),
+            (r"\lim_{x \to 2} (x + 1) \quad \text{(substitusi)}", r"LIMIT((x + 1), x, 2, +-) \quad \text{(substitusi)}"),
+            (r"L = \lim_{x \to 2} x^2", "LIMIT(x^2, x, 2, +-)"),
+            ("lim x->1- (x**2-1)/(x-1)", "LIMIT((x**2-1)/(x-1), x, 1, -)"),
+            ("LIMIT(x, x, 0, +-)", "LIMIT(x, x, 0, +-)"),
+            (r"\displaystyle\lim_{x \to 0} x", r"\displaystyle LIMIT(x, x, 0, +-)"),
+        ],
+        ids=[
+            "negative-point", "chain-stops-at-equals", "braced-side", "two-limits",
+            "minus-infinity", "inside-left-right", "stops-at-quad", "assign-prefix", "ascii", "token-kept",
+            "after-displaystyle",
+        ],
+    )
+    def test_rewrite_limit_notation(self, latex: str, expected: str) -> None:
+        assert rewrite_limit_notation(latex) == expected
+
+    def test_limit_step_and_infinite_value_parse(self) -> None:
+        step = parse_math_step(r"\lim_{x \to -1} (1 - 2x)")
+        assert step.kind == "limit"
+        assert isinstance(step.value, LimitClaim)
+        assert (step.value.point, step.value.dir) == (-1, "+-")
+        assert parse_math_step(r"\lim_{x \to -\infty} \frac{1}{x}").value.point == -oo
+        infinity = latex_to_symbolic_payload(r"\infty")
+        assert infinity is not None and (infinity.kind, infinity.repr) == ("expression", "oo")
+        assert latex_to_symbolic_payload("tidak ada") is None
+
+
+class TestDerivativeNotation:
+    """Bab 6: primed / one-sided derivative left-hand sides are assignments, not Python strings."""
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"f'(x) = 2x + 2", "2*x + 2"),
+            (r"f''(x) = 48(2x - 3)^2", "48*(2*x - 3)**2"),
+            (r"f'(3) = 6", "6"),
+            (r"f'_-(3) = 6", "6"),
+            (r"f'_+(1) = 1", "1"),
+            (r"f'_{-}(3) = 6", "6"),
+            (r"y'' = 12x", "12*x"),
+        ],
+        ids=["prime-x", "second", "prime-point", "left", "right", "braced-side", "y-second"],
+    )
+    def test_derivative_assignment_reads_its_value(self, latex: str, expected: str) -> None:
+        payload = latex_to_symbolic_payload(latex)
+        assert payload is not None
+        step = parse_math_step(payload.repr)
+        assert step.kind == "expression"
+        assert step.value.equals(parse_math_step(expected).value)
+
+    def test_limit_chain_after_one_sided_derivative_stays_unparsed(self) -> None:
+        payload = latex_to_symbolic_payload(r"f'_-(3) = \lim_{x \to 3^-} \frac{x^2 - 9}{x - 3} = 6")
+        assert payload is not None and payload.repr.startswith("f'_-(3) = LIMIT(")
+        with pytest.raises(MathParseError):
+            parse_math_step(payload.repr)
+
+
+class TestIntegralNotation:
+    """Bab 7/8: ``\\int`` inside chains, evaluation bars ``[F]_a^b``, roots and trig calls."""
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"\int x^2\, dx", "INT(x^2, x)"),
+            (r"\int_{0}^{1} x\, dx", "INT(x, x, 0, 1)"),
+            (r"L = \int_0^1 x^2\, dx", "INT(x^2, x, 0, 1)"),
+            (r"\int (6x^5 + 72x)\, dx = x^6 + C", "INT(6x^5 + 72x, x) = x^6 + C"),
+            (r"\int_1^9 -2f(x)\, dx = 2", "INT(-2f(x), x, 1, 9) = 2"),
+            (r"\int_7^9 \bigl[2f(x) - h(x)\bigr]\, dx", "INT(2f(x) - h(x), x, 7, 9)"),
+            (r"\frac{1}{3}\int u^9\, du", r"\frac{1}{3}INT(u^9, u)"),
+            (r"\Bigl[\frac{x^2}{2} + 3x\Bigr]_{-2}^{3}", r"((\frac{(3)^2}{2} + 3(3)) - (\frac{(-2)^2}{2} + 3(-2)))"),
+            (r"[u^3]_0^3", "(((3)^3) - ((0)^3))"),
+            (r"x \in [1, 2]", r"x \in [1, 2]"),
+        ],
+        ids=[
+            "indefinite", "definite", "assign-prefix", "chain", "unbraced-bounds", "sized-brackets",
+            "after-coefficient", "evaluation-bar", "plain-bar", "interval-untouched",
+        ],
+    )
+    def test_rewrite_integral_notation(self, latex: str, expected: str) -> None:
+        assert rewrite_integral_notation(latex) == expected
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"\Bigl[\frac{x^2}{2} + 3x\Bigr]_{-2}^{3} = \frac{35}{2}", True),
+            (r"\frac{1}{2}\Bigl[\frac{u^3}{3}\Bigr]_0^3 = \frac{9}{2}", True),
+            (r"\sqrt[3]{8} = 2", True),
+        ],
+        ids=["bar", "bar-with-coefficient", "indexed-root"],
+    )
+    def test_closed_evaluation_is_checked(self, latex: str, expected: bool) -> None:
+        payload = latex_to_symbolic_payload(latex)
+        assert payload is not None
+        assert bool(parse_math_step(payload.repr).value) is expected
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"G'(x) = \frac{3x^2}{\sqrt{1 + x^9}}", "3*x**2/sqrt(1 + x**9)"),
+            (r"f'(x) = 2x\sin x + x^2\cos x", "2*x*sin(x) + x**2*cos(x)"),
+            (r"y' = 2\sec x \tan x", "2*sec(x)*tan(x)"),
+            (r"f'(x) = \frac{1 + \sin x}{\cos^2 x}", "(1 + sin(x))/cos(x)**2"),
+            (r"y = \csc x + \cot x", "csc(x) + cot(x)"),
+            (r"-4(8x - 1)\cos^3(4x^2 - x)", "-4*(8*x - 1)*cos(4*x**2 - x)**3"),
+            (r"\sin x^2", "sin(x**2)"),
+        ],
+        ids=["sqrt", "glued-sin", "sec-tan", "cos-power", "csc-cot", "power-call", "power-arg"],
+    )
+    def test_roots_and_trig_calls_keep_their_meaning(self, latex: str, expected: str) -> None:
+        payload = latex_to_symbolic_payload(latex)
+        assert payload is not None
+        step = parse_math_step(payload.repr)
+        assert step.kind == "expression"
+        assert step.value.equals(sympify(expected))
+
+    @pytest.mark.parametrize(
+        "latex",
+        [
+            r"\int (6x^5 + 72x)\, dx = x^6 + 12x^4 + C",
+            r"\int_7^9 \bigl[2f(x) - 3h(x)\bigr]\, dx = 2\int_7^9 f(x)\, dx - 3\int_7^9 h(x)\, dx",
+        ],
+        ids=["integral-equals", "integral-on-both-sides"],
+    )
+    def test_integral_inside_a_chain_stays_unparsed(self, latex: str) -> None:
+        payload = latex_to_symbolic_payload(latex)
+        assert payload is not None
+        with pytest.raises(MathParseError):
+            parse_math_step(payload.repr)
+
+
+def _parse_latex(latex: str):
+    payload = latex_to_symbolic_payload(latex)
+    assert payload is not None
+    return parse_math_step(payload.repr)
+
+
+class TestTranscendentalNotation:
+    """Bab 8: ``\\ln|u|`` keeps its absolute value; an ``\\approx`` tail is not a factor."""
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"y = 2\ln|2x + 1|", "2*log(Abs(2*x + 1))"),
+            (r"y = \ln\left|x^2 - 1\right|", "log(Abs(x**2 - 1))"),
+            (r"f'(x) = \frac{1}{x} + \ln|x|", "1/x + log(Abs(x))"),
+            (r"\frac{1}{3}\ln 33 \approx 1{,}1655", "log(33)/3"),
+            (r"\sqrt{205} \approx 14{,}32", "sqrt(205)"),
+        ],
+        ids=["ln-bar", "ln-left-right", "ln-after-term", "approx-tail", "approx-after-root"],
+    )
+    def test_log_and_approx_forms(self, latex: str, expected: str) -> None:
+        step = _parse_latex(latex)
+        assert step.kind == "expression"
+        assert step.value.equals(sympify(expected))
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [(r"\ln|-1| = 0", True), (r"\ln|-1| = 1", False)],
+        ids=["true", "false"],
+    )
+    def test_ln_of_a_bar_is_checked(self, latex: str, expected: bool) -> None:
+        step = _parse_latex(latex)
+        assert step.kind == "relation"
+        assert bool(step.value) is expected
+
+
+class TestMatrixNotation:
+    """Bab 9/10: trace / adjugate operators and opaque named-matrix left-hand sides."""
+
+    _M = r"\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}"
+    _R = r"\begin{bmatrix} 3 & -5 \\ -1 & 2 \end{bmatrix}"
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (rf"\operatorname{{tr}}{_M}", 5),
+            (rf"\operatorname{{tr}}({_M})", 5),
+            (r"\operatorname{tr}(A) = 5", 5),
+            (r"\det(A) = -8", -8),
+        ],
+        ids=["trace-literal", "trace-call", "trace-named-lhs", "det-named-lhs"],
+    )
+    def test_scalar_operators(self, latex: str, expected: int) -> None:
+        step = _parse_latex(latex)
+        assert step.kind == "expression"
+        assert step.value == expected
+
+    def test_det_named_lhs_keeps_the_scalar_work(self) -> None:
+        step = _parse_latex(r"\det(A) = (-2)(1) - 3(2) = -2 - 6 = -8")
+        assert step.kind == "relation" and bool(step.value) is True
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (rf"\mathrm{{adj}}{_M}", [[4, -2], [-3, 1]]),
+            (rf"A^{{-1}} = {_R}", [[3, -5], [-1, 2]]),
+            (rf"A + B = {_R}", [[3, -5], [-1, 2]]),
+            (rf"2A - B^T = {_R}", [[3, -5], [-1, 2]]),
+            (rf"X = {_R}", [[3, -5], [-1, 2]]),
+        ],
+        ids=["adjugate", "inverse-lhs", "sum-lhs", "combination-lhs", "single-name-lhs"],
+    )
+    def test_matrix_claims(self, latex: str, expected: list[list[int]]) -> None:
+        step = _parse_latex(latex)
+        assert step.kind == "matrix"
+        assert step.value.matrix == Matrix(expected)
+
+    def test_unsupported_matrix_forms_stay_unparsed(self) -> None:
+        assert _parse_latex("A = 3").kind == "relation"
+        for latex in (rf"(A + B)^T = {self._R}", rf"\det{self._M} = -2"):
+            with pytest.raises(MathParseError):
+                _parse_latex(latex)
+
+
+class TestVectorNotation:
+    """Bab 11: norms, named dot / cross products and component tuples (pack 11 only)."""
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"\|\mathbf{u}\| = \sqrt{9 + 1 + 4} = \sqrt{14}", True),
+            (r"\|\mathbf{u}\| = \sqrt{9 + 1 + 4} = \sqrt{15}", False),
+            (r"\mathbf{u} \cdot \mathbf{v} = (1)(3) + (-5)(3) + (4)(3) = 0", True),
+        ],
+        ids=["norm", "norm-wrong", "named-dot"],
+    )
+    def test_named_vector_lhs_keeps_the_scalar_work(self, latex: str, expected: bool) -> None:
+        step = _parse_latex(latex)
+        assert step.kind == "relation"
+        assert bool(step.value) is expected
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            (r"\mathbf{u} \times \mathbf{v}", "CROSS(u,v)"),
+            (r"\mathbf{u} \cdot (\mathbf{v} \times \mathbf{w})", "DOT(u,CROSS(v,w))"),
+            (r"\overrightarrow{P_1P_2}", "P_1P_2"),
+            (r"\|\vec{a}\|", "NORM(a)"),
+        ],
+        ids=["cross", "triple", "arrow-name", "norm-name"],
+    )
+    def test_named_vector_tokens(self, latex: str, expected: str) -> None:
+        assert normalize_math_text(latex) == expected
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("(-5, 12, -6)", "MATRIX([[-5],[12],[-6]])"),
+            (r"\left(1, 2\right)", "MATRIX([[1],[2]])"),
+            ("d(P, Q) = 3", "d(P, Q) = 3"),
+            (r"x \in (1, 3)", r"x \in (1, 3)"),
+            ("(1, 3]", "(1, 3]"),
+            ("(1, 0, 0) \\times (0, 1, 0)", "CROSS(MATRIX([[1],[0],[0]]),MATRIX([[0],[1],[0]]))"),
+        ],
+        ids=["tuple", "left-right", "call", "interval-membership", "half-open", "literal-cross"],
+    )
+    def test_rewrite_vector_tuples(self, text: str, expected: str) -> None:
+        assert rewrite_vector_tuples(text) == expected
+
+    @pytest.mark.parametrize(
+        ("latex", "expected"),
+        [
+            ("(-2 - 3,\\; 5 - (-7),\\; -4 - 2)", [[-5], [12], [-6]]),
+            (
+                r"\begin{bmatrix} 1 \\ 0 \\ 0 \end{bmatrix} \times \begin{bmatrix} 0 \\ 1 \\ 0 \end{bmatrix}",
+                [[0], [0], [1]],
+            ),
+            ("(1, 2, 3) \\cdot (4, 5, 6)", 32),
+        ],
+        ids=["tuple-work", "literal-cross", "tuple-dot"],
+    )
+    def test_vector_pack_evaluates_literals(self, latex: str, expected: object) -> None:
+        with using_pack(get_pack("11")):
+            step = _parse_latex(latex)
+        if isinstance(expected, list):
+            assert step.kind == "matrix" and step.value.matrix == Matrix(expected)
+        else:
+            assert step.kind == "expression" and step.value == expected
+
+    def test_other_packs_keep_the_interval_reading(self) -> None:
+        assert normalize_math_text("(1, 3)") == "1 < x < 3"
+        with using_pack(get_pack("11")):
+            assert normalize_math_text("(1, 3)") == "MATRIX([[1],[3]])"
 
 
 class TestTwoPassRecognizer:

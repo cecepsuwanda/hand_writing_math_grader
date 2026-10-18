@@ -42,9 +42,12 @@ class LatexReportWriter(DetailedReporter):
         self,
         template_dir: Path | None = None,
         template_name: str = DEFAULT_TEMPLATE_NAME,
+        *,
+        figures_heading: str = "Gambar (OCR)",
     ) -> None:
         self._template_dir = Path(template_dir) if template_dir else DEFAULT_TEMPLATE_DIR
         self._template_name = template_name
+        self._figures_heading = figures_heading
 
     def write(
         self,
@@ -53,7 +56,12 @@ class LatexReportWriter(DetailedReporter):
         output_dir: Path,
     ) -> Path:
         output_dir = Path(output_dir)
-        view = build_latex_report_context(report, details, output_dir)
+        view = build_latex_report_context(
+            report,
+            details,
+            output_dir,
+            figures_heading=self._figures_heading,
+        )
         try:
             template = latex_jinja_environment(self._template_dir).get_template(
                 self._template_name

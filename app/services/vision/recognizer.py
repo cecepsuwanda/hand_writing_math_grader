@@ -28,6 +28,7 @@ from app.functions.kunci_ingest import (
 )
 from app.functions.page_names import page_recognition_filename
 from app.functions.question_crops import crop_to_questions, load_question_crops
+from app.functions.question_names import split_question_ref
 from app.functions.regions_artifact import (
     crop_filename,
     load_regions_artifact,
@@ -92,6 +93,7 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
         prompt_version: str | None = None,
         expected_questions: list[tuple[int, str]] | None = None,
         exam_schema: ExamSchema | None = None,
+        pack_role_instructions: str = "",
     ) -> None:
         self._client = client
         self._model = model.strip()
@@ -110,9 +112,12 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
             self._expected_questions = list(expected_questions or [])
             block = format_recognition_stems_block(self._expected_questions)
         self._expected_numbers = {n for n, _ in self._expected_questions}
-        self._math_prompt = self._math_prompt_template.replace(
-            "{{expected_questions}}",
-            block,
+        extra = (pack_role_instructions or "").strip()
+        self._math_prompt = (
+            self._math_prompt_template.replace("{{expected_questions}}", block).replace(
+                "{{pack_role_instructions}}",
+                f"{extra}\n" if extra else "",
+            )
         )
 
     @property
@@ -493,10 +498,14 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
     ) -> RecognizedQuestion:
         assigned = list(assigned_numbers or [])
         llm_qnum = 0
+        part_label = ""
         raw_qnum = payload.get("question_number")
         if raw_qnum is not None and raw_qnum != "":
             try:
-                llm_qnum = int(raw_qnum)
+                if isinstance(raw_qnum, (int, float)):
+                    llm_qnum = int(raw_qnum)
+                else:
+                    llm_qnum, part_label = split_question_ref(str(raw_qnum))
             except (TypeError, ValueError):
                 logger.warning(
                     "non-numeric question_number=%r in crop payload; using 0",
@@ -558,6 +567,7 @@ class OllamaVisionRecognizer(VisionRecognizer, CropWorkspace):
 
         return RecognizedQuestion(
             question_number=qnum,
+            part_label=part_label if qnum == llm_qnum else "",
             region=detected.region,
             region_type="solution",
             crop_path=str(crop_path),

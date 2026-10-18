@@ -66,6 +66,8 @@ class RecognizedStep(BaseModel):
 
 class RecognizedQuestion(BaseModel):
     question_number: int
+    # Sub-soal letter the model read (``"1a"`` → ``"a"``); a hint, split again on extract.
+    part_label: str = ""
     region: Region | None = None
     region_type: RegionType | None = None
     crop_path: str = ""

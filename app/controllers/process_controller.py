@@ -55,6 +55,25 @@ ProgressCallback = Callable[[ProcessProgress], None]
 ClearedCallback = Callable[[Path, list[str]], None]
 QuestionCropsMissingCallback = Callable[[Path], None]
 
+_TRANSCRIBE_STAGES: tuple[ProcessStage, ...] = (
+    ProcessStage.RECOGNIZE,
+    ProcessStage.EXTRACT,
+)
+_FROM_CROPS_STAGES: tuple[ProcessStage, ...] = (
+    ProcessStage.RECOGNIZE,
+    ProcessStage.EXTRACT,
+    ProcessStage.LATEX,
+    ProcessStage.VALIDATE,
+    ProcessStage.GRADE,
+    ProcessStage.REPORT,
+)
+_FROM_QUESTIONS_STAGES: tuple[ProcessStage, ...] = (
+    ProcessStage.LATEX,
+    ProcessStage.VALIDATE,
+    ProcessStage.GRADE,
+    ProcessStage.REPORT,
+)
+
 
 class ProcessController:
     def __init__(
@@ -87,6 +106,7 @@ class ProcessController:
         self._question_numbers = list(question_numbers or [])
         self._on_question_crops_missing = on_question_crops_missing
         self._question_review = question_review
+        self._progress_stages: tuple[ProcessStage, ...] = PROCESS_STAGES
 
     def process(
         self,
@@ -108,6 +128,7 @@ class ProcessController:
         recognition_dir = Path(recognition_dir)
         questions_dir = Path(questions_dir)
         output_dir = Path(output_dir)
+        self._progress_stages = PROCESS_STAGES
 
         if reset_workspace:
             # Guessing the run root (e.g. from a custom --output) could wipe the wrong folder.
@@ -171,12 +192,14 @@ class ProcessController:
         so a failed rerun keeps them. With ``workspace_root`` both dirs must lie
         inside it (or be empty) before anything runs.
         """
+        self._progress_stages = _FROM_CROPS_STAGES
         crops = self.transcribe_from_crops(
             pages_dir=pages_dir,
             recognition_dir=recognition_dir,
             questions_dir=questions_dir,
             crops_dir=crops_dir,
             workspace_root=workspace_root,
+            _inherit_progress=True,
         )
         return self._run_from_questions(
             pages_dir=Path(pages_dir),
@@ -195,6 +218,7 @@ class ProcessController:
         questions_dir: Path,
         crops_dir: Path | None = None,
         workspace_root: Path | None = None,
+        _inherit_progress: bool = False,
     ) -> Path | None:
         """Recognize the approved crops and write ``question.json`` files, then stop.
 
@@ -204,6 +228,8 @@ class ProcessController:
         pages_dir = Path(pages_dir)
         recognition_dir = Path(recognition_dir)
         questions_dir = Path(questions_dir)
+        if not _inherit_progress:
+            self._progress_stages = _TRANSCRIBE_STAGES
         crops = self._resolve_crops_dir(crops_dir)
 
         if workspace_root is not None:
@@ -242,6 +268,7 @@ class ProcessController:
     ) -> ProcessResult:
         """Continue from existing (possibly user-edited) question.json; never rewrites them."""
         questions_dir = Path(questions_dir)
+        self._progress_stages = _FROM_QUESTIONS_STAGES
         if not question_artifact_paths(questions_dir):
             raise QuestionsNotFoundError(questions_dir)
         if self._question_review is not None:
@@ -353,6 +380,7 @@ class ProcessController:
                 QuestionScoreSummary(
                     question_id=row.question_id,
                     question_number=row.question_number,
+                    part_label=row.part_label,
                     score=row.score,
                     maximum_score=row.maximum_score,
                     review_status=row.review_status,
@@ -406,10 +434,11 @@ class ProcessController:
     def _emit(self, stage: ProcessStage) -> None:
         if self._on_progress is None:
             return
+        stages = self._progress_stages
         self._on_progress(
             ProcessProgress(
                 stage=stage,
-                completed=PROCESS_STAGES.index(stage) + 1,
-                total=len(PROCESS_STAGES),
+                completed=stages.index(stage) + 1,
+                total=len(stages),
             )
         )

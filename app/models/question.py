@@ -44,6 +44,8 @@ class FigureRef(BaseModel):
 class Question(BaseModel):
     question_id: str
     question_number: int
+    # Sub-soal letter (``question_001a``); ``""`` for a whole soal and older runs.
+    part_label: str = Field(default="", pattern=r"^[a-z]{0,4}$")
     page_references: list[int] = Field(default_factory=list)
     image_regions: list[ImageRegionRef] = Field(default_factory=list)
     student_steps: list[StudentStep] = Field(default_factory=list)

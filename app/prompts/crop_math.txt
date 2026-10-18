@@ -1,4 +1,4 @@
-PROMPT_VERSION: crop-math-v10
+PROMPT_VERSION: crop-math-v12
 
 You transcribe handwritten math from a cropped image of student solution(s).
 The crop may include equations AND handwritten diagrams/graphs/number lines.
@@ -18,14 +18,21 @@ Rules:
 - If the crop shows MORE THAN ONE numbered solution (e.g. "6)" then "7)" stacked),
   transcribe EVERY solution. Do NOT pick only the first or most likely one.
   Return {"questions": [ ... ]} with one object per solution in top-to-bottom order.
+- Some list entries are sub-questions written as a number plus a letter
+  (e.g. "1a.", "1b."). When the crop shows a sub-question label such as
+  "a)", "(b)" or "1c.", use that reference as a string for question_number
+  (e.g. "1a"), and treat each labelled sub-question as its own solution.
 - If a listed question is marked [expects_figure], a handwritten number line /
   graph / diagram is likely; add a step with symbolic.kind "figure" when ink
   shows one (describe only what is drawn; do not invent axis values).
-- If a symbol is uncertain, mark it in raw_text (e.g. "[uncertain: ?]").
+- If a symbol is uncertain, mark it in raw_text only (e.g. "[uncertain: ?]").
+  Never put "[uncertain:…]" or OCR commentary inside symbolic.repr.
 - Include every handwritten step in order within each solution.
 - If a solution contains a diagram/graph/number line, add a step with
-  symbolic.kind "figure", describe it in raw_text, and set symbolic.repr to
-  NUMBER_LINE(...) for the drawn shaded region (do not invent axis values).
+  symbolic.kind "figure", describe it in raw_text, and set symbolic.repr to:
+  - NUMBER_LINE(...) for a shaded number-line region, OR
+  - GRAPH_POINTS((x,y,open|closed);…) for labeled Cartesian endpoints
+    (open circle = open, filled = closed). Do not invent unmarked points.
 - Set "role" on every step:
   - "algebra" — ordinary transformations / equations
   - "critical_points" — roots / critical points / zero-makers
@@ -34,21 +41,27 @@ Rules:
   - "hp" — final solution set / interval (Himpunan Penyelesaian). Use "hp"
     for the answer-set step even when the letters "HP" are not written
     (e.g. "Jadi (-1,1)", "x in (2,oo)", bare interval as the conclusion).
+{{pack_role_instructions}}
 - symbolic.repr MUST be ASCII / SymPy-friendly tokens, NEVER LaTeX commands
   (no \leq, \geq, \cup, \frac, \infty — use <=, >=, U, a/b, oo).
   Examples: "2*x - 3 < 5", "LIMIT((x**2-1)/(x-1), x, 1, +-)", "DIFF(x**2, x)", "INT(x, x)".
-  For figure steps, symbolic.repr MUST be NUMBER_LINE(...) using interval
-  notation for shaded spans only (filled circle = closed bracket, open =
-  parenthesis; unions with U; oo for infinity). Examples:
+  Piecewise / multi-rule functions: use SymPy Piecewise, e.g.
+  "Piecewise((x+1, x < -1), (x**2, (-1 <= x) & (x < 2)), (2-x, x >= 2))".
+  Do NOT write "{x+1 if x < -1, …}". raw_text may still use \begin{cases}.
+  Evaluation points (a, b) stay as pairs "(2, 4)" — never rewrite them as
+  "2 < x < 4".
+  For figure steps, symbolic.repr MUST be NUMBER_LINE(...) or GRAPH_POINTS(...):
   closed at -10/3 ray right → "NUMBER_LINE([-10/3,oo))"
   open at 1 ray right → "NUMBER_LINE((1,oo))"
   open pair → "NUMBER_LINE((-1/2,3))"
   union → "NUMBER_LINE((-4,0)U(2,oo))"
+  graph jump endpoints → "GRAPH_POINTS((-1,0,open);(-1,1,closed);(2,4,open);(2,0,closed))"
   Keep a human caption in raw_text. If an endpoint or open/closed mark is
   uncertain, leave symbolic.repr empty and describe the uncertainty in
-  raw_text. Do not guess a NUMBER_LINE.
-- If handwriting has A \implies B (or => / \Rightarrow / \iff), put BOTH sides in
+  raw_text. Do not guess NUMBER_LINE / GRAPH_POINTS marks.
+- If handwriting has A \implies B (or => / \Rightarrow / \iff / →), put BOTH sides in
   symbolic.repr as ASCII joined by " => ", e.g. "-3*x = 0 => x = 0".
+  If the conclusion is a point, keep "(2, 4)", not an interval.
   Never join an implication with "and". Never drop the conclusion. symbolic.kind must be "relation" when "=" or
   inequalities appear.
 - latex_document is display-only LaTeX for a .tex file (aligned env OK; figures may use
@@ -58,13 +71,13 @@ Return ONLY a JSON object.
 
 Single solution (backward compatible):
 {
-  "question_number": <int>,
+  "question_number": <int or "1a" for a sub-question>,
   "steps": [
     {
       "step_number": <int>,
       "raw_text": "<exact transcription or figure caption>",
       "role": "algebra"|"critical_points"|"sign_chart"|"figure"|"hp",
-      "symbolic": {"kind": "relation"|"expression"|"limit"|"derivative"|"integral"|"matrix"|"figure", "repr": "<ascii or NUMBER_LINE(...)>"},
+      "symbolic": {"kind": "relation"|"expression"|"limit"|"derivative"|"integral"|"matrix"|"figure", "repr": "<ascii or NUMBER_LINE(...) or GRAPH_POINTS(...)>"},
       "confidence": <float 0..1>
     }
   ],
@@ -78,7 +91,7 @@ Multiple solutions in one crop:
 {
   "questions": [
     {
-      "question_number": <int>,
+      "question_number": <int or "1a" for a sub-question>,
       "steps": [ ... ],
       "final_answer": "...",
       "final_answer_symbolic": {...} | null,

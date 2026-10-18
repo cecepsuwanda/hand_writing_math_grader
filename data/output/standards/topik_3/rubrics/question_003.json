@@ -1,0 +1,34 @@
+{
+  "question": 3,
+  "maximum_score": 10.0,
+  "criteria": [
+    {
+      "id": "domain",
+      "points": 0.625
+    },
+    {
+      "id": "range",
+      "points": 0.625
+    },
+    {
+      "id": "value_table",
+      "points": 0.625
+    },
+    {
+      "id": "figure",
+      "points": 1.25
+    },
+    {
+      "id": "final_answer",
+      "points": 1.25
+    },
+    {
+      "id": "algebra",
+      "points": 0.625
+    },
+    {
+      "id": "concept",
+      "points": 5.0
+    }
+  ]
+}

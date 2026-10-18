@@ -12,8 +12,9 @@ from app.functions.integral_normalize import rewrite_integral_notation
 from app.functions.interval_normalize import rewrite_interval_membership
 from app.functions.limit_normalize import rewrite_limit_notation
 from app.functions.matrix_normalize import rewrite_matrix_notation
+from app.functions.piecewise_normalize import rewrite_piecewise_notation
 from app.functions.transcendental_normalize import rewrite_transcendental_notation
-from app.functions.vector_normalize import rewrite_vector_notation
+from app.functions.vector_normalize import rewrite_vector_notation, rewrite_vector_tuples
 from app.interfaces.capability import Capability, NormalizeFn
 
 
@@ -32,9 +33,11 @@ class _FnCapability:
 
 # Deterministic order matching legacy ``math_normalize`` pipeline.
 _CAPABILITIES: dict[str, Capability] = {
+    "piecewise": _FnCapability("piecewise", rewrite_piecewise_notation),
     "matrix": _FnCapability("matrix", rewrite_matrix_notation),
     "det_inverse": _FnCapability("det_inverse", rewrite_det_inverse_notation),
     "vector": _FnCapability("vector", rewrite_vector_notation),
+    "vector_tuple": _FnCapability("vector_tuple", rewrite_vector_tuples),
     "abs": _FnCapability("abs", rewrite_abs_notation),
     "interval": _FnCapability("interval", rewrite_interval_membership),
     "limit": _FnCapability("limit", rewrite_limit_notation),
@@ -48,6 +51,7 @@ _CAPABILITIES: dict[str, Capability] = {
 
 # Legacy chain used without an active pack. ``indexed_roots`` is opt-in per
 # pack: in other topics ``x_0`` is a point (``\lim_{x \to x_0}``), not ``x``.
+# ``vector_tuple`` is opt-in too: elsewhere ``(a, b)`` is an open interval.
 ALL_CAPABILITY_IDS: tuple[str, ...] = (
     "matrix",
     "det_inverse",

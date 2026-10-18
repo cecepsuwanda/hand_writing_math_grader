@@ -71,6 +71,7 @@ from app.functions.json_extract import (
     repair_llm_json_syntax,
     salvage_judgement_object,
 )
+from app.functions.tex_tree import environment_body, top_level_items, unwrap_text_commands
 from app.functions.kunci_ingest import (
     build_exam_schema,
     extract_align_steps,
@@ -111,16 +112,31 @@ from app.functions.paths import (
     shorten_pdf_name,
     student_id_from_pdf_stem,
 )
-from app.functions.question_crops import write_question_crops
+from app.functions.function_ingest import (
+    compare_value_table_pairs,
+    extract_section_prose,
+    parse_value_table_pairs,
+    value_table_symbolic_payload,
+)
+from app.functions.kunci_finals import canonicalize_existence_final
+from app.functions.question_crops import empty_crop_warnings, write_question_crops
 from app.functions.question_merge import collect_latex_documents, merge_page_recognitions
 from app.functions.question_review import review_flags
+from app.functions.results_view import (
+    display_part_label,
+    dual_track_scores,
+    figures_section_heading,
+    split_grade_rows,
+)
 from app.functions.regions_artifact import write_regions_artifact
 from app.functions.question_split import (
     assign_provisional_by_stem,
     match_schema_final,
     match_schema_stem,
     split_questions_by_exam_schema,
+    split_questions_into_parts,
 )
+from app.functions.question_review_artifact import load_question_artifacts
 from app.functions.report_aggregate import aggregate_exam_report, summary_csv_rows
 from app.functions.report_artifact import load_exam_report
 from app.functions.sse import format_sse
@@ -132,7 +148,14 @@ from app.functions.run_layout import (
     safe_run_name,
     sanitize_run_name,
 )
+from app.functions.graph_points import (
+    compare_graph_points,
+    domain_claim_from_final,
+    extract_marked_graph_points,
+    parse_graph_points_repr,
+)
 from app.functions.score_aggregate import (
+    DEFAULT_PART_CRITERION_IDS,
     aggregate_question_grade,
     allocate_step_max_scores,
     fold_role_marks,
@@ -148,6 +171,7 @@ from app.functions.standard_extract import (
     standard_solution_path,
     standard_step_texts,
 )
+from app.functions.question_names import parse_question_ref, question_dir_name
 from app.functions.sign_chart import caption_signs
 from app.functions.step_align import align_student_steps_to_standard
 from app.functions.step_references import (
@@ -165,12 +189,20 @@ from app.functions.validation_artifact import (
 from app.functions.recognition_artifact import prune_stale_recognition
 from app.functions.workspace_reset import (
     clear_output_workspace,
+    delete_run_directory,
     ensure_resettable_dir,
     prepare_pipeline_workspace,
 )
 from app.interfaces.validator import StepValidator
 from app.models.defaults import DEFAULT_STUDENT_ID
-from app.models.exam_schema import ExamMethod, ExamMilestone, ExamPart, ExamQuestion, ExamSchema
+from app.models.exam_schema import (
+    ExamMethod,
+    ExamMilestone,
+    ExamPart,
+    ExamQuestion,
+    ExamSchema,
+    GraphPoint,
+)
 from app.models.grading import (
     ErrorType,
     QuestionGrade,
@@ -246,6 +278,7 @@ from app.services.pipeline_factory import (
     build_process_controller,
     build_validate_controller,
     current_prompt_versions,
+    delete_run_workspace,
     prepare_run_workspace,
 )
 from app.services.questions.extractor import QuestionExtractor
@@ -262,11 +295,17 @@ from app.topics.registry import (
 from app.topics.runtime import get_active_pack, using_pack
 from app.web import files as web_files
 from app.web.__main__ import main as web_main
+from app.web.deps import format_score, initials
 from app.web.jobs import JobKind, JobReporter, JobStatus
 from tests.support.asserts import assert_all_valid, assert_contains, assert_step_statuses
 from tests.support.builders import (
     MINI_KUNCI,
     Q1_KUNCI,
+    TOPIK1_KUNCI,
+    TOPIK2_KUNCI,
+    TOPIK3_KUNCI,
+    KUNCI_DIR,
+    TOPIK4_KUNCI,
     make_figure,
     make_question,
     make_rational_inequality_question,
@@ -518,6 +557,23 @@ class TestOutputReset:
         assert rubric.is_file()
         assert (other.root / 'report.json').is_file()
         assert other.questions_dir.is_dir()
+
+    def test_delete_run_directory_removes_whole_folder(self, tmp_path: Path) -> None:
+        root = tmp_path / 'output'
+        layout = build_run_layout(root, 'answer')
+        layout.pages_dir.mkdir(parents=True)
+        (layout.pages_dir / 'page_001.png').write_bytes(b'x')
+        other = build_run_layout(root, 'other')
+        other.questions_dir.mkdir(parents=True)
+        (other.root / 'keep.txt').write_text('ok', encoding='utf-8')
+        standards = root / 'standards' / 'exam_001'
+        standards.mkdir(parents=True)
+        (standards / 'rubric.json').write_text('{}', encoding='utf-8')
+        assert delete_run_workspace(layout) == 'answer'
+        assert not layout.root.exists()
+        assert (other.root / 'keep.txt').is_file()
+        assert (standards / 'rubric.json').is_file()
+        assert delete_run_directory(tmp_path / 'missing-run') == 'missing-run'
 
     def test_clear_output_workspace_preserves_standards(self, tmp_path: Path) -> None:
         root = tmp_path / 'output'
@@ -948,7 +1004,7 @@ class TestVisionRecognizer:
         recognizer = MagicMock()
         recognizer.output_dir = tmp_path / 'wrong'
         recognizer.recognize_page.return_value = PageRecognition(page_number=1, questions=[])
-        controller = RecognizeController(renderer=MagicMock(), recognizer=recognizer)
+        controller = RecognizeController(recognizer=recognizer)
         pages = [Page(page_number=1, image='page_001.png', width=10, height=10)]
         with pytest.raises(RecognitionPathMismatchError):
             controller.recognize_pages(pages, tmp_path / 'pages', tmp_path / 'recognition')
@@ -964,7 +1020,7 @@ class TestVisionRecognizer:
             return PageRecognition(page_number=page_number, questions=[])
 
         recognizer.recognize_page.side_effect = recognize_page
-        controller = RecognizeController(renderer=MagicMock(), recognizer=recognizer)
+        controller = RecognizeController(recognizer=recognizer)
         pages_dir = tmp_path / 'pages'
         pages_dir.mkdir()
         (pages_dir / 'page_001.png').write_bytes(b'x')
@@ -979,7 +1035,7 @@ class TestVisionRecognizer:
         recognizer = MagicMock()
         recognizer.output_dir = recognition_dir
         recognizer.recognize_page.return_value = PageRecognition(page_number=1, questions=[])
-        controller = RecognizeController(renderer=MagicMock(), recognizer=recognizer)
+        controller = RecognizeController(recognizer=recognizer)
         pages = [Page(page_number=1, image='page_001.png', width=10, height=10)]
         result = controller.recognize_pages(pages, tmp_path / 'pages', recognition_dir)
         assert result.artifact_paths == []
@@ -992,7 +1048,7 @@ class TestVisionRecognizer:
         recognizer.recognize_page_from_crops.return_value = PageRecognition(
             page_number=1, questions=[]
         )
-        controller = RecognizeController(renderer=MagicMock(), recognizer=recognizer)
+        controller = RecognizeController(recognizer=recognizer)
         pages_dir = tmp_path / 'pages'
         pages_dir.mkdir()
         (pages_dir / 'page_001.png').write_bytes(b'x')
@@ -1306,6 +1362,22 @@ class TestQuestionReview:
         flagged = review_flags(make_question(steps=[step]), min_confidence=0.8)
         assert [f.flags for f in flagged] == ([expected] if expected else [])
 
+    def test_review_flags_skips_missing_symbolic_for_not_symbolic_roles(self) -> None:
+        step = make_step(
+            1,
+            raw_text='radikan harus non-negatif',
+            role='concept',
+            confidence=0.9,
+        )
+        pack3 = get_pack('3')
+        assert review_flags(
+            make_question(steps=[step]),
+            min_confidence=0.8,
+            step_checks=pack3.step_checks,
+        ) == []
+        flagged = review_flags(make_question(steps=[step]), min_confidence=0.8)
+        assert [f.flags for f in flagged] == [[ReviewFlag.MISSING_SYMBOLIC]]
+
     @pytest.mark.parametrize(
         ('json_offset', 'expected'),
         [(10, ['question_001']), (0, []), (-10, [])],
@@ -1355,10 +1427,11 @@ class TestQuestionReview:
     @pytest.mark.parametrize(
         ('changes', 'message'),
         [
-            ({'question_number': 2}, 'question_number 2'),
+            ({'question_number': 2}, "folder diharapkan 'question_002'"),
             ({'question_number': 0}, 'question_number must be >= 1'),
+            ({'part_label': 'b'}, "folder diharapkan 'question_001b'"),
         ],
-        ids=['number-mismatch', 'number-zero'],
+        ids=['number-mismatch', 'number-zero', 'part-mismatch'],
     )
     def test_collect_rejects_number_not_matching_folder(self, tmp_path: Path, changes: dict, message: str) -> None:
         questions_dir, path = self._workspace(tmp_path)
@@ -1538,6 +1611,122 @@ class TestQuestionSchemaSplit:
         assert (output_dir / 'question_001' / 'question.json').is_file()
         assert (output_dir / 'question_002' / 'question.json').is_file()
         assert (output_dir / 'question_002' / 'latex_source.tex').is_file()
+
+    @staticmethod
+    def _sub_soal_schema() -> ExamSchema:
+        return build_exam_schema(TOPIK4_KUNCI, source='topik4')
+
+    def test_split_into_parts_by_mark_and_sub_stem(self) -> None:
+        question = make_question(
+            number=1,
+            final='10',
+            steps=[
+                make_step(1, raw_text='a) 1 - 2(-1) = 3'),
+                make_step(2, raw_text='1 + 2 = 3'),
+                make_step(3, raw_text=r'\lim_{t \to 3} \frac{t^2 + 4t - 21}{t - 3}'),
+                make_step(4, raw_text='t + 7 = 10'),
+            ],
+        )
+        questions, latex = split_questions_into_parts([question], self._sub_soal_schema(), {})
+        first, second = questions
+        assert [q.question_id for q in questions] == ['question_001a', 'question_001b']
+        assert [q.part_label for q in questions] == ['a', 'b']
+        assert [s.raw_text for s in first.student_steps] == ['a) 1 - 2(-1) = 3', '1 + 2 = 3']
+        assert [s.step_number for s in second.student_steps] == [1, 2]
+        assert (first.student_final_answer, second.student_final_answer) == ('1 + 2 = 3', '10')
+        assert {q.segmentation_status for q in questions} == {SegmentationStatus.MERGED}
+        assert set(latex) == {'question_001a', 'question_001b'}
+
+    def test_split_into_parts_by_bagian_mark(self) -> None:
+        schema = build_exam_schema(
+            r'''
+\begin{enumerate}
+\item Diketahui $f$ dan $g$.
+\begin{enumerate}
+\item Periksa apakah $(f \circ g)$ ada?
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Bagian (a), Periksa Syarat}
+\begin{align} R_g \cap D_f \neq \emptyset \end{align}
+% final: \text{ada}
+\end{itemize}
+\item Jika ada, tentukan $(f \circ g)(x)$.
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Bagian (b), Rumus}
+\begin{align} (f \circ g)(x) = |x| \end{align}
+% final: (f \circ g)(x) = |x|
+\end{itemize}
+\end{enumerate}
+\end{enumerate}
+''',
+            source='comp3',
+            topic_pack=get_pack('3'),
+        )
+        assert [q.ref for q in schema.questions] == ['1a', '1b']
+        question = make_question(
+            number=1,
+            final=r'|x|',
+            steps=[
+                make_step(1, raw_text='Bagian (a): R_g cap D_f nonempty'),
+                make_step(2, raw_text='jadi komposisi ada'),
+                make_step(3, raw_text='Bagian (b), rumus (f o g)(x) = |x|'),
+            ],
+        )
+        questions, _ = split_questions_into_parts([question], schema, {})
+        assert [q.question_id for q in questions] == ['question_001a', 'question_001b']
+        assert [s.raw_text for s in questions[0].student_steps] == [
+            'Bagian (a): R_g cap D_f nonempty',
+            'jadi komposisi ada',
+        ]
+        assert [s.raw_text for s in questions[1].student_steps] == [
+            'Bagian (b), rumus (f o g)(x) = |x|',
+        ]
+
+    def test_unmarked_answer_is_provisional_first_sub_soal(self) -> None:
+        question = make_question(number=2, steps=[make_step(1, raw_text='f(2) = 2')])
+        questions, _ = split_questions_into_parts([question], self._sub_soal_schema(), {})
+        assert [(q.question_id, q.segmentation_status) for q in questions] == [
+            ('question_002a', SegmentationStatus.PROVISIONAL)
+        ]
+
+    def test_part_hint_outside_key_is_dropped_and_whole_soal_keeps_latex(self) -> None:
+        hinted = make_question('x > 1', number=1, part_label='c')
+        questions, latex = split_questions_into_parts([hinted], self._mini_schema(), {1: 'tex'})
+        assert [(q.question_id, q.part_label) for q in questions] == [('question_001', '')]
+        assert latex == {'question_001': 'tex'}
+
+    def test_extractor_writes_sub_soal_folders(self, tmp_path: Path) -> None:
+        page = PageRecognition(
+            page_number=1,
+            questions=[
+                RecognizedQuestion(
+                    question_number=1,
+                    steps=[RecognizedStep(step_number=1, raw_text='a) 1 + 2 = 3')],
+                ),
+                RecognizedQuestion(
+                    question_number=1,
+                    part_label='b',
+                    steps=[RecognizedStep(step_number=1, raw_text='t + 7 = 10')],
+                    final_answer='10',
+                ),
+            ],
+        )
+        merged = merge_page_recognitions([page])
+        assert [q.question_id for q in merged] == ['question_001', 'question_001b']
+        output_dir = tmp_path / 'questions'
+        result = QuestionExtractor(exam_schema=self._sub_soal_schema()).extract_from_pages(
+            [page], output_dir
+        )
+        assert [q.question_id for q in result.questions] == ['question_001a', 'question_001b']
+        saved = Question.model_validate_json(
+            (output_dir / 'question_001b' / 'question.json').read_text(encoding='utf-8')
+        )
+        assert (saved.part_label, saved.student_final_answer) == ('b', '10')
+        assert (output_dir / 'question_001a' / 'latex_source.tex').is_file()
+        loaded, errors = load_question_artifacts(output_dir)
+        assert errors == []
+        assert [q.question_id for _, q in loaded] == ['question_001a', 'question_001b']
 
 
 class TestLatex:
@@ -2430,6 +2619,166 @@ class TestScoreAggregate:
         assert grade.score == pytest.approx(10.0)
         assert sum(s.max_score for s in grade.steps) == pytest.approx(8.0)
 
+    def test_default_part_buckets_ignore_domain_without_opt_in(self) -> None:
+        """Inequality default: domain points stay in the algebra pool (isolation)."""
+        rubric = Rubric(
+            question=1,
+            maximum_score=10.0,
+            criteria=[
+                RubricCriterion(id='algebra', points=5.0),
+                RubricCriterion(id='domain', points=2.0),
+                RubricCriterion(id='final_answer', points=3.0),
+            ],
+        )
+        per_step, final_max, part_max = allocate_step_max_scores(rubric, 2)
+        assert final_max == pytest.approx(3.0)
+        assert part_max == {}
+        assert sum(per_step) == pytest.approx(7.0)
+
+    def test_opt_in_part_buckets_pay_domain_for_function_pack(self) -> None:
+        rubric = Rubric(
+            question=1,
+            maximum_score=10.0,
+            criteria=[
+                RubricCriterion(id='algebra', points=5.0),
+                RubricCriterion(id='domain', points=2.0),
+                RubricCriterion(id='final_answer', points=3.0),
+            ],
+        )
+        reserved = get_pack('3').part_criterion_ids
+        per_step, final_max, part_max = allocate_step_max_scores(
+            rubric, 2, part_criterion_ids=reserved
+        )
+        assert final_max == pytest.approx(3.0)
+        assert part_max == {'domain': 2.0}
+        assert sum(per_step) == pytest.approx(5.0)
+        assert DEFAULT_PART_CRITERION_IDS == frozenset(
+            {'critical_points', 'sign_chart', 'figure'}
+        )
+
+    def test_concept_part_is_paid_from_part_statuses(self) -> None:
+        rubric = Rubric(
+            question=1,
+            maximum_score=10.0,
+            criteria=[
+                RubricCriterion(id='algebra', points=5.0),
+                RubricCriterion(id='concept', points=5.0),
+            ],
+        )
+        validation = make_validation(ValidationStatus.VALID, ValidationStatus.VALID)
+        grade = self._grade(
+            validation,
+            rubric=rubric,
+            part_statuses={'concept': (ValidationStatus.VALID, 'covers key ideas', 1.0)},
+            part_criterion_ids=get_pack('3').part_criterion_ids,
+        )
+        concept = next(s for s in grade.steps if s.part_id == 'concept')
+        assert concept.score == pytest.approx(5.0)
+        assert concept.max_score == pytest.approx(5.0)
+
+    def test_concept_without_comparer_earns_zero_not_half(self) -> None:
+        """Missing ConceptComparer must not grant silent UNCERTAIN half-credit."""
+        from app.services.grading.concept_comparer import NO_REASONING_REASON
+
+        rubric = Rubric(
+            question=1,
+            maximum_score=10.0,
+            criteria=[
+                RubricCriterion(id='algebra', points=5.0),
+                RubricCriterion(id='concept', points=5.0),
+            ],
+        )
+        validation = make_validation(ValidationStatus.VALID, ValidationStatus.VALID)
+        grade = self._grade(
+            validation,
+            rubric=rubric,
+            part_statuses={
+                'concept': (ValidationStatus.UNCERTAIN, NO_REASONING_REASON, 0.0)
+            },
+            part_criterion_ids=get_pack('3').part_criterion_ids,
+        )
+        concept = next(s for s in grade.steps if s.part_id == 'concept')
+        assert concept.score == pytest.approx(0.0)
+        assert concept.max_score == pytest.approx(5.0)
+
+    def test_concept_comparer_uses_llm_fraction(self) -> None:
+        from app.services.grading.concept_comparer import ConceptComparer
+
+        schema = ExamSchema(
+            source='t',
+            topic_id='3',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='domain of sqrt',
+                    milestones=[
+                        ExamMilestone(
+                            role='concept',
+                            latex='radikan harus non-negatif',
+                            steps=['akar kuadrat memerlukan radikan >= 0'],
+                        )
+                    ],
+                )
+            ],
+        )
+        client = FakeClient(
+            '{"status":"valid","reason":"mentions radicand","fraction":0.8,"confidence":0.9}'
+        )
+        comparer = ConceptComparer(client, model='reason', exam_schema=schema)
+        question = make_question(
+            number=1,
+            steps=[
+                make_step(
+                    1,
+                    raw_text='akar harus non negatif karena di dalam akar',
+                    role='concept',
+                )
+            ],
+        )
+        status, reason, fraction = comparer.compare(question)
+        assert status == ValidationStatus.VALID
+        assert fraction == pytest.approx(0.8)
+        assert 'concept-grade' in reason
+        empty = ConceptComparer(client, model='', exam_schema=schema)
+        assert empty.compare(question)[0] == ValidationStatus.UNCERTAIN
+
+    def test_concept_comparer_falls_back_on_invalid_json(self) -> None:
+        from app.services.grading.concept_comparer import ConceptComparer, HEURISTIC_REASON
+
+        schema = ExamSchema(
+            source='t',
+            topic_id='3',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='domain of sqrt',
+                    milestones=[
+                        ExamMilestone(
+                            role='concept',
+                            latex='radikan harus non-negatif karena akar kuadrat',
+                            steps=['radikan non-negatif', 'akar kuadrat'],
+                        )
+                    ],
+                )
+            ],
+        )
+        client = FakeClient('not-json {broken')
+        comparer = ConceptComparer(client, model='reason', exam_schema=schema)
+        question = make_question(
+            number=1,
+            steps=[
+                make_step(
+                    1,
+                    raw_text='akar kuadrat sehingga radikan non-negatif',
+                    role='concept',
+                )
+            ],
+        )
+        status, reason, fraction = comparer.compare(question)
+        assert HEURISTIC_REASON in reason
+        assert fraction is not None and fraction > 0
+        assert status in {ValidationStatus.VALID, ValidationStatus.INVALID}
+
     def test_aggregate_full_credit(self) -> None:
         grade = self._grade(make_validation(*[ValidationStatus.VALID] * 4))
         assert grade.score == pytest.approx(10.0)
@@ -2909,6 +3258,19 @@ class TestStepGrader:
         assert result.skipped == ['question_002']
         assert 'sum to 9' in caplog.text
 
+    def test_sub_soal_uses_its_own_rubric_and_solution(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        workspace.add_rubric(sample_rubric(), number=1, part_label='b')
+        workspace.add_solution('% final answer\nx < 7\n', number=1, part_label='b')
+        workspace.add_question(
+            make_question('x-7<0', 'x<7', final='x<7', part_label='b'),
+            make_validation(ValidationStatus.VALID, ValidationStatus.VALID, part_label='b'),
+        )
+        grade = workspace.grade(with_comparer=True).grades[0]
+        assert (grade.question_id, grade.part_label) == ('question_001b', 'b')
+        assert grade.standard_final_status == ValidationStatus.VALID
+        assert grade.score == pytest.approx(10.0)
+
     def test_all_rubrics_missing_raises(self, tmp_path: Path) -> None:
         workspace = GradingWorkspace(tmp_path)
         workspace.add_question(
@@ -3024,6 +3386,35 @@ class TestStepGrader:
         grade = workspace.grade(role_rubric_parts=get_pack('1.5').role_rubric_parts).grades[0]
         per_step = [s.max_score for s in grade.steps if s.step_number > 0]
         assert per_step == pytest.approx([3.0, 0.0, 0.0])
+
+    def test_concept_without_comparer_scores_zero(self, tmp_path: Path) -> None:
+        from app.services.grading.concept_comparer import NO_REASONING_REASON
+
+        rubric = Rubric(
+            question=1,
+            maximum_score=10.0,
+            criteria=[
+                RubricCriterion(id='algebra', points=5.0),
+                RubricCriterion(id='concept', points=5.0),
+            ],
+        )
+        workspace = GradingWorkspace(tmp_path, rubric)
+        workspace.add_question(
+            make_question('x-4<0', 'x<4', final='x<4'),
+            make_validation(ValidationStatus.VALID, ValidationStatus.VALID),
+        )
+        pack3 = get_pack('3')
+        grade = workspace.grade(
+            role_rubric_parts=pack3.role_rubric_parts,
+            part_criterion_ids=pack3.part_criterion_ids,
+        ).grades[0]
+        # GradingWorkspace.grade does not wire ConceptComparer; StepGrader must
+        # record fraction 0 (not silent UNCERTAIN half-credit).
+        assert grade.part_statuses is not None
+        assert grade.part_statuses.get('concept') == ValidationStatus.UNCERTAIN.value
+        concept = next(s for s in grade.steps if s.part_id == 'concept')
+        assert concept.score == pytest.approx(0.0)
+        assert NO_REASONING_REASON in (concept.feedback or '')
 
     @pytest.mark.parametrize(
         ('figures', 'status', 'figure_score'),
@@ -3280,6 +3671,56 @@ class TestStandardComparer:
         result = StandardFinalComparer(q1_standard(tmp_path)).compare(make_question('x<5', final='x < 5'))
         assert result is not None
         assert result[0] == ValidationStatus.INVALID
+
+    def test_comparer_existence_final_ada(self, tmp_path: Path) -> None:
+        schema = ExamSchema(
+            source='ada',
+            topic_id='3',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    part_label='a',
+                    stem='ada?',
+                    final=r'\text{ada}',
+                    final_symbolic=SymbolicPayload(kind='expression', repr='ada'),
+                )
+            ],
+        )
+        comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
+        ok = comparer.compare(make_question(number=1, part_label='a', final='ada'))
+        assert ok is not None and ok[0] == ValidationStatus.VALID
+        bad = comparer.compare(make_question(number=1, part_label='a', final='tidak ada'))
+        assert bad is not None and bad[0] == ValidationStatus.INVALID
+
+    def test_value_table_milestone_uses_pair_match(self, tmp_path: Path) -> None:
+        schema = ExamSchema(
+            source='vt',
+            topic_id='3',
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem='tabel',
+                    milestones=[
+                        ExamMilestone(
+                            role='value_table',
+                            latex='(-7, 4) ; (0, 3)',
+                            steps=['(-7, 4)', '(0, 3)'],
+                        )
+                    ],
+                )
+            ],
+        )
+        comparer = StandardFinalComparer(tmp_path, exam_schema=schema)
+        question = make_question(
+            number=1,
+            steps=[
+                make_step(1, raw_text='(-7, 4)', role='value_table'),
+                make_step(2, raw_text='(0, 3)', role='value_table'),
+            ],
+        )
+        marks = comparer.compare_milestones(question)
+        assert 'value_table' in marks
+        assert marks['value_table'][0] == ValidationStatus.VALID
 
     @pytest.mark.parametrize(
         ('question', 'reason'),
@@ -3795,6 +4236,310 @@ class TestKunciIngest:
         assert load_question_stems_from_kunci(empty) == []
         assert load_question_stems_from_kunci(tmp_path / 'missing') == []
 
+    @staticmethod
+    def _kunci_folder(tmp_path: Path) -> Path:
+        folder = tmp_path / 'kunci'
+        folder.mkdir()
+        (folder / 'jawaban_tugas_1.tex').write_text(MINI_KUNCI, encoding='utf-8')
+        (folder / 'tugas_topik_4.tex').write_text(TOPIK4_KUNCI, encoding='utf-8')
+        return folder
+
+    def test_load_question_stems_pick_the_topic_chapter_file(self, tmp_path: Path) -> None:
+        folder = self._kunci_folder(tmp_path)
+        assert [n for n, _ in load_question_stems_from_kunci(folder, topic_id='4')] == [1, 1, 2, 2]
+        assert load_question_stems_from_kunci(folder, topic_id='2') == []
+        assert [n for n, _ in load_question_stems_from_kunci(folder)] == [1, 2]
+
+    def test_ingest_dir_picks_the_pack_chapter_file(self, tmp_path: Path) -> None:
+        folder = self._kunci_folder(tmp_path)
+        standard = tmp_path / 'std'
+        KunciIngester(standard, topic_id='4').ingest_dir(folder)
+        schema = load_exam_schema(standard)
+        assert schema is not None
+        assert (schema.source, schema.topic_id) == ('tugas_topik_4.tex', '4')
+        with pytest.raises(AmbiguousKunciDirError, match='tugas_topik_4.tex'):
+            KunciIngester(tmp_path / 'std2', topic_id='2').ingest_dir(folder)
+
+    def test_limit_pack_accepts_tugas_topik_4(self, tmp_path: Path) -> None:
+        kunci = KUNCI_DIR / 'tugas_topik_4.tex'
+        standard = tmp_path / 'std'
+        written = KunciIngester(standard, topic_id='4').ingest_file(kunci)
+        schema = load_exam_schema(standard)
+        assert schema is not None
+        finals = {q.ref: q.final for q in schema.questions}
+        assert finals == {
+            '1a': '3', '1b': '10', '1c': '6',
+            '2a': '0', '2b': '1', '2c': '1', '2d': '2', '2e': r'\text{tidak ada}',
+            '2f': '2', '2g': '2', '2h': '0{,}5',
+            '3a': '2', '3b': '2',
+            '4a': '3', '4b': r'\frac{9}{2}', '4c': '0',
+            '5a': r'\infty', '5b': r'\frac{3}{2}', '5c': '0',
+        }
+        assert len(written) == 2 * len(finals) + 1
+        assert not any(q.expects_figure for q in schema.questions)
+        by_ref = {q.ref: q for q in schema.questions}
+        assert [p.kind for p in by_ref['1b'].parts] == ['algebra', 'indeterminate', 'hp']
+        assert [p.kind for p in by_ref['3a'].parts] == ['algebra', 'one_sided', 'hp']
+        assert by_ref['5a'].final_symbolic is not None and by_ref['5a'].final_symbolic.repr == 'oo'
+        assert by_ref['1a'].stem_symbolic is not None
+        assert 'LIMIT((1 - 2x), x, -1, +-)' in by_ref['1a'].stem_symbolic.repr
+        rubric = RubricLoader(standard).load(1, 'b')
+        assert [(c.id, c.points) for c in rubric.criteria] == [
+            ('algebra', 6.0), ('indeterminate', 1.0), ('final_answer', 3.0)
+        ]
+        assert RubricLoader(standard).load(2, 'f').maximum_score == 10.0
+
+    def test_limit_pack_falls_back_to_the_conclusion_value(self) -> None:
+        tex = r'''
+\begin{enumerate}
+\item Tentukan $\lim_{x \to 2} (x + 1)$.
+
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Substitusi Langsung}
+\begin{align}
+\lim_{x \to 2} (x + 1) &= 2 + 1
+\end{align}
+Jadi $\displaystyle\lim_{x \to 2} (x + 1) = 3$.
+\end{itemize}
+\end{enumerate}
+'''
+        (q,) = build_exam_schema(tex, source='t', topic_pack=get_pack('4')).questions
+        assert q.final == '3'
+        assert [p.kind for p in q.parts] == ['algebra', 'hp']
+
+    def test_function_pack_derives_number_line_from_domain_final(self) -> None:
+        tex = r'''
+\begin{enumerate}
+\item Domain $f(x)=\sqrt{9-x}$.
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 2: Tentukan Domain}
+\begin{align}
+D_f &= (-\infty, 9]
+\end{align}
+\item \textbf{Langkah 3: Tentukan Range}
+\begin{align}
+R_f &= [0, \infty)
+\end{align}
+% final: D_f = (-\infty, 9]
+% final: R_f = [0, \infty)
+\end{itemize}
+\end{enumerate}
+'''
+        (q,) = build_exam_schema(tex, source='f3', topic_pack=get_pack('3')).questions
+        assert q.expects_figure is True
+        assert q.number_line is not None and q.number_line.intervals
+        assert not q.graph_points
+        by_role = {m.role: m for m in q.milestones}
+        assert by_role['domain'].title == 'Tentukan Domain'
+        assert by_role['range'].title == 'Tentukan Range'
+        # Pack 1.5 on the same tex must not invent expects_figure from D_f alone.
+        (other,) = build_exam_schema(tex, source='f3', topic_pack=get_pack('1.5')).questions
+        assert other.expects_figure is False
+        assert other.number_line is None
+
+    def test_graph_points_marker_and_compare(self) -> None:
+        body = '% graph_points: (-1, 0, open); (-1, 1, closed)'
+        points = extract_marked_graph_points(body)
+        assert [(p.x, p.y, p.closed) for p in points] == [('-1', '0', False), ('-1', '1', True)]
+        assert domain_claim_from_final(r'D_f = (-oo, 9] ; R_f = [0, oo)') == '(-oo,9]'
+        parsed = parse_graph_points_repr('GRAPH_POINTS((-1,0,open);(-1,1,closed))')
+        assert compare_graph_points(points, parsed)[0] == ValidationStatus.VALID
+        assert compare_graph_points(points, [GraphPoint(x='-1', y='0', closed=True)])[0] == (
+            ValidationStatus.INVALID
+        )
+
+    def test_function_rich_section_ingest_prose_table_and_split(self) -> None:
+        tex = r'''
+\begin{enumerate}
+\item Piecewise.
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Identifikasi Setiap Potongan}
+Fungsi piecewise dengan tiga potongan garis dan parabola.
+\item \textbf{Langkah 2: Periksa Titik Ujung Selang}
+Grafik melompat di ujung selang.
+% concept: lompatan di titik ujung
+\item \textbf{Langkah 3: Tabel Nilai}
+\begin{center}
+\begin{tabular}{c|c|c}
+$x$ & Potongan & $f(x)$ \\ \hline
+$-1$ & $x^2$ & $1$ \\
+$2$ & $2 - x$ & $0$
+\end{tabular}
+\end{center}
+\item \textbf{Langkah 4: Gambar Grafik}
+\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}
+\item \textbf{Langkah 5: Domain dan Range}
+\begin{align}
+D_f &= \mathbb{R} \\
+R_f &= (-\infty, 4)
+\end{align}
+% final: D_f = \mathbb{R}
+% final: R_f = (-\infty, 4)
+% value_table: (0, 0)
+\end{itemize}
+\end{enumerate}
+'''
+        (q,) = build_exam_schema(tex, source='rich3', topic_pack=get_pack('3')).questions
+        by_role = {m.role: m for m in q.milestones}
+        assert 'concept' in by_role and by_role['concept'].steps
+        assert any('lompatan' in s.lower() or 'melompat' in s.lower() for s in by_role['concept'].steps)
+        assert by_role['concept'].title  # Identifikasi… or Periksa Titik Ujung…
+        assert by_role['value_table'].title == 'Tabel Nilai'
+        assert '(-1, 1)' in by_role['value_table'].steps
+        assert '(2, 0)' in by_role['value_table'].steps
+        assert '(0, 0)' in by_role['value_table'].steps
+        assert any('D_f' in s for s in by_role['domain'].steps)
+        assert any('R_f' in s for s in by_role['range'].steps)
+        assert 'range' in {p.kind for p in q.parts}
+        assert not getattr(get_pack('1.5'), 'rich_section_ingest', False)
+        from app.functions.milestone_pattern import build_expected_milestones
+
+        slots = build_expected_milestones(q)
+        assert slots and slots[0].role == 'concept'
+        assert any(s.role == 'figure' for s in slots)  # expects_figure from tikz
+        vt = by_role['value_table']
+        assert vt.symbolic is not None and vt.symbolic.repr.startswith('VALUE_TABLE(')
+        assert all(
+            s is None or (s.repr or '').startswith('VALUE_TABLE(')
+            for s in (vt.steps_symbolic or [])
+        )
+        assert q.number_line is None
+
+    def test_prose_unwraps_inline_math_and_existence_final(self) -> None:
+        prose = extract_section_prose(
+            r'Karena $a > 0$, parabola terbuka ke atas. Radikan harus non-negatif.'
+        )
+        assert any('a > 0' in chunk for chunk in prose)
+        assert canonicalize_existence_final(r'\text{ada}') == 'ada'
+        assert canonicalize_existence_final(r'\text{tidak ada}') == 'tidak ada'
+        assert canonicalize_existence_final(r'D_f = [0,\infty)') is None
+        pairs = parse_value_table_pairs(['(-7, 4)', 'f(0)=3'])
+        assert ('-7', '4') in pairs and ('0', '3') in pairs
+        status, _reason, fraction = compare_value_table_pairs(
+            [('-7', '4'), ('0', '3')],
+            [('-7', '4')],
+        )
+        assert status == ValidationStatus.INVALID
+        assert fraction == pytest.approx(0.5)
+        payload = value_table_symbolic_payload(['(-7, 4)'])
+        assert payload is not None and 'VALUE_TABLE' in payload.repr
+
+    def test_empty_crop_warnings_list_missing_soal(self) -> None:
+        assert empty_crop_warnings({1: ['a.png'], 4: []}, [1, 4, 5]) == [
+            'Soal 4, 5 belum punya region crop — akan dinilai TIDAK DIJAWAB '
+            'sampai diberi crop di halaman Label.'
+        ]
+        assert empty_crop_warnings({1: ['a.png']}, [1]) == []
+
+    @pytest.mark.parametrize(
+        ('topic_id', 'refs', 'figures', 'finals', 'parts', 'symbolic'),
+        [
+            (
+                '3',
+                ['1a', '1b', '2', '3', '4a', '4b', '5a', '5b', '6a', '6b'],
+                ['1a', '1b', '2', '3'],
+                {
+                    '1a': r'D_f = (-\infty, 9] ; R_f = [0, \infty)',
+                    '2': r'D_f = \mathbb{R} ; R_f = (-\infty, 4)',
+                    '4a': r'\text{ada}',
+                    '4b': (
+                        r'(f \circ g)(x) = |x| ; (f \circ g)(5) = 5 ; '
+                        r'D_{f \circ g} = (-\infty, \infty) ; R_{f \circ g} = [0, \infty)'
+                    ),
+                    '6a': r'\text{tidak ada}',
+                    '6b': r'\text{tidak ada}',
+                },
+                {
+                    '1a': ['algebra', 'concept', 'domain', 'range', 'value_table', 'figure', 'hp'],
+                    '2': ['algebra', 'concept', 'domain', 'range', 'value_table', 'figure', 'hp'],
+                    '4a': ['algebra', 'concept', 'domain', 'range', 'composition', 'hp'],
+                    '4b': ['algebra', 'domain', 'range', 'composition', 'hp'],
+                    '6a': ['algebra', 'concept', 'domain', 'range', 'composition', 'hp'],
+                },
+                {'4a': 'ada', '6a': 'tidak ada'},
+            ),
+            (
+                '5', ['1', '2a', '2b', '3', '4a', '4b', '5'], ['2a'],
+                {'3': r'a = \frac{1}{2} ; b = \frac{1}{2}', '4a': 'c = 1'},
+                {'1': ['algebra', 'one_sided', 'function_value', 'continuity', 'hp'], '2a': ['figure']},
+                {'4a': 'c = 1'},
+            ),
+            (
+                '6', ['1', '2', '3', '4a', '4b', '4c', '4d', '4e', '4f', '5a', '5b', '6'], ['6'],
+                {'2': "f'(3) = 6", '5b': "f''(x) = 48(2x - 3)^2", '6': r'y = 6x + 1 ; y = -\frac{1}{6}x + 1'},
+                {'1': ['algebra', 'definition', 'hp'], '2': ['algebra', 'one_sided_derivative', 'hp'],
+                 '6': ['algebra', 'tangent_line', 'figure', 'hp']},
+                {'4c': "f'(x) = 2x sin(x) + x^2 cos(x)"},
+            ),
+            (
+                '7', ['1a', '1b', '2a', '2b', '2c', '2d', '3a', '3b', '3c', '4a', '4b', '5a', '5b', '5c', '5d'], [],
+                {'2d': '-6', '4a': r'\frac{35}{2}', '5d': r'\frac{9}{2}'},
+                {'1a': ['algebra', 'antiderivative', 'hp'], '2a': ['algebra', 'integral_property', 'hp'],
+                 '3a': ['algebra', 'ftc', 'hp'], '4a': ['algebra', 'antiderivative', 'evaluate_bounds', 'hp'],
+                 '5a': ['algebra', 'substitution', 'hp']},
+                {'3c': "G'(x) = ((3x^2)/( sqrt(1 + x^9)))"},
+            ),
+            (
+                '8', ['1a', '1b', '1c', '1d', '1e', '1f', '2a', '2b', '2c', '2d', '2e', '2f'], [],
+                {'1b': r"f'(x) = 4\csc 4x", '2a': r'2\ln|2x + 1| + C', '2f': r'\frac{1}{3}\ln 33'},
+                {'1a': ['algebra', 'domain', 'log_rule', 'hp'], '1e': ['algebra', 'chain_rule', 'hp'],
+                 '2a': ['algebra', 'substitution', 'hp']},
+                {'1b': "f'(x) = 4 csc(4x)", '2a': '2 ln Abs(2x + 1) + C', '2f': '((1)/(3)) ln(33)'},
+            ),
+            (
+                '9', ['1a', '1b', '1c', '2a', '2b', '2c', '2d', '2e', '2f', '3'], [],
+                {'2b': '35', '2e': '18', '3': 'a = 5 ; b = -3 ; c = 4 ; d = 1'},
+                {'2a': ['algebra', 'size_check', 'transpose', 'hp'], '2b': ['algebra', 'trace', 'hp'],
+                 '3': ['algebra', 'matrix_equation', 'hp']},
+                {'1a': 'MATRIX([[-2,3,2],[1,2,-1]])', '2f': 'MATRIX([[0,0,0],[0,0,0],[0,0,0]])'},
+            ),
+            (
+                '10', ['1a', '1b', '1c', '2', '3a', '3b'], [],
+                {'1a': r'\det(A) = -8', '2': 'a = 2 ; b = -1'},
+                {'1c': ['algebra', 'determinant', 'cofactor', 'hp'], '2': ['algebra', 'singular_condition', 'hp'],
+                 '3a': ['algebra', 'determinant', 'cofactor', 'inverse', 'hp']},
+                {'1a': '-8', '3a': 'MATRIX([[3,-5,-5],[-3,4,5],[2,-2,-3]])'},
+            ),
+            (
+                '11', ['1a', '1b', '2a', '2b', '3a', '3b', '3c', '4', '5'], [],
+                {'1b': r'\sqrt{205}', '3b': r'\text{sudut tumpul}', '5': '64'},
+                {'1a': ['algebra', 'components', 'hp'], '1b': ['algebra', 'norm', 'hp'],
+                 '4': ['algebra', 'dot', 'cross', 'hp']},
+                {'1a': 'MATRIX([[-5],[12],[-6]])', '4': 'MATRIX([[12],[30],[-6]])', '3a': None},
+            ),
+        ],
+        ids=['fungsi-3', 'kontinuitas-5', 'turunan-6', 'integral-7', 'transenden-8', 'matriks-9',
+             'determinan-10', 'vektor-11'],
+    )
+    def test_chapter_pack_accepts_its_kunci(
+        self,
+        tmp_path: Path,
+        topic_id: str,
+        refs: list[str],
+        figures: list[str],
+        finals: dict[str, str],
+        parts: dict[str, list[str]],
+        symbolic: dict[str, str | None],
+    ) -> None:
+        standard = tmp_path / 'std'
+        written = KunciIngester(standard, topic_id=topic_id).ingest_file(KUNCI_DIR / f'tugas_topik_{topic_id}.tex')
+        schema = load_exam_schema(standard)
+        assert schema is not None and schema.topic_id == topic_id
+        by_ref = {q.ref: q for q in schema.questions}
+        assert list(by_ref) == refs
+        assert [ref for ref, q in by_ref.items() if q.expects_figure] == figures
+        assert {ref: by_ref[ref].final for ref in finals} == finals
+        assert {ref: [p.kind for p in by_ref[ref].parts] for ref in parts} == parts
+        assert {
+            ref: (by_ref[ref].final_symbolic.repr if by_ref[ref].final_symbolic else None) for ref in symbolic
+        } == symbolic
+        rubrics = [RubricLoader(standard).load(q.number, q.part_label) for q in schema.questions]
+        assert all(r.maximum_score == 10.0 for r in rubrics)
+        assert len([p for p in written if p.parent.name == 'rubrics']) == len(refs)
+
     def test_load_question_stems_from_file(self, tmp_path: Path) -> None:
         kunci = tmp_path / 'kunci.tex'
         kunci.write_text(MINI_KUNCI, encoding='utf-8')
@@ -4211,6 +4956,274 @@ x &\geq -\frac{10}{3}
         }
         assert topics == {'topik_1': '1.5', 'topik_2': '2'}
 
+    def test_jawab_format_methods_nested_under_critical_points(self) -> None:
+        schema = build_exam_schema(TOPIK1_KUNCI, source='topik1')
+        assert len(schema.questions) == 1
+        q = schema.questions[0]
+        assert q.stem == '$2x^2 - 5x - 3 < 0$'
+        assert q.final == r'\left(-\frac{1}{2}, 3\right)'
+        assert [p.kind for p in q.parts] == [
+            'algebra', 'critical_points', 'sign_chart', 'figure', 'hp'
+        ]
+        assert [m.id for m in q.methods] == ['factoring', 'quadratic_formula']
+        assert len(q.steps) == 2
+        critical = next(m for m in q.milestones if m.role == 'critical_points')
+        # the first alternative method under "Titik Kritis" fills the milestone
+        assert critical.steps == q.methods[0].steps
+        assert q.number_line is not None and q.number_line.intervals
+        assert len(ingest_kunci_tex(TOPIK1_KUNCI)) == 1
+
+    def test_cara_paths_become_methods_with_canonical_first_path(self) -> None:
+        schema = build_exam_schema(TOPIK2_KUNCI, source='topik2')
+        assert len(schema.questions) == 2
+        q1, q2 = schema.questions
+        assert [m.id for m in q1.methods] == ['sifat_2', 'sifat_1']
+        assert [m.label for m in q1.methods] == ['Sifat 2', 'Sifat 1']
+        assert q1.steps == []
+        assert any('(x + 1)(x + 3)' in step for step in q1.methods[1].steps)
+        # milestones only come from Cara 1, which has no critical-points step
+        assert 'critical_points' not in {m.role for m in q1.milestones}
+        assert [p.kind for p in q1.parts] == ['algebra', 'figure', 'hp']
+        assert q1.final == '(-3, -1)'
+        assert 'Jawab' not in q2.stem and 'Syarat' not in q2.stem
+        assert q2.final == (
+            r'\left(-\infty, -\frac{9}{19}\right] \cup \left[-\frac{5}{23}, \infty\right)'
+        )
+        assert q2.expects_figure is False
+
+    @pytest.mark.parametrize(
+        ('item', 'expected'),
+        [
+            (r'\item $x>0$ HP: $(0, \infty)$', r'(0, \infty)'),
+            (r'\item $x>0$ $\text{HP} = (0, \infty)$', r'(0, \infty)'),
+            (r'\item $x>0$ $\text{HP} = A \cap B = [1, 2]$', '[1, 2]'),
+            (r'\item $x>0$', None),
+        ],
+        ids=['colon', 'text-equals', 'chain-last-rhs', 'none'],
+    )
+    def test_extract_hp_final_forms(self, item: str, expected: str | None) -> None:
+        assert extract_hp_final(item) == expected
+
+    def test_tex_tree_top_level_items_skip_nested_lists(self) -> None:
+        body = environment_body(
+            r'\begin{enumerate}\item A \begin{enumerate}\item a1 \item a2'
+            r'\end{enumerate}\item B\end{enumerate}',
+            'enumerate',
+        )
+        assert body is not None
+        items = [item.strip() for item in top_level_items(body)]
+        assert len(items) == 2
+        assert items[0].startswith(r'\item A') and 'a2' in items[0]
+        assert items[1] == r'\item B'
+        assert unwrap_text_commands(r'\textbf{Langkah 1: \emph{X}} sisa') == (
+            r'Langkah 1: \emph{X} sisa'
+        )
+
+    def test_tikz_in_stem_does_not_expect_figure(self) -> None:
+        tex = r'''
+\begin{enumerate}
+\item Diberikan grafik berikut:
+\begin{center}
+\begin{tikzpicture}
+\draw (0,0)--(1,1);
+\end{tikzpicture}
+\end{center}
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Baca Limit}
+\begin{align}
+\lim_{x \to 1} f(x) &= 1
+\end{align}
+\end{itemize}
+\end{enumerate}
+'''
+        items = split_enumerate_items(tex)
+        assert len(items) == 1
+        assert item_expects_figure(items[0]) is False
+        q = build_exam_schema(tex, source='stem-figure').questions[0]
+        assert q.stem.startswith('Diberikan grafik')
+        assert q.steps == [r'\lim_{x \to 1} f(x) = 1']
+
+    def test_final_markers_win_over_hp_and_join(self) -> None:
+        tex = r'''
+\begin{enumerate}
+\item Selesaikan sistem.
+\textbf{Jawab:}
+\begin{align*}
+x + y &= 5
+\end{align*}
+$\text{HP} = \{(2, 3)\}$
+% final: x = 2
+% final: y = 3
+\end{enumerate}
+'''
+        q = build_exam_schema(tex, source='markers').questions[0]
+        assert q.final == 'x = 2 ; y = 3'
+        assert q.parts[-1].kind == 'hp'
+
+    def test_align_rows_keep_matrices_and_split_columns(self) -> None:
+        item = r'''
+\begin{align*}
+A + B &= \begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix} \nonumber \\
+\det A &= \begin{vmatrix} 1 & 2 \\ 3 & 4 \end{vmatrix} = -2 % komentar & \\
+\end{align*}
+\begin{align*}
+x &= 1, & y &= 2 \\
+\text{Ekspansi: } & (x+1)^2
+\end{align*}
+'''
+        assert extract_align_steps(item) == [
+            r'A + B = \begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}',
+            r'\det A = \begin{vmatrix} 1 & 2 \\ 3 & 4 \end{vmatrix} = -2',
+            'x = 1',
+            'y = 2',
+            '(x+1)^2',
+        ]
+
+    def test_preamble_one_arg_macro_and_color_are_expanded(self) -> None:
+        tex = r'''
+\newcommand{\dg}[1]{\textcolor{Red}{#1}}
+\begin{document}
+\begin{enumerate}
+\item Tentukan $\lim_{x \to 2} (x + 1)$.
+\textbf{Jawab:}
+\begin{align*}
+\lim_{x \to 2} (x + 1) &= \dg{3}
+\end{align*}
+% final: 3
+\end{enumerate}
+\end{document}
+'''
+        q = build_exam_schema(tex, source='macro').questions[0]
+        assert q.steps == [r'\lim_{x \to 2} (x + 1) = 3']
+        assert q.final == '3'
+
+    def test_pack_hooks_drive_figure_and_soal_without_final_is_kept(self) -> None:
+        class NoFigurePack:
+            id = 'fake'
+            part_kinds = ('algebra', 'hp')
+            figure_kinds = ('none',)
+            ingest_section_roles = ()
+            figure_from_tikz = False
+            capability_ids = ALL_CAPABILITY_IDS
+
+            def extract_final(self, answer_tex: str) -> str | None:
+                return None
+
+        tex = r'''
+\begin{enumerate}
+\item Buktikan $\lim_{x \to 0} x = 0$.
+\textbf{Jawab:}
+\begin{align*}
+|x - 0| &< \varepsilon
+\end{align*}
+\begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}
+\end{enumerate}
+'''
+        pack = NoFigurePack()
+        q = build_exam_schema(tex, source='proof', topic_pack=pack).questions[0]
+        assert q.expects_figure is False
+        assert q.final == ''
+        assert [p.kind for p in q.parts] == ['algebra']
+        pairs = ingest_kunci_tex(tex, source_note='proof', topic_pack=pack)
+        assert [number for number, _ in pairs] == [1]
+        assert build_exam_schema(tex, source='default').questions[0].expects_figure
+
+    def test_nested_enumerate_and_labeled_items_become_sub_soal(self) -> None:
+        schema = build_exam_schema(TOPIK4_KUNCI, source='topik4')
+        assert [q.ref for q in schema.questions] == ['1a', '1b', '2a', '2b']
+        q1a, q1b, q2a, q2b = schema.questions
+        assert q1a.stem == (
+            r'Hitunglah nilai limit fungsi berikut: $\displaystyle\lim_{x \to -1} (1 - 2x)$'
+        )
+        assert (q1a.final, q1b.final, q2a.final, q2b.final) == ('3', '10', '0', '2')
+        assert q1a.steps == [r'\lim_{x \to -1} (1 - 2x) = 1 - 2(-1)', '1 + 2 = 3']
+        assert q2a.stem == (
+            r'Diberikan grafik fungsi berikut: [gambar] Cari limit/nilai fungsi berikut.'
+            r' (a) $\displaystyle\lim_{x \to 1^-} f(x)$'
+        )
+        assert q2b.stem.endswith('(b) $f(2)$')
+        assert q2a.steps == [r'\lim_{x \to 1^-} f(x) = \lim_{x \to 1^-} (-x + 1) = 0']
+        assert q2b.steps == [] and [p.kind for p in q2b.parts] == ['hp']
+        assert not any(q.expects_figure for q in schema.questions)
+        block = format_recognition_question_block(schema)
+        assert block.splitlines()[0].startswith('1a. Hitunglah')
+
+    def test_question_list_without_own_jawab_stays_in_stem(self) -> None:
+        schema = build_exam_schema(TOPIK3_KUNCI, source='topik3')
+        assert len(schema.questions) == 1
+        q = schema.questions[0]
+        assert q.part_label == ''
+        assert q.stem == (
+            r'Diketahui $f(x) = \sqrt{x}$ dan $g(x) = x^2$.'
+            r' (a) Periksa apakah $(f \circ g)$ ada?'
+            r' (b) Jika ada, tentukan $(f \circ g)(x)$.'
+        )
+        assert len(q.steps) == 2
+
+    def test_row_tags_route_shared_rows_to_labeled_sub_soal(self) -> None:
+        tex = r'''
+\begin{enumerate}
+\item Tentukan jenis sudut.
+\[
+\text{(a) } \mathbf{u} = (1, -5, 4) \qquad
+\text{(b) } \mathbf{u} = (2, 3)
+\]
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 1: Hitung}
+\begin{align}
+\text{(a)}\quad \mathbf{u} \cdot \mathbf{v} &= 0 \\
+\text{(b)}\quad \mathbf{u} \cdot \mathbf{v} &= -11
+\end{align}
+\item \textbf{Langkah 2: Simpulkan}
+\begin{itemize}
+\item[(a)] Saling tegak lurus.
+% final: 90^\circ
+\item[(b)] Sudut tumpul.
+\end{itemize}
+\end{itemize}
+\end{enumerate}
+'''
+        q1a, q1b = build_exam_schema(tex, source='tags').questions
+        assert q1a.stem == r'Tentukan jenis sudut. (a) $\mathbf{u} = (1, -5, 4)$'
+        assert q1a.steps == [r'\mathbf{u} \cdot \mathbf{v} = 0']
+        assert q1b.steps == [r'\mathbf{u} \cdot \mathbf{v} = -11']
+        assert (q1a.final, q1b.final) == (r'90^\circ', '')
+
+    @pytest.mark.parametrize(
+        ('ref', 'expected'),
+        [
+            ('7', 'question_007'),
+            ('question_7', 'question_007'),
+            ('001a', 'question_001a'),
+            ('question_012B', 'question_012b'),
+        ],
+    )
+    def test_parse_question_ref_accepts_part_label(self, ref: str, expected: str) -> None:
+        assert parse_question_ref(ref) == expected
+
+    @pytest.mark.parametrize('ref', ['', 'abc', 'question_0', '1a2', '1abcde', '../1'])
+    def test_parse_question_ref_rejects_garbage(self, ref: str) -> None:
+        with pytest.raises(ValueError):
+            parse_question_ref(ref)
+
+    def test_ingester_writes_sub_soal_artifacts(self, tmp_path: Path) -> None:
+        kunci = tmp_path / 'tugas_topik_4.tex'
+        kunci.write_text(TOPIK4_KUNCI, encoding='utf-8')
+        standard = tmp_path / 'std'
+        KunciIngester(standard).ingest_file(kunci)
+        for ref in ('001a', '001b', '002a', '002b'):
+            assert (standard / 'solutions' / f'question_{ref}.tex').is_file()
+            assert (standard / 'rubrics' / f'question_{ref}.json').is_file()
+        assert standard_solution_path(standard, 2, 'b').name == 'question_002b.tex'
+        assert question_dir_name(1, 'a') == 'question_001a'
+        solution = (standard / 'solutions' / 'question_002b.tex').read_text(encoding='utf-8')
+        assert extract_final_answer_from_tex(solution) == '2'
+        schema = load_exam_schema(standard)
+        assert schema is not None
+        assert [q.part_label for q in schema.questions] == ['a', 'b', 'a', 'b']
+
 class TestReport:
 
     def test_aggregate_full_auto_accept(self, tmp_path: Path) -> None:
@@ -4349,6 +5362,46 @@ class TestReport:
         assert exam.maximum_total == pytest.approx(20.0)
         assert exam.total_score == pytest.approx(20.0)
         assert 'Soal 4 (nomor sementara, di luar kunci) tidak dinilai' in caplog.text
+
+    def test_aggregate_keeps_sub_soal_rows_and_csv_columns(self, tmp_path: Path) -> None:
+        report = aggregate_exam_report(
+            [make_report_question_grade(1, 4.0, 5.0, part_label='b'), make_report_question_grade(2, 3.0, 5.0)],
+            make_report_metadata(tmp_path),
+            expected_maximums={(1, 'a'): 5.0, (1, 'b'): 5.0, 2: 5.0},
+        )
+        assert [q.ref for q in report.questions] == ['1a', '1b', '2']
+        assert [q.question_id for q in report.questions] == ['question_001a', 'question_001b', 'question_002']
+        assert report.questions[0].missing is True
+        header, row = summary_csv_rows(report)
+        assert header == ['student_id', 'q1a', 'q1b', 'q2', 'total', 'status']
+        assert row[1:4] == ['0', '4', '3']
+        view = build_latex_report_context(report, [], tmp_path)
+        assert [s.number for s in view.summary] == ['1a', '1b', '2']
+
+    def test_controller_reads_sub_soal_folders_and_rubrics(self, tmp_path: Path) -> None:
+        workspace = GradingWorkspace(tmp_path)
+        for label in ('a', 'b'):
+            workspace.add_rubric(sample_rubric(), number=1, part_label=label)
+        questions = tmp_path / 'questions'
+        folder = questions / 'question_001b'
+        folder.mkdir(parents=True)
+        (folder / 'grading.json').write_text(
+            make_report_question_grade(1, 6.0, 10.0, part_label='b').model_dump_json(), encoding='utf-8'
+        )
+        (folder / 'question.json').write_text('{}', encoding='utf-8')
+        schema = ExamSchema(
+            source='test',
+            questions=[ExamQuestion(number=1, part_label=p, stem=f'{p} x>0') for p in 'ab'],
+        )
+        exam = ReportController(
+            JsonCsvHtmlReporter(),
+            standard_dir=workspace.standard,
+            exam_schema=schema,
+            rubric_loader=RubricLoader(workspace.standard),
+        ).report(questions, tmp_path / 'out').exam_report
+        assert [(q.ref, q.missing) for q in exam.questions] == [('1a', True), ('1b', False)]
+        assert exam.maximum_total == pytest.approx(20.0)
+        assert exam.total_score == pytest.approx(6.0)
 
     def test_missing_label_in_latex_summary(self, tmp_path: Path) -> None:
         report = aggregate_exam_report(
@@ -4921,7 +5974,9 @@ class TestProcessPipeline:
         crops_result = crops.process_from_crops(student_id='s1')
         assert crops_result == full_result
         assert crops.progress == full.progress[1:]
-        assert crops.progress_events[0].completed == 2
+        assert [(e.completed, e.total) for e in crops.progress_events] == [
+            (i, 6) for i in range(1, 7)
+        ]
 
     def test_transcribe_from_crops_stops_before_latex(self, tmp_path: Path) -> None:
         harness = ProcessHarness(tmp_path)
@@ -4933,6 +5988,10 @@ class TestProcessPipeline:
         for stage in harness.stage_calls[3:]:
             stage.assert_not_called()
         assert ProcessStage.LATEX not in harness.progress
+        assert [(e.completed, e.total) for e in harness.progress_events] == [
+            (1, 2),
+            (2, 2),
+        ]
 
     def test_transcribe_from_crops_requires_regions(self, tmp_path: Path) -> None:
         harness = ProcessHarness(tmp_path)
@@ -4998,6 +6057,9 @@ class TestProcessPipeline:
             ProcessStage.VALIDATE,
             ProcessStage.GRADE,
             ProcessStage.REPORT,
+        ]
+        assert [(e.completed, e.total) for e in harness.progress_events] == [
+            (i, 4) for i in range(1, 5)
         ]
         assert result.total_score == pytest.approx(8.0)
 
@@ -5136,10 +6198,9 @@ class TestTopicRegistry:
 
     def test_default_and_list_packs(self) -> None:
         ids = known_topic_ids()
-        assert '1.5' in ids
-        assert '2' in ids
+        assert ids == ['1.5', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']
         packs = list_packs()
-        assert {p.id for p in packs} == set(ids)
+        assert [p.id for p in packs] == ids
         pack = get_pack('1.5')
         assert pack.label
         assert 'interval' in pack.capability_ids
@@ -5178,6 +6239,53 @@ class TestTopicPackBehavior:
         rubric = pack.rubric_from_parts(1, parts)
         assert rubric.maximum_score == 10.0
         assert pack.coalesce_step_role('HP = (1, oo)', None, None) == 'hp'
+        assert not hasattr(pack, 'domain_number_line_from_final') or not pack.domain_number_line_from_final
+        assert getattr(pack, 'part_criterion_ids', None) in (None, DEFAULT_PART_CRITERION_IDS)
+
+    def test_function_pack_roles_and_isolation(self) -> None:
+        pack = get_pack('3')
+        assert pack.step_checks['domain'] == StepCheck.SOLUTION_SET
+        assert pack.step_checks['range'] == StepCheck.SOLUTION_SET
+        assert pack.step_checks['hp'] == StepCheck.SOLUTION_SET
+        assert pack.step_checks['concept'] == StepCheck.NOT_SYMBOLIC
+        assert 'value_table' in pack.roles
+        assert pack.figure_kinds == ('number_line', 'graph')
+        assert pack.domain_number_line_from_final is True
+        assert pack.grades_concept is True
+        assert pack.rich_section_ingest is True
+        assert 'domain' in pack.part_criterion_ids and 'concept' in pack.part_criterion_ids
+        assert pack.coalesce_step_role('D_f = (-oo, 9]', None, None) == 'domain'
+        assert pack.coalesce_step_role('R_f = [0, oo)', None, None) == 'range'
+        assert pack.coalesce_step_role('f(-1) = 1', None, None) == 'value_table'
+        assert pack.coalesce_step_role(r'f(x) = \sqrt{9-x}', None, 'value_table') == 'algebra'
+        assert pack.coalesce_step_role('(-7, 4)', None, None) == 'value_table'
+        assert pack.figure_from_tikz is True
+        assert 'piecewise' in pack.capability_ids
+        assert pack.capability_ids[0] == 'piecewise'
+        assert 'piecewise' not in get_pack('4').capability_ids
+        assert 'GRAPH_POINTS' in pack.recognition_role_instructions
+        assert 'Piecewise' in pack.recognition_role_instructions
+        assert pack.coalesce_step_role(
+            'akar kuadrat sehingga radikan harus non-negatif', None, None
+        ) == 'concept'
+        rubric = pack.rubric_from_parts(
+            1,
+            [
+                ExamPart(kind='algebra', order=1),
+                ExamPart(kind='domain', order=2),
+                ExamPart(kind='hp', order=3),
+            ],
+        )
+        by_id = {c.id: c.points for c in rubric.criteria}
+        assert by_id['concept'] == pytest.approx(5.0)
+        assert sum(p for cid, p in by_id.items() if cid != 'concept') == pytest.approx(5.0)
+        # ChapterPack default (bab 4) remains TRANSITION on hp — isolation.
+        assert get_pack('4').step_checks['hp'] == StepCheck.TRANSITION
+        assert not getattr(get_pack('4'), 'grades_concept', False)
+        assert not getattr(get_pack('4'), 'rich_section_ingest', False)
+        assert not hasattr(get_pack('4'), 'part_criterion_ids') or getattr(
+            get_pack('4'), 'part_criterion_ids', None
+        ) is None
 
     @pytest.mark.parametrize(
         ('raw_text', 'symbolic', 'role', 'expected'),
@@ -5213,6 +6321,62 @@ class TestTopicPackBehavior:
         assert pack.step_checks['sign_chart'] == StepCheck.NUMERIC_EVAL
         assert pack.step_checks['hp'] == StepCheck.SOLUTION_SET
         assert dict(get_pack('2').step_checks) == dict(pack.step_checks)
+
+    @pytest.mark.parametrize('pack_id', known_topic_ids())
+    def test_every_pack_is_consistent(self, pack_id: str) -> None:
+        pack = get_pack(pack_id)
+        assert set(pack.step_checks) == set(pack.roles)
+        assert set(pack.part_kinds) <= set(pack.roles)
+        assert {role for _, role in pack.ingest_section_roles} <= set(pack.roles)
+        assert set(pack.role_rubric_parts) <= set(pack.roles)
+        for count in range(len(pack.part_kinds) + 1):
+            parts = [ExamPart(kind=kind, order=i) for i, kind in enumerate(pack.part_kinds[:count], 1)]
+            rubric = pack.rubric_from_parts(1, parts)
+            assert sum(c.points for c in rubric.criteria) == pytest.approx(rubric.maximum_score)
+            assert all(c.points > 0 for c in rubric.criteria)
+
+    @pytest.mark.parametrize(
+        ('raw_text', 'symbolic', 'role', 'expected'),
+        [
+            (r'\frac{9 + 12 - 21}{0} = \frac{0}{0}', None, None, 'indeterminate'),
+            ('bentuk tak tentu', None, None, 'indeterminate'),
+            (r'\lim_{x \to 1^-} (x^2 + 1) = 2', None, None, 'one_sided'),
+            ('', SymbolicPayload(kind='limit', repr="LIMIT(x**2+1, x, 1, -)"), None, 'one_sided'),
+            (r'Jadi \lim_{x \to 3} f(x) = 2', None, None, 'hp'),
+            (r'\lim_{t \to 3} (t + 7) = 10', None, None, 'algebra'),
+            ('sketsa', SymbolicPayload(kind='figure', repr='graph'), 'hp', 'figure'),
+            ('x = 3', None, 'one_sided', 'one_sided'),
+        ],
+        ids=['zero-over-zero', 'prose', 'left-limit', 'limit-token-dir', 'conclusion', 'two-sided', 'figure', 'model-role'],
+    )
+    def test_limit_pack_roles(
+        self, raw_text: str, symbolic: SymbolicPayload | None, role: str | None, expected: str
+    ) -> None:
+        assert get_pack('4').coalesce_step_role(raw_text, symbolic, role) == expected
+
+    @pytest.mark.parametrize(
+        ('pack_id', 'raw_text', 'expected'),
+        [
+            ('3', r'(f \circ g)(x) = |x|', 'composition'),
+            ('3', r'D_f = (-\infty, 9]', 'domain'),
+            ('5', 'f(-1) = 2', 'function_value'),
+            ('5', 'jadi f kontinu di x = -1', 'hp'),
+            ('6', r'\frac{f(x + h) - f(x)}{h}', 'definition'),
+            ('6', r"f'_-(3) = 6", 'one_sided_derivative'),
+            ('7', r'\frac{x^4}{2} + C', 'antiderivative'),
+            ('7', 'u = 3x + 2', 'substitution'),
+            ('8', r"\frac{u'}{u}", 'log_rule'),
+            ('9', r'\operatorname{tr}(A) = 5', 'trace'),
+            ('10', r'C_{12} = -(-4 - 5)', 'cofactor'),
+            ('10', r'\det(A) = -8', 'determinant'),
+            ('10', r'A^{-1} = \frac{1}{-8} \operatorname{adj}(A)', 'inverse'),
+            ('11', r'\|\mathbf{u}\| = \sqrt{14}', 'norm'),
+            ('11', r'\mathbf{u} \times \mathbf{v}', 'cross'),
+            ('11', '(1)(3) + (-5)(3)', 'algebra'),
+        ],
+    )
+    def test_chapter_pack_step_cues(self, pack_id: str, raw_text: str, expected: str) -> None:
+        assert get_pack(pack_id).coalesce_step_role(raw_text, None, None) == expected
 
 class TestCapabilityDispatch:
 
@@ -5273,8 +6437,9 @@ class TestWebDashboard:
         assert_contains(
             page.text,
             'answer.pdf', 'fresh.pdf', 'kunci.tex', '/runs/answer', 'Mulai ulang',
-            'Propose crops', 'vision-cloud', 'reason-local', 'Model cloud aktif',
-            'class="table-scroll"',
+            'Propose crops', '/pdfs/delete', '/runs/answer/delete', 'Hapus hasil',
+            'vision-cloud', 'reason-local', 'Model cloud aktif',
+            'class="run-grid"', 'class="run-card"', 'class="steps"',
         )
 
     def test_static_assets_are_versioned_and_revalidated(self, tmp_path: Path, monkeypatch) -> None:
@@ -5282,12 +6447,29 @@ class TestWebDashboard:
         page = client.get('/').text
         assert re.search(r'src="/static/js/app\.js\?v=\d+"', page)
         assert 'href="/static/app.css?v=' in page
+        assert re.search(r'/static/vendor/lucide-sprite\.svg\?v=\d+#graduation-cap', page)
+        assert re.search(r'href="/static/vendor/fonts/inter-latin-wght-normal\.woff2\?v=\d+"', page)
+        for vendored in ('vendor/lucide-sprite.svg', 'vendor/fonts/inter-latin-wght-normal.woff2'):
+            assert client.get(f'/static/{vendored}').status_code == 200
         asset = client.get('/static/js/crop_editor.js')
         assert asset.status_code == 200
         assert asset.headers['cache-control'] == 'no-cache'
         cached = client.get('/static/js/crop_editor.js', headers={'If-None-Match': asset.headers['etag']})
         assert cached.status_code == 304
         assert cached.headers['cache-control'] == 'no-cache'
+
+    @pytest.mark.parametrize(
+        ('value', 'expected'), [(8.0, '8'), (52.666666, '52.67'), (7.5, '7.5'), (0.0, '0')]
+    )
+    def test_score_filter_trims_decimals(self, value: float, expected: str) -> None:
+        assert format_score(value) == expected
+
+    @pytest.mark.parametrize(
+        ('name', 'expected'),
+        [('hafiz_khairuddin_1020', 'HK'), ('102022600177_tugas minggu 1_fahri', 'TM'), ('123_456', '?')],
+    )
+    def test_initials_skip_numeric_words(self, name: str, expected: str) -> None:
+        assert initials(name) == expected
 
     def test_dashboard_without_cloud_models_has_no_warning(self, tmp_path: Path, monkeypatch) -> None:
         page = WebHarness(tmp_path, monkeypatch, vision_model='vision-local').client.get('/')
@@ -5306,6 +6488,11 @@ class TestWebDashboard:
         assert response.status_code == 400
         assert response.headers['HX-Retarget'] == '#flash'
         assert 'flash-error' in response.text
+        assert 'data-autodismiss' not in response.text
+
+    def test_ok_flash_is_an_auto_dismissing_toast(self, tmp_path: Path, monkeypatch) -> None:
+        page = WebHarness(tmp_path, monkeypatch).client.get('/', params={'ok': 'Halo'}).text
+        assert_contains(page, 'id="flash"', 'flash-ok', 'data-autodismiss', 'Halo', '#circle-check')
 
     def test_upload_pdf_keeps_only_the_bare_name(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
@@ -5386,6 +6573,22 @@ class TestWebJobs:
         assert jobs.submit(run='r', kind=JobKind.FINISH, task=lambda _r: '/b').status == JobStatus.QUEUED
         assert jobs.latest_for('r').kind == JobKind.FINISH
 
+    def test_reserve_run_blocks_submit(self) -> None:
+        jobs = FakeJobManager()
+        with jobs.reserve_run('r'):
+            with pytest.raises(JobAlreadyRunningError, match='reserved'):
+                jobs.submit(run='r', kind=JobKind.LABEL, task=lambda _r: '/a')
+        assert jobs.submit(run='r', kind=JobKind.LABEL, task=lambda _r: '/a').status == JobStatus.DONE
+
+    def test_reserve_run_rejects_active_job(self) -> None:
+        executor = DeferredExecutor()
+        jobs = FakeJobManager(executor)
+        jobs.submit(run='r', kind=JobKind.LABEL, task=lambda _r: '/a')
+        with pytest.raises(JobAlreadyRunningError):
+            with jobs.reserve_run('r'):
+                pass
+        executor.run_all()
+
     def test_unknown_job_is_404(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
         assert web.client.get('/jobs/nope').status_code == 404
@@ -5446,6 +6649,73 @@ class TestWebJobs:
         assert calls == [(web.jawaban_dir / 'answer.pdf', web.output_root / 'answer' / 'pages', 200)]
         assert not stale.with_suffix('.png').exists()
         assert other.is_file()
+
+    def test_delete_run_keeps_pdf(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        pdf = web.pdf('answer.pdf')
+        web.run_dir('answer')
+        other = web.run_dir('other')
+        standards = web.output_root / 'standards' / 'exam_001'
+        standards.mkdir(parents=True)
+        (standards / 'rubric.json').write_text('{}', encoding='utf-8')
+        response = web.client.post('/runs/answer/delete')
+        assert response.status_code == 303
+        assert response.headers['location'].startswith('/?ok=')
+        assert 'Hasil+proses+dihapus' in response.headers['location']
+        assert pdf.is_file()
+        assert not (web.output_root / 'answer').exists()
+        assert other.root.is_dir()
+        assert (standards / 'rubric.json').is_file()
+        page = web.client.get('/')
+        assert 'Propose crops' in page.text
+        assert '/runs/answer/delete' not in page.text
+
+    def test_delete_pdf_cascades_run(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        pdf = web.pdf('answer.pdf')
+        web.pdf('keep.pdf')
+        web.run_dir('answer')
+        other = web.run_dir('other')
+        response = web.client.post('/pdfs/delete', data={'pdf': 'answer.pdf'})
+        assert response.status_code == 303
+        location = response.headers['location']
+        assert location.startswith('/?ok=')
+        assert 'Jawaban+dihapus' in location
+        assert 'hasil+proses+answer+ikut+dihapus' in location
+        assert not pdf.exists()
+        assert not (web.output_root / 'answer').exists()
+        assert (web.jawaban_dir / 'keep.pdf').is_file()
+        assert other.root.is_dir()
+
+    def test_delete_pdf_without_run(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        pdf = web.pdf('fresh.pdf')
+        response = web.client.post('/pdfs/delete', data={'pdf': 'fresh.pdf'})
+        assert response.status_code == 303
+        location = response.headers['location']
+        assert 'Jawaban+dihapus%3A+fresh.pdf' in location
+        assert 'hasil+proses' not in location
+        assert not pdf.exists()
+
+    def test_delete_unknown_run_is_404(self, tmp_path: Path, monkeypatch) -> None:
+        assert WebHarness(tmp_path, monkeypatch).client.post('/runs/nope/delete').status_code == 404
+
+    def test_delete_unknown_pdf_is_404(self, tmp_path: Path, monkeypatch) -> None:
+        assert (
+            WebHarness(tmp_path, monkeypatch).client.post('/pdfs/delete', data={'pdf': 'nope.pdf'}).status_code
+            == 404
+        )
+
+    def test_delete_run_blocked_when_job_active(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch, jobs=FakeJobManager(DeferredExecutor()))
+        web.pdf('answer.pdf')
+        web.run_dir('answer')
+        web.controller()
+        assert web.client.post('/runs/answer/transcribe').status_code == 303
+        assert web.client.post('/runs/answer/delete').status_code == 409
+        assert web.client.post('/pdfs/delete', data={'pdf': 'answer.pdf'}).status_code == 409
+        assert (web.output_root / 'answer').is_dir()
+        assert (web.jawaban_dir / 'answer.pdf').is_file()
 
     def test_propose_unknown_pdf_is_404(self, tmp_path: Path, monkeypatch) -> None:
         response = WebHarness(tmp_path, monkeypatch).client.post('/pdfs/propose', data={'pdf': 'nope.pdf'})
@@ -5554,14 +6824,77 @@ class TestWebResults:
         page = web.client.get('/runs/answer/results')
         assert page.status_code == 200
         assert_contains(page.text, '8</strong> / 10', 'question_001', 'grade-question_001', '/files/csv')
-        assert page.text.count('class="table-scroll"') == 2
+        assert_contains(page.text, 'Langkah mahasiswa')
+        assert page.text.count('class="table-scroll"') >= 2
+        assert_contains(page.text, 'class="score-ring"', 'stroke-dasharray="80.0 100"', 'ring-ok', '80%')
+
+    def test_results_dual_track_and_part_labels_for_function_pack(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        web = WebHarness(tmp_path, monkeypatch, topic_id='3')
+        grade = QuestionGrade(
+            question_id='question_001',
+            question_number=1,
+            score=8.0,
+            maximum_score=10.0,
+            steps=[
+                make_step_grade(1, 1.0, 1.0),
+                make_step_grade(0, 4.0, 5.0, part_id='concept'),
+                make_step_grade(0, 3.0, 5.0, part_id='domain'),
+            ],
+            part_statuses={'concept': 'valid', 'domain': 'valid'},
+            review_status=ReviewStatus.AUTO_ACCEPT,
+        )
+        layout = write_report_workspace(
+            web.output_root / 'answer', make_question('domain', number=1), grade
+        )
+        report = aggregate_exam_report([grade], make_report_metadata(tmp_path))
+        (layout.report_dir / 'report.json').write_text(report.model_dump_json(), encoding='utf-8')
+        page = web.client.get('/runs/answer/results')
+        assert page.status_code == 200
+        assert_contains(
+            page.text,
+            'Konsep 4',
+            'Simbolik 4',
+            'Komponen penilaian',
+            'Domain',
+            'Konsep',
+        )
+        assert figures_section_heading(('number_line', 'graph')) == 'Gambar / grafik (OCR)'
+        assert figures_section_heading(('number_line',)) == 'Gambar / garis bilangan (OCR)'
+        assert display_part_label('value_table') == 'Tabel nilai'
+        steps, parts = split_grade_rows(grade)
+        assert len(steps) == 1 and {p.part_id for p in parts} == {'concept', 'domain'}
+        assert dual_track_scores(grade) == (4.0, 5.0, 4.0, 5.0)
+
+    def test_results_and_review_pages_show_sub_soal_ref(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        grade = make_report_question_grade(1, 4, 5, part_label='b')
+        layout = write_report_workspace(
+            web.output_root / 'answer', make_question('x < 4', number=1, part_label='b'), grade
+        )
+        report = aggregate_exam_report(
+            [grade], make_report_metadata(tmp_path), expected_maximums={(1, 'a'): 5.0, (1, 'b'): 5.0}
+        )
+        (layout.report_dir / 'report.json').write_text(report.model_dump_json(), encoding='utf-8')
+        results = web.client.get('/runs/answer/results')
+        assert results.status_code == 200
+        assert_contains(
+            results.text, '#grade-question_001a">1a</a>', '#grade-question_001b">1b</a>', 'Soal 1b'
+        )
+        review = web.client.get('/runs/answer/review')
+        assert review.status_code == 200
+        assert_contains(review.text, 'Soal 1b', 'q-question_001b')
 
     def test_run_overview_shows_progress(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
         self._graded_run(web)
         page = web.client.get('/runs/answer')
         assert page.status_code == 200
-        assert_contains(page.text, 'Lihat hasil', 'Nilai dari question.json', 'Total <strong>8 / 10')
+        assert_contains(
+            page.text, 'Lihat hasil', 'Nilai dari question.json', 'Total <strong>8 / 10',
+            'class="stepper"', 'class="avatar avatar-lg"', 'seg done',
+        )
 
     def test_results_without_report(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)

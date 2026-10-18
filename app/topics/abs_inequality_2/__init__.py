@@ -37,6 +37,11 @@ class AbsInequalityPack:
     figure_kinds = ("number_line", "none")
     capability_ids = _CAPABILITY_IDS
     recognition_role_instructions = INEQUALITY_15.recognition_role_instructions
+    ingest_section_roles = INEQUALITY_15.ingest_section_roles
+    figure_from_tikz = INEQUALITY_15.figure_from_tikz
+
+    def extract_final(self, answer_tex: str) -> str | None:
+        return INEQUALITY_15.extract_final(answer_tex)
 
     def rubric_from_parts(self, question_number: int, parts: list[ExamPart]) -> Rubric:
         return INEQUALITY_15.rubric_from_parts(question_number, parts)

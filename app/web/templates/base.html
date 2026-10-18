@@ -1,10 +1,13 @@
+{% from "partials/icons.html" import icon %}
 <!doctype html>
 <html lang="id">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}Math Grader{% endblock %}</title>
   <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"[45]..","swap":true,"error":true}]}'>
+  <link rel="preload" href="{{ static_url('vendor/fonts/inter-latin-wght-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ static_url('vendor/katex/katex.min.css') }}">
   <link rel="stylesheet" href="{{ static_url('app.css') }}">
   <script src="{{ static_url('vendor/htmx.min.js') }}"></script>
@@ -16,12 +19,14 @@
 </head>
 <body>
   <header class="topbar">
-    <a href="/" class="brand">Math Grader</a>
-    <nav class="crumbs">{% block crumbs %}{% endblock %}</nav>
-    <span class="topic-badge" title="Topik aktif">Topik {{ active_topic.id }} · {{ active_topic.label }}</span>
+    <a href="/" class="brand"><span class="brand-mark">{{ icon("graduation-cap") }}</span>Math Grader</a>
+    <span class="topic-badge" title="Topik aktif: {{ active_topic.id }} · {{ active_topic.label }}">
+      {{ icon("book-open") }}<span>Topik {{ active_topic.id }} · {{ active_topic.label }}</span>
+    </span>
   </header>
   <main class="{% block main_class %}container{% endblock %}">
-    <div id="flash">
+    {% if self.crumbs() | trim %}<nav class="crumbs" aria-label="Breadcrumb">{% block crumbs %}{% endblock %}</nav>{% endif %}
+    <div id="flash" aria-live="polite">
       {%- if request.query_params.get('ok') %}
         {% with level='ok', message=request.query_params.get('ok') %}{% include "partials/flash.html" %}{% endwith %}
       {%- endif %}

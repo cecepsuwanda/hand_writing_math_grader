@@ -8,10 +8,12 @@ from collections.abc import Mapping
 from pydantic import BaseModel, Field
 
 from app.exceptions import QuestionCropsInvalidError
+from app.functions.question_names import split_question_ref
 from app.models.crop import PageRegions
 from app.models.exam_schema import ExamQuestion
-from app.models.grading import QuestionGrade
+from app.models.grading import QuestionGrade, StepGrade
 from app.models.question_crops import CropRef, QuestionCropsReport
+from app.models.question_review import ExpectedMilestoneSlot
 from app.models.recognition import DetectedRegion, Region, RegionType
 from app.models.report import ExamReport
 from app.web.files import ReportFile
@@ -55,7 +57,6 @@ class RunSummary(BaseModel):
 class DashboardView(BaseModel):
     topics: list[TopicOption]
     active_topic_id: str
-    active_topic_label: str
     standard_dir: str
     standard_ready: bool
     kunci_files: list[str]
@@ -100,7 +101,6 @@ class CropEditorView(BaseModel):
     run: str
     pages: list[PageRegions]
     current: PageRegions
-    crop_names: list[str] = Field(default_factory=list)
 
 
 CROP_LABEL_FIELD_PREFIX = "crop:"
@@ -110,8 +110,11 @@ _LABEL_SPLIT_RE = re.compile(r"[\s,;]+")
 def parse_crop_labels(form: Mapping[str, str]) -> dict[str, list[int]]:
     """``crop:<crop name>`` → ``"1, 2"`` form fields into crop → question numbers.
 
+    A sub-soal token (``1a``) counts as its soal (``1``): crops are mapped per
+    soal and recognition separates the sub-soal.
+
     Raises:
-        QuestionCropsInvalidError: a token is not a positive integer.
+        QuestionCropsInvalidError: a token is not a positive question reference.
     """
     labels: dict[str, list[int]] = {}
     errors: list[str] = []
@@ -121,10 +124,13 @@ def parse_crop_labels(form: Mapping[str, str]) -> dict[str, list[int]]:
         crop = key.removeprefix(CROP_LABEL_FIELD_PREFIX)
         numbers: list[int] = []
         for token in filter(None, _LABEL_SPLIT_RE.split(raw.strip())):
-            if token.isdigit() and int(token) >= 1:
-                numbers.append(int(token))
-            else:
+            try:
+                number = split_question_ref(token)[0]
+            except ValueError:
                 errors.append(f"{crop}: {token!r} bukan nomor soal")
+                continue
+            if number not in numbers:
+                numbers.append(number)
         labels[crop] = numbers
     if errors:
         raise QuestionCropsInvalidError(errors)
@@ -155,6 +161,13 @@ class PreviewOut(BaseModel):
 class QuestionResult(BaseModel):
     question_id: str
     grade: QuestionGrade | None = None
+    step_rows: list[StepGrade] = Field(default_factory=list)
+    part_rows: list[StepGrade] = Field(default_factory=list)
+    concept_score: float | None = None
+    concept_max: float | None = None
+    symbolic_score: float | None = None
+    symbolic_max: float | None = None
+    expected_milestones: list[ExpectedMilestoneSlot] = Field(default_factory=list)
 
 
 class ResultsView(BaseModel):
@@ -162,3 +175,6 @@ class ResultsView(BaseModel):
     report: ExamReport | None
     grades: list[QuestionResult] = Field(default_factory=list)
     report_files: list[ReportFile] = Field(default_factory=list)
+    grades_concept: bool = False
+    part_labels: dict[str, str] = Field(default_factory=dict)
+    crop_warnings: list[str] = Field(default_factory=list)

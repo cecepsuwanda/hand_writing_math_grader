@@ -1,9 +1,13 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
 {% block title %}Error {{ status }} · Math Grader{% endblock %}
 {% block content %}
 <section class="card">
-  <h1>Tidak bisa diproses <small class="muted">({{ status }})</small></h1>
+  <div class="card-head">
+    <span class="icon-bubble icon-bubble-error">{{ icon("triangle-alert", "icon-lg") }}</span>
+    <h1>Tidak bisa diproses <small class="muted">({{ status }})</small></h1>
+  </div>
   <p class="error-text">{{ message }}</p>
-  <p><a class="btn" href="/">Kembali ke beranda</a></p>
+  <p><a class="btn" href="/">{{ icon("house") }}Kembali ke beranda</a></p>
 </section>
 {% endblock %}

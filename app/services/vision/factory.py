@@ -5,12 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import AppConfig
+from app.exceptions import UnknownTopicError
 from app.functions.ink_layout import InkLayoutParams
 from app.functions.kunci_ingest import load_exam_schema, load_question_stems_from_kunci
 from app.services.standards.standard_dir import resolve_standard_dir
 from app.services.vision.ink_region_proposer import InkRegionProposer
 from app.services.vision.ollama_client import OllamaClient
 from app.services.vision.recognizer import OllamaVisionRecognizer
+from app.topics.registry import get_pack, resolve_pack
+from app.topics.runtime import get_active_pack
 
 
 def ink_params_from_config(config: AppConfig) -> InkLayoutParams:
@@ -52,7 +55,25 @@ def build_vision_recognizer(
     expected = (
         None
         if schema is not None
-        else load_question_stems_from_kunci(config.input.kunci_jawaban_dir)
+        else load_question_stems_from_kunci(
+            config.input.kunci_jawaban_dir,
+            topic_id=(topic_id or "").strip() or config.grading.topic_id,
+        )
+    )
+    pack = get_active_pack()
+    if pack is None:
+        try:
+            pack = (
+                get_pack(topic_id)
+                if (topic_id or "").strip()
+                else resolve_pack()
+            )
+        except UnknownTopicError:
+            pack = None
+    role_instructions = (
+        (getattr(pack, "recognition_role_instructions", "") or "")
+        if pack is not None
+        else ""
     )
     return OllamaVisionRecognizer(
         client=ollama,
@@ -62,4 +83,5 @@ def build_vision_recognizer(
         proposer=InkRegionProposer(ink_params_from_config(config)),
         exam_schema=schema,
         expected_questions=expected,
+        pack_role_instructions=role_instructions,
     )

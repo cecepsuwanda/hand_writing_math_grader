@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.functions.standards_layout import standards_folder_name
 from app.models.defaults import DEFAULT_STUDENT_ID
 
 
@@ -27,6 +28,21 @@ def list_kunci_tex(kunci_dir: Path) -> list[Path]:
         (p for p in kunci_dir.iterdir() if p.is_file() and p.suffix.lower() == ".tex"),
         key=lambda p: p.name.lower(),
     )
+
+
+def topic_kunci_filename(topic_id: str) -> str:
+    """Kunci file of a topic's chapter: ``"4"`` → ``tugas_topik_4.tex``."""
+    return f"tugas_{standards_folder_name(topic_id)}.tex"
+
+
+def pick_topic_kunci_tex(tex_files: list[Path], topic_id: str | None) -> Path | None:
+    """The only ``.tex``, else ``tugas_topik_<bab>.tex`` for ``topic_id``; ``None`` if unclear."""
+    if len(tex_files) == 1:
+        return tex_files[0]
+    if not topic_id or not topic_id.strip():
+        return None
+    wanted = topic_kunci_filename(topic_id)
+    return next((path for path in tex_files if path.name.lower() == wanted), None)
 
 
 def resolve_input_path(path: Path, base_dir: Path) -> Path:

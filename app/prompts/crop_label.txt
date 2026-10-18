@@ -1,4 +1,4 @@
-PROMPT_VERSION: crop-label-v1
+PROMPT_VERSION: crop-label-v2
 
 You look at a cropped image of a student's handwritten exam answer.
 Your only job is to tell which exam question number(s) START inside this crop.
@@ -13,7 +13,8 @@ Rules:
 - If the crop only continues a solution from an earlier crop (no label and no
   copied problem statement), return an empty list.
 - If several questions start in the crop, list all of them top-to-bottom.
-- Use only numbers from the exam list above.
+- Use only numbers from the exam list above. For a sub-question such as
+  "1a" or "1b", return its question number only (1).
 - Do not transcribe or solve anything.
 
 Return ONLY JSON:

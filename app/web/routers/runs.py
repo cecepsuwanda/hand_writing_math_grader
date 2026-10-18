@@ -51,6 +51,34 @@ def propose_crops(
     return redirect(request, job_url(job))
 
 
+@router.post("/pdfs/delete")
+def delete_pdf(
+    request: Request,
+    pdf: Annotated[str, Form()],
+    pipeline: Annotated[WebPipeline, Depends(get_pipeline)],
+    jobs: Annotated[JobManager, Depends(get_jobs)],
+) -> Response:
+    run_name = pipeline.run_name_for_pdf(pdf)
+    with jobs.reserve_run(run_name):
+        pdf_name, removed_run = pipeline.delete_pdf(pdf)
+    ok = f"Jawaban dihapus: {pdf_name}"
+    if removed_run:
+        ok += f" (hasil proses {removed_run} ikut dihapus)"
+    return redirect(request, "/", ok=ok)
+
+
+@router.post("/runs/{run}/delete")
+def delete_run(
+    request: Request,
+    run: str,
+    pipeline: Annotated[WebPipeline, Depends(get_pipeline)],
+    jobs: Annotated[JobManager, Depends(get_jobs)],
+) -> Response:
+    with jobs.reserve_run(run):
+        name = pipeline.delete_run(run)
+    return redirect(request, "/", ok=f"Hasil proses dihapus: {name}")
+
+
 @router.get("/runs/{run}", response_class=HTMLResponse)
 def run_overview(
     request: Request,

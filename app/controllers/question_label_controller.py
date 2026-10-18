@@ -19,6 +19,7 @@ from app.functions.question_crops import (
     validate_question_crops,
     write_question_crops,
 )
+from app.functions.standard_extract import soal_stems
 from app.interfaces.question_labeler import QuestionLabeler
 from app.models.exam_schema import ExamQuestion, ExamSchema
 from app.models.question_crops import (
@@ -49,16 +50,16 @@ class QuestionLabelController:
 
     @property
     def _numbers(self) -> list[int]:
-        return sorted(q.number for q in self._schema.questions)
+        """Soal numbers; crops map to a soal, its sub-soal are split at recognition."""
+        return sorted({q.number for q in self._schema.questions})
 
     @property
     def exam_questions(self) -> list[ExamQuestion]:
-        return sorted(self._schema.questions, key=lambda q: q.number)
+        return sorted(self._schema.questions, key=lambda q: (q.number, q.part_label))
 
     def save_mapping(self, mapping: QuestionCropMap) -> QuestionLabelResult:
         """Write a mapping edited in the UI, then validate it exactly like a reload."""
-        stems = {q.number: q.stem for q in self._schema.questions}
-        write_question_crops(self._crops_dir, mapping, stems=stems)
+        write_question_crops(self._crops_dir, mapping, stems=soal_stems(self._schema))
         return self.reload_all()
 
     def label_all(self) -> QuestionLabelResult:
@@ -83,8 +84,7 @@ class QuestionLabelController:
             mapping = assign_sequential(crops, self._numbers)
             source = LabelSource.SEQUENTIAL
 
-        stems = {q.number: q.stem for q in self._schema.questions}
-        write_question_crops(self._crops_dir, mapping, stems=stems)
+        write_question_crops(self._crops_dir, mapping, stems=soal_stems(self._schema))
         report = validate_question_crops(
             mapping, self._numbers, [c.name for c in crops]
         ).model_copy(update={"unreadable_crops": unreadable})

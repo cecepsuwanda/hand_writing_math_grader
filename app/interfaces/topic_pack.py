@@ -59,6 +59,22 @@ class TopicPack(Protocol):
     def recognition_role_instructions(self) -> str:
         """Optional crop_math role hint block (empty if unused)."""
 
+    @property
+    def ingest_section_roles(self) -> Sequence[tuple[str, str]]:
+        """Kunci ingest: ``(regex, role)`` matched against a step title.
+
+        Titles are normalized first (``\\textbf`` unwrapped, ``Langkah N:``
+        dropped). First match wins; unmatched sections are ``algebra``. Roles
+        other than ``algebra`` / ``figure`` / ``hp`` become milestones + parts.
+        """
+
+    @property
+    def figure_from_tikz(self) -> bool:
+        """Kunci ingest: a tikzpicture in the answer means the soal expects a figure."""
+
+    def extract_final(self, answer_tex: str) -> str | None:
+        """Kunci ingest fallback when the soal has no ``% final:`` marker."""
+
     def rubric_from_parts(self, question_number: int, parts: list[ExamPart]) -> Rubric:
         """Build a rubric from exam parts for this pack."""
 

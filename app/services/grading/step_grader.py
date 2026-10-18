@@ -24,6 +24,7 @@ from app.functions.validation_artifact import question_fingerprint
 from app.models.grading import QuestionGrade
 from app.models.question import Question
 from app.models.validation import QuestionValidation, ValidationStatus
+from app.services.grading.concept_comparer import NO_REASONING_REASON, ConceptComparer
 from app.services.grading.feedback_annotator import FeedbackAnnotator
 from app.services.grading.rubric import RubricLoader
 from app.services.grading.standard_comparer import (
@@ -41,11 +42,17 @@ class StepGrader:
         feedback_annotator: FeedbackAnnotator | None = None,
         standard_comparer: StandardFinalComparer | None = None,
         role_rubric_parts: Mapping[str, Sequence[str]] | None = None,
+        part_criterion_ids: frozenset[str] | set[str] | None = None,
+        concept_comparer: ConceptComparer | None = None,
     ) -> None:
         self._rubrics = rubric_loader
         self._annotator = feedback_annotator
         self._standard_comparer = standard_comparer
         self._role_rubric_parts = dict(role_rubric_parts or {})
+        self._part_criterion_ids = (
+            frozenset(part_criterion_ids) if part_criterion_ids is not None else None
+        )
+        self._concept_comparer = concept_comparer
 
     def grade_question_dir(self, question_dir: Path) -> QuestionGrade:
         question_dir = Path(question_dir)
@@ -70,7 +77,7 @@ class StepGrader:
         ):
             raise ValidationStaleError(validation_path)
 
-        rubric = self._rubrics.load(question.question_number)
+        rubric = self._rubrics.load(question.question_number, question.part_label)
         rubric_has_figure = any(c.id == "figure" for c in rubric.criteria)
 
         standard_status: ValidationStatus | None = None
@@ -115,9 +122,20 @@ class StepGrader:
                     "no figure step",
                 )
 
+        if any(c.id == "concept" for c in rubric.criteria):
+            if self._concept_comparer is not None:
+                part_statuses["concept"] = self._concept_comparer.compare(question)
+            else:
+                part_statuses["concept"] = (
+                    ValidationStatus.UNCERTAIN,
+                    NO_REASONING_REASON,
+                    0.0,
+                )
+
         grade = aggregate_question_grade(
             question_id=question.question_id,
             question_number=question.question_number,
+            part_label=question.part_label,
             validation=validation,
             rubric=rubric,
             standard_final_status=standard_status,
@@ -127,6 +145,7 @@ class StepGrader:
             step_overrides=step_overrides,
             step_roles={step.step_number: step.role for step in question.student_steps},
             role_rubric_parts=self._role_rubric_parts,
+            part_criterion_ids=self._part_criterion_ids,
         )
         if self._annotator is not None:
             grade = self._annotator.annotate(question, grade, validation)

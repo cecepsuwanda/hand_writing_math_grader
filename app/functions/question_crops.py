@@ -213,3 +213,20 @@ def validate_question_crops(
         missing_questions=[n for n in expected if not mapping.get(n)],
         unassigned_crops=[name for name in known if name not in assigned],
     )
+
+
+def empty_crop_warnings(
+    mapping: Mapping[int, list[str]] | None,
+    schema_numbers: Iterable[int],
+) -> list[str]:
+    """Human warnings when kunci soal have no ink regions (will grade as TIDAK DIJAWAB)."""
+    if mapping is None:
+        return []
+    missing = [n for n in sorted(set(schema_numbers)) if not mapping.get(n)]
+    if not missing:
+        return []
+    listed = ", ".join(str(n) for n in missing)
+    return [
+        f"Soal {listed} belum punya region crop — akan dinilai TIDAK DIJAWAB "
+        "sampai diberi crop di halaman Label."
+    ]

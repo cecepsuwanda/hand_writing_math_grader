@@ -1,0 +1,2031 @@
+{
+  "source": "tugas_topik_3.tex",
+  "topic_id": "3",
+  "questions": [
+    {
+      "number": 1,
+      "part_label": "a",
+      "stem": "Tentukan daerah asal (domain) dan daerah hasil (range) dari fungsi berikut: $f(x) = \\sqrt{9 - x}$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Tentukan daerah asal (domain) and daerah hasil (range) dari fungsi berikut: f(x) = sqrt(9 - x)"
+      },
+      "steps": [
+        "9 - x \\geq 0",
+        "-x \\geq -9",
+        "x \\leq 9",
+        "D_f = \\{x \\in \\mathbb{R} \\mid x \\leq 9\\} = (-\\infty, 9]",
+        "\\sqrt{9 - x} \\geq 0",
+        "f(9) = \\sqrt{9 - 9} = 0"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "9 - x >= 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "-x >= -9"
+        },
+        {
+          "kind": "relation",
+          "repr": "x <= 9"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_f = (x (R) x <= 9) = (-oo, 9]"
+        },
+        {
+          "kind": "relation",
+          "repr": "sqrt(9 - x) >= 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "f(9) = sqrt(9 - 9) = 0"
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "concept",
+          "title": "Identifikasi Jenis Fungsi",
+          "latex": "f(x) = \\sqrt{9 - x} memuat akar kuadrat, sehingga radikan (bilangan di bawah akar) harus non-negatif. ; radikan non-negatif karena akar kuadrat",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "f(x) = sqrt(9 - x) memuat akar kuadrat, sehingga radikan (bilangan di bawah akar) harus non-negatif. ; radikan non-negatif karena akar kuadrat"
+          },
+          "steps": [
+            "f(x) = \\sqrt{9 - x} memuat akar kuadrat, sehingga radikan (bilangan di bawah akar) harus non-negatif.",
+            "radikan non-negatif karena akar kuadrat"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "f(x) = sqrt(9 - x) memuat akar kuadrat, sehingga radikan (bilangan di bawah akar) harus non-negatif."
+            },
+            {
+              "kind": "expression",
+              "repr": "radikan non-negatif karena akar kuadrat"
+            }
+          ]
+        },
+        {
+          "role": "domain",
+          "title": "Tentukan Domain",
+          "latex": "9 - x \\geq 0 ; -x \\geq -9 ; x \\leq 9 ; D_f = \\{x \\in \\mathbb{R} \\mid x \\leq 9\\} = (-\\infty, 9]",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "9 - x >= 0 ; -x >= -9 ; x <= 9 ; D_f = (x (R) x <= 9) = (-oo, 9]"
+          },
+          "steps": [
+            "9 - x \\geq 0",
+            "-x \\geq -9",
+            "x \\leq 9",
+            "D_f = \\{x \\in \\mathbb{R} \\mid x \\leq 9\\} = (-\\infty, 9]"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "9 - x >= 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "-x >= -9"
+            },
+            {
+              "kind": "relation",
+              "repr": "x <= 9"
+            },
+            {
+              "kind": "relation",
+              "repr": "D_f = (x (R) x <= 9) = (-oo, 9]"
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Tentukan Range",
+          "latex": "\\sqrt{9 - x} \\geq 0 ; f(9) = \\sqrt{9 - 9} = 0 ; Ketika x semakin kecil, 9 - x membesar tanpa batas sehingga f(x) juga membesar tanpa batas. ; R_f = \\{y \\in \\mathbb{R} \\mid y \\geq 0\\} = [0, \\infty).",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "sqrt(9 - x) >= 0 ; f(9) = sqrt(9 - 9) = 0 ; Ketika x semakin kecil, 9 - x membesar tanpa batas sehingga f(x) juga membesar tanpa batas. ; R_f = (y (R) y >= 0) = [0, oo)."
+          },
+          "steps": [
+            "\\sqrt{9 - x} \\geq 0",
+            "f(9) = \\sqrt{9 - 9} = 0",
+            "Ketika x semakin kecil, 9 - x membesar tanpa batas sehingga f(x) juga membesar tanpa batas.",
+            "R_f = \\{y \\in \\mathbb{R} \\mid y \\geq 0\\} = [0, \\infty)."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "sqrt(9 - x) >= 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "f(9) = sqrt(9 - 9) = 0"
+            },
+            {
+              "kind": "expression",
+              "repr": "Ketika x semakin kecil, 9 - x membesar tanpa batas sehingga f(x) juga membesar tanpa batas."
+            },
+            {
+              "kind": "relation",
+              "repr": "R_f = (y (R) y >= 0) = [0, oo)."
+            }
+          ]
+        },
+        {
+          "role": "value_table",
+          "title": "",
+          "latex": "(-7, 4) ; (0, 3) ; (5, 2) ; (8, 1) ; (9, 0)",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "VALUE_TABLE((-7,4);(0,3);(5,2);(8,1);(9,0))"
+          },
+          "steps": [
+            "(-7, 4)",
+            "(0, 3)",
+            "(5, 2)",
+            "(8, 1)",
+            "(9, 0)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((-7,4))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((0,3))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((5,2))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((8,1))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((9,0))"
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "D_f = (-\\infty, 9] ; R_f = [0, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = (-oo, 9] ; R_f = [0, oo)"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "D_f = (-\\infty, 9] ; R_f = [0, \\infty)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "D_f = (-oo, 9] ; R_f = [0, oo)"
+      },
+      "expects_figure": true,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "domain",
+          "order": 3
+        },
+        {
+          "kind": "range",
+          "order": 4
+        },
+        {
+          "kind": "value_table",
+          "order": 5
+        },
+        {
+          "kind": "figure",
+          "order": 6
+        },
+        {
+          "kind": "hp",
+          "order": 7
+        }
+      ]
+    },
+    {
+      "number": 1,
+      "part_label": "b",
+      "stem": "Tentukan daerah asal (domain) dan daerah hasil (range) dari fungsi berikut: $f(x) = x^2 - 3x - 4$",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Tentukan daerah asal (domain) and daerah hasil (range) dari fungsi berikut: f(x) = x^2 - 3x - 4"
+      },
+      "steps": [
+        "\\text{Polinom terdefinisi untuk semua bilangan real}",
+        "D_f = \\{x \\in \\mathbb{R}\\} = (-\\infty, \\infty)",
+        "x_p = \\frac{-b}{2a} = \\frac{-(-3)}{2(1)} = \\frac{3}{2}",
+        "f\\left(\\frac{3}{2}\\right) = \\left(\\frac{3}{2}\\right)^2 - 3\\left(\\frac{3}{2}\\right) - 4",
+        "\\frac{9}{4} - \\frac{18}{4} - \\frac{16}{4} = -\\frac{25}{4}"
+      ],
+      "steps_symbolic": [
+        null,
+        {
+          "kind": "relation",
+          "repr": "D_f = (x (R)) = (-oo, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "x_p = ((-b)/(2a)) = ((-(-3))/(2(1))) = ((3)/(2))"
+        },
+        {
+          "kind": "relation",
+          "repr": "f(((3)/(2))) = (((3)/(2)))^2 - 3(((3)/(2))) - 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "((9)/(4)) - ((18)/(4)) - ((16)/(4)) = -((25)/(4))"
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "concept",
+          "title": "Identifikasi Jenis Fungsi",
+          "latex": "f(x) = x^2 - 3x - 4 adalah fungsi kuadrat (polinom derajat 2) dengan a = 1 , b = -3 , c = -4 . ; Karena a > 0 , parabola terbuka ke atas. ; fungsi kuadrat; parabola terbuka ke atas ($a > 0$)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "f(x) = x^2 - 3x - 4 adalah fungsi kuadrat (polinom derajat 2) dengan a = 1 , b = -3 , c = -4 . ; Karena a > 0 , parabola terbuka ke atas. ; fungsi kuadrat; parabola terbuka ke atas (a > 0)"
+          },
+          "steps": [
+            "f(x) = x^2 - 3x - 4 adalah fungsi kuadrat (polinom derajat 2) dengan a = 1 , b = -3 , c = -4 .",
+            "Karena a > 0 , parabola terbuka ke atas.",
+            "fungsi kuadrat; parabola terbuka ke atas ($a > 0$)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "f(x) = x^2 - 3x - 4 adalah fungsi kuadrat (polinom derajat 2) dengan a = 1 , b = -3 , c = -4 ."
+            },
+            {
+              "kind": "relation",
+              "repr": "Karena a > 0 , parabola terbuka ke atas."
+            },
+            {
+              "kind": "relation",
+              "repr": "fungsi kuadrat; parabola terbuka ke atas (a > 0)"
+            }
+          ]
+        },
+        {
+          "role": "domain",
+          "title": "Tentukan Domain",
+          "latex": "\\text{Polinom terdefinisi untuk semua bilangan real} ; D_f = \\{x \\in \\mathbb{R}\\} = (-\\infty, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "Polinom terdefinisi untuk semua bilangan real ; D_f = (x (R)) = (-oo, oo)"
+          },
+          "steps": [
+            "\\text{Polinom terdefinisi untuk semua bilangan real}",
+            "D_f = \\{x \\in \\mathbb{R}\\} = (-\\infty, \\infty)"
+          ],
+          "steps_symbolic": [
+            null,
+            {
+              "kind": "relation",
+              "repr": "D_f = (x (R)) = (-oo, oo)"
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Tentukan Range",
+          "latex": "x_p = \\frac{-b}{2a} = \\frac{-(-3)}{2(1)} = \\frac{3}{2} ; f\\left(\\frac{3}{2}\\right) = \\left(\\frac{3}{2}\\right)^2 - 3\\left(\\frac{3}{2}\\right) - 4 ; \\frac{9}{4} - \\frac{18}{4} - \\frac{16}{4} = -\\frac{25}{4} ; Titik puncak parabola: ; Dengan melengkapkan kuadrat, f(x) = \\left(x - \\frac{3}{2}\\right)^2 - \\frac{25}{4} \\geq -\\frac{25}{4} karena \\left(x - \\frac{3}{2}\\right)^2 \\geq 0 . ; Untuk x \\to \\pm\\infty nilai f(x) membesar tanpa batas, sehingga ; R_f = \\left\\{y \\in \\mathbb{R} \\;\\middle|\\; y \\geq -\\frac{25}{4}\\right\\} = \\left[-\\frac{25}{4}, \\infty\\right).",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "x_p = ((-b)/(2a)) = ((-(-3))/(2(1))) = ((3)/(2)) ; f(((3)/(2))) = (((3)/(2)))^2 - 3(((3)/(2))) - 4 ; ((9)/(4)) - ((18)/(4)) - ((16)/(4)) = -((25)/(4)) ; Titik puncak parabola: ; Dengan melengkapkan kuadrat, f(x) = (x - ((3)/(2)))^2 - ((25)/(4)) >= -((25)/(4)) karena (x - ((3)/(2)))^2 >= 0 . ; Untuk x -> nilai f(x) membesar tanpa batas, sehingga ; R_f = (y (R) | y >= -((25)/(4))) = [-((25)/(4)), oo)."
+          },
+          "steps": [
+            "x_p = \\frac{-b}{2a} = \\frac{-(-3)}{2(1)} = \\frac{3}{2}",
+            "f\\left(\\frac{3}{2}\\right) = \\left(\\frac{3}{2}\\right)^2 - 3\\left(\\frac{3}{2}\\right) - 4",
+            "\\frac{9}{4} - \\frac{18}{4} - \\frac{16}{4} = -\\frac{25}{4}",
+            "Titik puncak parabola:",
+            "Dengan melengkapkan kuadrat, f(x) = \\left(x - \\frac{3}{2}\\right)^2 - \\frac{25}{4} \\geq -\\frac{25}{4} karena \\left(x - \\frac{3}{2}\\right)^2 \\geq 0 .",
+            "Untuk x \\to \\pm\\infty nilai f(x) membesar tanpa batas, sehingga",
+            "R_f = \\left\\{y \\in \\mathbb{R} \\;\\middle|\\; y \\geq -\\frac{25}{4}\\right\\} = \\left[-\\frac{25}{4}, \\infty\\right)."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "x_p = ((-b)/(2a)) = ((-(-3))/(2(1))) = ((3)/(2))"
+            },
+            {
+              "kind": "relation",
+              "repr": "f(((3)/(2))) = (((3)/(2)))^2 - 3(((3)/(2))) - 4"
+            },
+            {
+              "kind": "relation",
+              "repr": "((9)/(4)) - ((18)/(4)) - ((16)/(4)) = -((25)/(4))"
+            },
+            null,
+            {
+              "kind": "relation",
+              "repr": "Dengan melengkapkan kuadrat, f(x) = (x - ((3)/(2)))^2 - ((25)/(4)) >= -((25)/(4)) karena (x - ((3)/(2)))^2 >= 0 ."
+            },
+            {
+              "kind": "relation",
+              "repr": "Untuk x -> nilai f(x) membesar tanpa batas, sehingga"
+            },
+            {
+              "kind": "relation",
+              "repr": "R_f = (y (R) | y >= -((25)/(4))) = [-((25)/(4)), oo)."
+            }
+          ]
+        },
+        {
+          "role": "value_table",
+          "title": "",
+          "latex": "(-1, 0) ; (0, -4) ; (3/2, -25/4) ; (3, -4) ; (4, 0)",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "VALUE_TABLE((-1,0);(0,-4);(3/2,-25/4);(3,-4);(4,0))"
+          },
+          "steps": [
+            "(-1, 0)",
+            "(0, -4)",
+            "(3/2, -25/4)",
+            "(3, -4)",
+            "(4, 0)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((-1,0))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((0,-4))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((3/2,-25/4))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((3,-4))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((4,0))"
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "D_f = (-\\infty, \\infty) ; R_f = \\left[-\\frac{25}{4}, \\infty\\right)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = (-oo, oo) ; R_f = [-((25)/(4)), oo)"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "D_f = (-\\infty, \\infty) ; R_f = \\left[-\\frac{25}{4}, \\infty\\right)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "D_f = (-oo, oo) ; R_f = [-((25)/(4)), oo)"
+      },
+      "expects_figure": true,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "domain",
+          "order": 3
+        },
+        {
+          "kind": "range",
+          "order": 4
+        },
+        {
+          "kind": "value_table",
+          "order": 5
+        },
+        {
+          "kind": "figure",
+          "order": 6
+        },
+        {
+          "kind": "hp",
+          "order": 7
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "part_label": "",
+      "stem": "Gambarkan grafik \\[ f(x) = \\begin{cases} x + 1, & x < -1 \\\\ x^2, & -1 \\le x < 2 \\\\ 2 - x, & x \\ge 2 \\end{cases} \\]",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Gambarkan grafik \\[ f(x) = Piecewise((x + 1, x < -1),(x**2, And(-1 <= x, x < 2)),(2 - x, x >= 2)) \\]"
+      },
+      "steps": [
+        "x \\to -1^{-}: \\quad f(x) = x + 1 \\to 0",
+        "x = -1: \\quad f(-1) = (-1)^2 = 1",
+        "x \\to 2^{-}: \\quad f(x) = x^2 \\to 4",
+        "x = 2: \\quad f(2) = 2 - 2 = 0",
+        "D_f = (-\\infty, -1) \\cup [-1, 2) \\cup [2, \\infty) = \\mathbb{R}",
+        "x < -1 \\;\\Rightarrow\\; x + 1 < 0",
+        "-1 \\le x < 2 \\;\\Rightarrow\\; 0 \\le x^2 < 4",
+        "x \\ge 2 \\;\\Rightarrow\\; 2 - x \\le 0"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "x -> -1^(-): f(x) = x + 1 -> 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "x = -1: f(-1) = (-1)^2 = 1"
+        },
+        {
+          "kind": "relation",
+          "repr": "x -> 2^(-): f(x) = x^2 -> 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "x = 2: f(2) = 2 - 2 = 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_f = -oo < x < -1 or -1 <= x < 2 or 2 <= x < oo = (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "x < -1 => x + 1 < 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "-1 <= x < 2 => 0 <= x^2 < 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "x >= 2 => 2 - x <= 0"
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "concept",
+          "title": "Identifikasi Setiap Potongan",
+          "latex": "x \\to -1^{-}: \\quad f(x) = x + 1 \\to 0 ; x = -1: \\quad f(-1) = (-1)^2 = 1 ; x \\to 2^{-}: \\quad f(x) = x^2 \\to 4 ; x = 2: \\quad f(2) = 2 - 2 = 0 ; Grafik di x = -1 (dari ketinggian 0 ke 1 ) dan di x = 2 (dari ketinggian 4 ke 0 ). ; grafik melompat di titik ujung selang (titik kosong vs penuh)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "x -> -1^(-): f(x) = x + 1 -> 0 ; x = -1: f(-1) = (-1)^2 = 1 ; x -> 2^(-): f(x) = x^2 -> 4 ; x = 2: f(2) = 2 - 2 = 0 ; Grafik di x = -1 (dari ketinggian 0 ke 1 ) and di x = 2 (dari ketinggian 4 ke 0 ). ; grafik melompat di titik ujung selang (titik kosong vs penuh)"
+          },
+          "steps": [
+            "x \\to -1^{-}: \\quad f(x) = x + 1 \\to 0",
+            "x = -1: \\quad f(-1) = (-1)^2 = 1",
+            "x \\to 2^{-}: \\quad f(x) = x^2 \\to 4",
+            "x = 2: \\quad f(2) = 2 - 2 = 0",
+            "Grafik di x = -1 (dari ketinggian 0 ke 1 ) dan di x = 2 (dari ketinggian 4 ke 0 ).",
+            "grafik melompat di titik ujung selang (titik kosong vs penuh)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "x -> -1^(-): f(x) = x + 1 -> 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = -1: f(-1) = (-1)^2 = 1"
+            },
+            {
+              "kind": "relation",
+              "repr": "x -> 2^(-): f(x) = x^2 -> 4"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = 2: f(2) = 2 - 2 = 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "Grafik di x = -1 (dari ketinggian 0 ke 1 ) and di x = 2 (dari ketinggian 4 ke 0 )."
+            },
+            {
+              "kind": "expression",
+              "repr": "grafik melompat di titik ujung selang (titik kosong vs penuh)"
+            }
+          ]
+        },
+        {
+          "role": "value_table",
+          "title": "Tabel Nilai",
+          "latex": "(-3, -2) ; (-2, -1) ; (-1, 1) ; (0, 0) ; (1, 1) ; (1{,}5, 2{,}25) ; (2, 0) ; (3, -1) ; (4, -2)",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "VALUE_TABLE((-3,-2);(-2,-1);(-1,1);(0,0);(1,1);(2,0);(3,-1);(4,-2))"
+          },
+          "steps": [
+            "(-3, -2)",
+            "(-2, -1)",
+            "(-1, 1)",
+            "(0, 0)",
+            "(1, 1)",
+            "(1{,}5, 2{,}25)",
+            "(2, 0)",
+            "(3, -1)",
+            "(4, -2)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((-3,-2))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((-2,-1))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((-1,1))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((0,0))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((1,1))"
+            },
+            null,
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((2,0))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((3,-1))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((4,-2))"
+            }
+          ]
+        },
+        {
+          "role": "domain",
+          "title": "Domain dan Range",
+          "latex": "D_f = (-\\infty, -1) \\cup [-1, 2) \\cup [2, \\infty) = \\mathbb{R} ; x < -1 \\;\\Rightarrow\\; x + 1 < 0 ; -1 \\le x < 2 \\;\\Rightarrow\\; 0 \\le x^2 < 4 ; x \\ge 2 \\;\\Rightarrow\\; 2 - x \\le 0",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = -oo < x < -1 or -1 <= x < 2 or 2 <= x < oo = (R) ; x < -1 => x + 1 < 0 ; -1 <= x < 2 => 0 <= x^2 < 4 ; x >= 2 => 2 - x <= 0"
+          },
+          "steps": [
+            "D_f = (-\\infty, -1) \\cup [-1, 2) \\cup [2, \\infty) = \\mathbb{R}",
+            "x < -1 \\;\\Rightarrow\\; x + 1 < 0",
+            "-1 \\le x < 2 \\;\\Rightarrow\\; 0 \\le x^2 < 4",
+            "x \\ge 2 \\;\\Rightarrow\\; 2 - x \\le 0"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "D_f = -oo < x < -1 or -1 <= x < 2 or 2 <= x < oo = (R)"
+            },
+            {
+              "kind": "relation",
+              "repr": "x < -1 => x + 1 < 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "-1 <= x < 2 => 0 <= x^2 < 4"
+            },
+            {
+              "kind": "relation",
+              "repr": "x >= 2 => 2 - x <= 0"
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Domain dan Range",
+          "latex": "R_f = (-\\infty, 0) \\cup [0, 4) \\cup (-\\infty, 0] = (-\\infty, 4).",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "R_f = -oo < x < 0 or 0 <= x < 4 or -oo < x <= 0 = (-oo, 4)."
+          },
+          "steps": [
+            "R_f = (-\\infty, 0) \\cup [0, 4) \\cup (-\\infty, 0] = (-\\infty, 4)."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "R_f = -oo < x < 0 or 0 <= x < 4 or -oo < x <= 0 = (-oo, 4)."
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "D_f = \\mathbb{R} ; R_f = (-\\infty, 4)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = (R) ; R_f = (-oo, 4)"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "D_f = \\mathbb{R} ; R_f = (-\\infty, 4)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "D_f = (R) ; R_f = (-oo, 4)"
+      },
+      "expects_figure": true,
+      "number_line": null,
+      "graph_points": [
+        {
+          "x": "-1",
+          "y": "0",
+          "closed": false
+        },
+        {
+          "x": "-1",
+          "y": "1",
+          "closed": true
+        },
+        {
+          "x": "2",
+          "y": "4",
+          "closed": false
+        },
+        {
+          "x": "2",
+          "y": "0",
+          "closed": true
+        }
+      ],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "domain",
+          "order": 3
+        },
+        {
+          "kind": "range",
+          "order": 4
+        },
+        {
+          "kind": "value_table",
+          "order": 5
+        },
+        {
+          "kind": "figure",
+          "order": 6
+        },
+        {
+          "kind": "hp",
+          "order": 7
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "part_label": "",
+      "stem": "Gambarkan grafik \\[ f(x) = \\begin{cases} x, & x \\le -1 \\\\ x^2, & -1 < x < 2 \\\\ 3, & x \\ge 2 \\end{cases} \\]",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Gambarkan grafik \\[ f(x) = Piecewise((x, x <= -1),(x**2, And(-1 < x, x < 2)),(3, x >= 2)) \\]"
+      },
+      "steps": [
+        "x = -1: \\quad f(-1) = -1",
+        "x \\to -1^{+}: \\quad f(x) = x^2 \\to 1",
+        "x \\to 2^{-}: \\quad f(x) = x^2 \\to 4",
+        "x = 2: \\quad f(2) = 3",
+        "D_f = (-\\infty, -1] \\cup (-1, 2) \\cup [2, \\infty) = \\mathbb{R}",
+        "x \\le -1 \\;\\Rightarrow\\; f(x) = x \\le -1",
+        "-1 < x < 2 \\;\\Rightarrow\\; 0 \\le x^2 < 4",
+        "x \\ge 2 \\;\\Rightarrow\\; f(x) = 3"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "x = -1: f(-1) = -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "x -> -1^(+): f(x) = x^2 -> 1"
+        },
+        {
+          "kind": "relation",
+          "repr": "x -> 2^(-): f(x) = x^2 -> 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "x = 2: f(2) = 3"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_f = -oo < x <= -1 or -1 < x < 2 or 2 <= x < oo = (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "x <= -1 => f(x) = x <= -1"
+        },
+        {
+          "kind": "relation",
+          "repr": "-1 < x < 2 => 0 <= x^2 < 4"
+        },
+        {
+          "kind": "relation",
+          "repr": "x >= 2 => f(x) = 3"
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "concept",
+          "title": "Identifikasi Setiap Potongan",
+          "latex": "x = -1: \\quad f(-1) = -1 ; x \\to -1^{+}: \\quad f(x) = x^2 \\to 1 ; x \\to 2^{-}: \\quad f(x) = x^2 \\to 4 ; x = 2: \\quad f(2) = 3 ; Grafik di x = -1 (dari ketinggian -1 ke 1 ) dan di x = 2 (dari ketinggian 4 ke 3 ). ; grafik melompat di titik ujung selang (titik kosong vs penuh)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "x = -1: f(-1) = -1 ; x -> -1^(+): f(x) = x^2 -> 1 ; x -> 2^(-): f(x) = x^2 -> 4 ; x = 2: f(2) = 3 ; Grafik di x = -1 (dari ketinggian -1 ke 1 ) and di x = 2 (dari ketinggian 4 ke 3 ). ; grafik melompat di titik ujung selang (titik kosong vs penuh)"
+          },
+          "steps": [
+            "x = -1: \\quad f(-1) = -1",
+            "x \\to -1^{+}: \\quad f(x) = x^2 \\to 1",
+            "x \\to 2^{-}: \\quad f(x) = x^2 \\to 4",
+            "x = 2: \\quad f(2) = 3",
+            "Grafik di x = -1 (dari ketinggian -1 ke 1 ) dan di x = 2 (dari ketinggian 4 ke 3 ).",
+            "grafik melompat di titik ujung selang (titik kosong vs penuh)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "x = -1: f(-1) = -1"
+            },
+            {
+              "kind": "relation",
+              "repr": "x -> -1^(+): f(x) = x^2 -> 1"
+            },
+            {
+              "kind": "relation",
+              "repr": "x -> 2^(-): f(x) = x^2 -> 4"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = 2: f(2) = 3"
+            },
+            {
+              "kind": "relation",
+              "repr": "Grafik di x = -1 (dari ketinggian -1 ke 1 ) and di x = 2 (dari ketinggian 4 ke 3 )."
+            },
+            {
+              "kind": "expression",
+              "repr": "grafik melompat di titik ujung selang (titik kosong vs penuh)"
+            }
+          ]
+        },
+        {
+          "role": "value_table",
+          "title": "Tabel Nilai",
+          "latex": "(0, 0) ; (1, 1) ; (1{,}5, 2{,}25) ; (2, 3) ; (3, 3)",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "VALUE_TABLE((0,0);(1,1);(2,3);(3,3))"
+          },
+          "steps": [
+            "(0, 0)",
+            "(1, 1)",
+            "(1{,}5, 2{,}25)",
+            "(2, 3)",
+            "(3, 3)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((0,0))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((1,1))"
+            },
+            null,
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((2,3))"
+            },
+            {
+              "kind": "expression",
+              "repr": "VALUE_TABLE((3,3))"
+            }
+          ]
+        },
+        {
+          "role": "domain",
+          "title": "Domain dan Range",
+          "latex": "D_f = (-\\infty, -1] \\cup (-1, 2) \\cup [2, \\infty) = \\mathbb{R} ; x \\le -1 \\;\\Rightarrow\\; f(x) = x \\le -1 ; -1 < x < 2 \\;\\Rightarrow\\; 0 \\le x^2 < 4 ; x \\ge 2 \\;\\Rightarrow\\; f(x) = 3 ; Karena 3 \\in [0, 4) , diperoleh",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = -oo < x <= -1 or -1 < x < 2 or 2 <= x < oo = (R) ; x <= -1 => f(x) = x <= -1 ; -1 < x < 2 => 0 <= x^2 < 4 ; x >= 2 => f(x) = 3 ; Karena 3 [0, 4) , diperoleh"
+          },
+          "steps": [
+            "D_f = (-\\infty, -1] \\cup (-1, 2) \\cup [2, \\infty) = \\mathbb{R}",
+            "x \\le -1 \\;\\Rightarrow\\; f(x) = x \\le -1",
+            "-1 < x < 2 \\;\\Rightarrow\\; 0 \\le x^2 < 4",
+            "x \\ge 2 \\;\\Rightarrow\\; f(x) = 3",
+            "Karena 3 \\in [0, 4) , diperoleh"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "D_f = -oo < x <= -1 or -1 < x < 2 or 2 <= x < oo = (R)"
+            },
+            {
+              "kind": "relation",
+              "repr": "x <= -1 => f(x) = x <= -1"
+            },
+            {
+              "kind": "relation",
+              "repr": "-1 < x < 2 => 0 <= x^2 < 4"
+            },
+            {
+              "kind": "relation",
+              "repr": "x >= 2 => f(x) = 3"
+            },
+            {
+              "kind": "expression",
+              "repr": "Karena 3 [0, 4) , diperoleh"
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Domain dan Range",
+          "latex": "R_f = (-\\infty, -1] \\cup [0, 4) \\cup \\{3\\} = (-\\infty, -1] \\cup [0, 4).",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "R_f = -oo < x <= -1 or 0 <= x < 4 or (3) = -oo < x <= -1 or 0 <= x < 4."
+          },
+          "steps": [
+            "R_f = (-\\infty, -1] \\cup [0, 4) \\cup \\{3\\} = (-\\infty, -1] \\cup [0, 4)."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "R_f = -oo < x <= -1 or 0 <= x < 4 or (3) = -oo < x <= -1 or 0 <= x < 4."
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "D_f = \\mathbb{R} ; R_f = (-\\infty, -1] \\cup [0, 4)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = (R) ; R_f = -oo < x <= -1 or 0 <= x < 4"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "D_f = \\mathbb{R} ; R_f = (-\\infty, -1] \\cup [0, 4)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "D_f = (R) ; R_f = -oo < x <= -1 or 0 <= x < 4"
+      },
+      "expects_figure": true,
+      "number_line": null,
+      "graph_points": [
+        {
+          "x": "-1",
+          "y": "-1",
+          "closed": true
+        },
+        {
+          "x": "-1",
+          "y": "1",
+          "closed": false
+        },
+        {
+          "x": "2",
+          "y": "4",
+          "closed": false
+        },
+        {
+          "x": "2",
+          "y": "3",
+          "closed": true
+        }
+      ],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "domain",
+          "order": 3
+        },
+        {
+          "kind": "range",
+          "order": 4
+        },
+        {
+          "kind": "value_table",
+          "order": 5
+        },
+        {
+          "kind": "figure",
+          "order": 6
+        },
+        {
+          "kind": "hp",
+          "order": 7
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "part_label": "a",
+      "stem": "Diketahui $f(x) = \\sqrt{x}$ dan $g(x) = x^2$. Periksa apakah $(f \\circ g)$ ada?",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Diketahui f(x) = sqrt(x) and g(x) = x^2. Periksa apakah (f o g) ada?"
+      },
+      "steps": [
+        "x \\geq 0 \\;\\Rightarrow\\; D_f = [0, \\infty)",
+        "\\sqrt{x} \\geq 0,\\ f(0) = 0 \\;\\Rightarrow\\; R_f = [0, \\infty)",
+        "D_g = \\mathbb{R}",
+        "x^2 \\geq 0 \\;\\Rightarrow\\; R_g = [0, \\infty)",
+        "R_g \\cap D_f = [0, \\infty) \\cap [0, \\infty) = [0, \\infty) \\neq \\emptyset"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "x >= 0 => D_f = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "sqrt(x) >= 0, f(0) = 0 => R_f = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_g = (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 >= 0 => R_g = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "R_g and D_f = 0 <= x < oo and 0 <= x < oo = [0, oo) !="
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "domain",
+          "title": "Domain dan Range $f$ dan $g$",
+          "latex": "x \\geq 0 \\;\\Rightarrow\\; D_f = [0, \\infty) ; D_g = \\mathbb{R} ; x^2 \\geq 0 \\;\\Rightarrow\\; R_g = [0, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "x >= 0 => D_f = [0, oo) ; D_g = (R) ; x^2 >= 0 => R_g = [0, oo)"
+          },
+          "steps": [
+            "x \\geq 0 \\;\\Rightarrow\\; D_f = [0, \\infty)",
+            "D_g = \\mathbb{R}",
+            "x^2 \\geq 0 \\;\\Rightarrow\\; R_g = [0, \\infty)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "x >= 0 => D_f = [0, oo)"
+            },
+            {
+              "kind": "relation",
+              "repr": "D_g = (R)"
+            },
+            {
+              "kind": "relation",
+              "repr": "x^2 >= 0 => R_g = [0, oo)"
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Domain dan Range $f$ dan $g$",
+          "latex": "\\sqrt{x} \\geq 0,\\ f(0) = 0 \\;\\Rightarrow\\; R_f = [0, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "sqrt(x) >= 0, f(0) = 0 => R_f = [0, oo)"
+          },
+          "steps": [
+            "\\sqrt{x} \\geq 0,\\ f(0) = 0 \\;\\Rightarrow\\; R_f = [0, \\infty)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "sqrt(x) >= 0, f(0) = 0 => R_f = [0, oo)"
+            }
+          ]
+        },
+        {
+          "role": "composition",
+          "title": "Bagian (a), Periksa Syarat $f \\circ g$",
+          "latex": "R_g \\cap D_f = [0, \\infty) \\cap [0, \\infty) = [0, \\infty) \\neq \\emptyset ; Karena R_g \\cap D_f \\neq \\emptyset , maka f \\circ g ada.",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "R_g and D_f = 0 <= x < oo and 0 <= x < oo = [0, oo) != ; Karena R_g and D_f != , maka f o g ada."
+          },
+          "steps": [
+            "R_g \\cap D_f = [0, \\infty) \\cap [0, \\infty) = [0, \\infty) \\neq \\emptyset",
+            "Karena R_g \\cap D_f \\neq \\emptyset , maka f \\circ g ada."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "R_g and D_f = 0 <= x < oo and 0 <= x < oo = [0, oo) !="
+            },
+            {
+              "kind": "relation",
+              "repr": "Karena R_g and D_f != , maka f o g ada."
+            }
+          ]
+        },
+        {
+          "role": "concept",
+          "title": "",
+          "latex": "$f \\circ g$ ada karena $R_g \\cap D_f \\neq \\emptyset$",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "f o g ada karena R_g and D_f !="
+          },
+          "steps": [
+            "$f \\circ g$ ada karena $R_g \\cap D_f \\neq \\emptyset$"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "f o g ada karena R_g and D_f !="
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "\\text{ada}",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "ada"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "\\text{ada}",
+      "final_symbolic": {
+        "kind": "expression",
+        "repr": "ada"
+      },
+      "expects_figure": false,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "domain",
+          "order": 3
+        },
+        {
+          "kind": "range",
+          "order": 4
+        },
+        {
+          "kind": "composition",
+          "order": 5
+        },
+        {
+          "kind": "hp",
+          "order": 6
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "part_label": "b",
+      "stem": "Diketahui $f(x) = \\sqrt{x}$ dan $g(x) = x^2$. Jika ada, tentukan $(f \\circ g)(x)$, $(f \\circ g)(5)$, $D_{f \\circ g}$, dan $R_{f \\circ g}$.",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Diketahui f(x) = sqrt(x) and g(x) = x^2. Jika ada, tentukan (f o g)(x), (f o g)(5), D_(f o g), and R_(f o g)."
+      },
+      "steps": [
+        "D_f = [0, \\infty),\\quad R_f = [0, \\infty)",
+        "D_g = \\mathbb{R},\\quad R_g = [0, \\infty)",
+        "(f \\circ g)(x) = f\\bigl(g(x)\\bigr) = f(x^2)",
+        "\\sqrt{x^2} = |x|",
+        "(f \\circ g)(5) = |5| = 5",
+        "D_{f \\circ g} = \\{x \\in D_g \\mid g(x) \\in D_f\\}",
+        "\\{x \\in \\mathbb{R} \\mid x^2 \\in [0, \\infty)\\}",
+        "x^2 \\geq 0",
+        "R_{f \\circ g} = \\{ y \\in R_f \\mid y = f(t), \\, t \\in R_g \\cap D_f \\}",
+        "t \\in R_g \\cap D_f = [0, \\infty)",
+        "y = f(t) = \\sqrt{t},\\ t \\in [0, \\infty) \\;\\Rightarrow\\; y \\in [0, \\infty)"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "D_f = [0, oo), R_f = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_g = (R), R_g = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "(f o g)(x) = f(g(x)) = f(x^2)"
+        },
+        {
+          "kind": "relation",
+          "repr": "sqrt(x^2) = Abs(x)"
+        },
+        {
+          "kind": "relation",
+          "repr": "(f o g)(5) = Abs(5) = 5"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_(f o g) = (x D_g g(x) D_f)"
+        },
+        {
+          "kind": "expression",
+          "repr": "(x (R) x^2 [0, oo))"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 >= 0"
+        },
+        {
+          "kind": "relation",
+          "repr": "R_(f o g) = ( y R_f y = f(t), t R_g and D_f )"
+        },
+        {
+          "kind": "relation",
+          "repr": "t R_g and D_f = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "y = f(t) = sqrt(t), 0 <= t < oo => 0 <= y < oo"
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "domain",
+          "title": "Domain dan Range $f$ dan $g$ (ringkas)",
+          "latex": "D_g = \\mathbb{R},\\quad R_g = [0, \\infty) ; D_{f \\circ g} = \\{x \\in D_g \\mid g(x) \\in D_f\\} ; \\{x \\in \\mathbb{R} \\mid x^2 \\in [0, \\infty)\\} ; x^2 \\geq 0 ; Jadi D_{f \\circ g} = \\mathbb{R} = (-\\infty, \\infty) .",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_g = (R), R_g = [0, oo) ; D_(f o g) = (x D_g g(x) D_f) ; (x (R) x^2 [0, oo)) ; x^2 >= 0 ; Jadi D_(f o g) = (R) = (-oo, oo) ."
+          },
+          "steps": [
+            "D_g = \\mathbb{R},\\quad R_g = [0, \\infty)",
+            "D_{f \\circ g} = \\{x \\in D_g \\mid g(x) \\in D_f\\}",
+            "\\{x \\in \\mathbb{R} \\mid x^2 \\in [0, \\infty)\\}",
+            "x^2 \\geq 0",
+            "Jadi D_{f \\circ g} = \\mathbb{R} = (-\\infty, \\infty) ."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "D_g = (R), R_g = [0, oo)"
+            },
+            {
+              "kind": "relation",
+              "repr": "D_(f o g) = (x D_g g(x) D_f)"
+            },
+            {
+              "kind": "expression",
+              "repr": "(x (R) x^2 [0, oo))"
+            },
+            {
+              "kind": "relation",
+              "repr": "x^2 >= 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "Jadi D_(f o g) = (R) = (-oo, oo) ."
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Domain dan Range $f$ dan $g$ (ringkas)",
+          "latex": "D_f = [0, \\infty),\\quad R_f = [0, \\infty) ; R_{f \\circ g} = \\{ y \\in R_f \\mid y = f(t), \\, t \\in R_g \\cap D_f \\} ; t \\in R_g \\cap D_f = [0, \\infty) ; y = f(t) = \\sqrt{t},\\ t \\in [0, \\infty) \\;\\Rightarrow\\; y \\in [0, \\infty) ; (f \\circ g)(x) = |x|, (f \\circ g)(5) = 5, D_{f \\circ g} = (-\\infty, \\infty), R_{f \\circ g} = [0, \\infty).",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = [0, oo), R_f = [0, oo) ; R_(f o g) = ( y R_f y = f(t), t R_g and D_f ) ; t R_g and D_f = [0, oo) ; y = f(t) = sqrt(t), 0 <= t < oo => 0 <= y < oo ; (f o g)(x) = Abs(x), (f o g)(5) = 5, D_(f o g) = (-oo, oo), R_(f o g) = [0, oo)."
+          },
+          "steps": [
+            "D_f = [0, \\infty),\\quad R_f = [0, \\infty)",
+            "R_{f \\circ g} = \\{ y \\in R_f \\mid y = f(t), \\, t \\in R_g \\cap D_f \\}",
+            "t \\in R_g \\cap D_f = [0, \\infty)",
+            "y = f(t) = \\sqrt{t},\\ t \\in [0, \\infty) \\;\\Rightarrow\\; y \\in [0, \\infty)",
+            "(f \\circ g)(x) = |x|, (f \\circ g)(5) = 5, D_{f \\circ g} = (-\\infty, \\infty), R_{f \\circ g} = [0, \\infty)."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "D_f = [0, oo), R_f = [0, oo)"
+            },
+            {
+              "kind": "relation",
+              "repr": "R_(f o g) = ( y R_f y = f(t), t R_g and D_f )"
+            },
+            {
+              "kind": "relation",
+              "repr": "t R_g and D_f = [0, oo)"
+            },
+            {
+              "kind": "relation",
+              "repr": "y = f(t) = sqrt(t), 0 <= t < oo => 0 <= y < oo"
+            },
+            {
+              "kind": "relation",
+              "repr": "(f o g)(x) = Abs(x), (f o g)(5) = 5, D_(f o g) = (-oo, oo), R_(f o g) = [0, oo)."
+            }
+          ]
+        },
+        {
+          "role": "composition",
+          "title": "Bagian (b), Rumus dan Nilai $f \\circ g$",
+          "latex": "(f \\circ g)(x) = f\\bigl(g(x)\\bigr) = f(x^2) ; \\sqrt{x^2} = |x| ; (f \\circ g)(5) = |5| = 5 ; Perhatikan bahwa \\sqrt{x^2} = |x| , bukan x . ; Misalnya untuk x = -5 diperoleh \\sqrt{(-5)^2} = \\sqrt{25} = 5 = |-5| , bukan -5 .",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "(f o g)(x) = f(g(x)) = f(x^2) ; sqrt(x^2) = Abs(x) ; (f o g)(5) = Abs(5) = 5 ; Perhatikan bahwa sqrt(x^2) = Abs(x) , bukan x . ; Misalnya untuk x = -5 diperoleh sqrt((-5)^2) = sqrt(25) = 5 = Abs(-5) , bukan -5 ."
+          },
+          "steps": [
+            "(f \\circ g)(x) = f\\bigl(g(x)\\bigr) = f(x^2)",
+            "\\sqrt{x^2} = |x|",
+            "(f \\circ g)(5) = |5| = 5",
+            "Perhatikan bahwa \\sqrt{x^2} = |x| , bukan x .",
+            "Misalnya untuk x = -5 diperoleh \\sqrt{(-5)^2} = \\sqrt{25} = 5 = |-5| , bukan -5 ."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "(f o g)(x) = f(g(x)) = f(x^2)"
+            },
+            {
+              "kind": "relation",
+              "repr": "sqrt(x^2) = Abs(x)"
+            },
+            {
+              "kind": "relation",
+              "repr": "(f o g)(5) = Abs(5) = 5"
+            },
+            {
+              "kind": "relation",
+              "repr": "Perhatikan bahwa sqrt(x^2) = Abs(x) , bukan x ."
+            },
+            {
+              "kind": "relation",
+              "repr": "Misalnya untuk x = -5 diperoleh sqrt((-5)^2) = sqrt(25) = 5 = Abs(-5) , bukan -5 ."
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "(f \\circ g)(x) = |x| ; (f \\circ g)(5) = 5 ; D_{f \\circ g} = (-\\infty, \\infty) ; R_{f \\circ g} = [0, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "(f o g)(x) = Abs(x) ; (f o g)(5) = 5 ; D_(f o g) = (-oo, oo) ; R_(f o g) = [0, oo)"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "(f \\circ g)(x) = |x| ; (f \\circ g)(5) = 5 ; D_{f \\circ g} = (-\\infty, \\infty) ; R_{f \\circ g} = [0, \\infty)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "(f o g)(x) = Abs(x) ; (f o g)(5) = 5 ; D_(f o g) = (-oo, oo) ; R_(f o g) = [0, oo)"
+      },
+      "expects_figure": false,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "domain",
+          "order": 2
+        },
+        {
+          "kind": "range",
+          "order": 3
+        },
+        {
+          "kind": "composition",
+          "order": 4
+        },
+        {
+          "kind": "hp",
+          "order": 5
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "part_label": "a",
+      "stem": "Diketahui $f(x) = x^2$ dan $g(x) = x - 1$. Periksa apakah $(g \\circ f)$ ada?",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Diketahui f(x) = x^2 and g(x) = x - 1. Periksa apakah (g o f) ada?"
+      },
+      "steps": [
+        "D_f = \\mathbb{R}",
+        "x^2 \\geq 0 \\;\\Rightarrow\\; R_f = [0, \\infty)",
+        "D_g = \\mathbb{R}",
+        "R_g = \\mathbb{R}",
+        "R_f \\cap D_g = [0, \\infty) \\cap (-\\infty, \\infty) = [0, \\infty) \\neq \\emptyset"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "D_f = (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "x^2 >= 0 => R_f = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_g = (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "R_g = (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "R_f and D_g = 0 <= x < oo and -oo < x < oo = [0, oo) !="
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "domain",
+          "title": "Domain dan Range $f$ dan $g$",
+          "latex": "D_f = \\mathbb{R} ; D_g = \\mathbb{R} ; R_g = \\mathbb{R}",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = (R) ; D_g = (R) ; R_g = (R)"
+          },
+          "steps": [
+            "D_f = \\mathbb{R}",
+            "D_g = \\mathbb{R}",
+            "R_g = \\mathbb{R}"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "D_f = (R)"
+            },
+            {
+              "kind": "relation",
+              "repr": "D_g = (R)"
+            },
+            {
+              "kind": "relation",
+              "repr": "R_g = (R)"
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Domain dan Range $f$ dan $g$",
+          "latex": "x^2 \\geq 0 \\;\\Rightarrow\\; R_f = [0, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "x^2 >= 0 => R_f = [0, oo)"
+          },
+          "steps": [
+            "x^2 \\geq 0 \\;\\Rightarrow\\; R_f = [0, \\infty)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "x^2 >= 0 => R_f = [0, oo)"
+            }
+          ]
+        },
+        {
+          "role": "composition",
+          "title": "Bagian (a), Periksa Syarat $g \\circ f$",
+          "latex": "R_f \\cap D_g = [0, \\infty) \\cap (-\\infty, \\infty) = [0, \\infty) \\neq \\emptyset ; Karena R_f \\cap D_g \\neq \\emptyset , maka g \\circ f ada.",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "R_f and D_g = 0 <= x < oo and -oo < x < oo = [0, oo) != ; Karena R_f and D_g != , maka g o f ada."
+          },
+          "steps": [
+            "R_f \\cap D_g = [0, \\infty) \\cap (-\\infty, \\infty) = [0, \\infty) \\neq \\emptyset",
+            "Karena R_f \\cap D_g \\neq \\emptyset , maka g \\circ f ada."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "R_f and D_g = 0 <= x < oo and -oo < x < oo = [0, oo) !="
+            },
+            {
+              "kind": "relation",
+              "repr": "Karena R_f and D_g != , maka g o f ada."
+            }
+          ]
+        },
+        {
+          "role": "concept",
+          "title": "",
+          "latex": "$g \\circ f$ ada karena $R_f \\cap D_g \\neq \\emptyset$",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "g o f ada karena R_f and D_g !="
+          },
+          "steps": [
+            "$g \\circ f$ ada karena $R_f \\cap D_g \\neq \\emptyset$"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "g o f ada karena R_f and D_g !="
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "\\text{ada}",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "ada"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "\\text{ada}",
+      "final_symbolic": {
+        "kind": "expression",
+        "repr": "ada"
+      },
+      "expects_figure": false,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "domain",
+          "order": 3
+        },
+        {
+          "kind": "range",
+          "order": 4
+        },
+        {
+          "kind": "composition",
+          "order": 5
+        },
+        {
+          "kind": "hp",
+          "order": 6
+        }
+      ]
+    },
+    {
+      "number": 5,
+      "part_label": "b",
+      "stem": "Diketahui $f(x) = x^2$ dan $g(x) = x - 1$. Jika ada, tentukan $(g \\circ f)(x)$, $(g \\circ f)(2)$, $D_{g \\circ f}$, dan $R_{g \\circ f}$.",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Diketahui f(x) = x^2 and g(x) = x - 1. Jika ada, tentukan (g o f)(x), (g o f)(2), D_(g o f), and R_(g o f)."
+      },
+      "steps": [
+        "D_f = \\mathbb{R},\\quad R_f = [0, \\infty)",
+        "D_g = \\mathbb{R},\\quad R_g = \\mathbb{R}",
+        "(g \\circ f)(x) = g\\bigl(f(x)\\bigr) = g(x^2)",
+        "x^2 - 1",
+        "(g \\circ f)(2) = 2^2 - 1 = 3",
+        "D_{g \\circ f} = \\{x \\in D_f \\mid f(x) \\in D_g\\}",
+        "\\{x \\in \\mathbb{R} \\mid x^2 \\in (-\\infty, \\infty)\\}",
+        "x^2 \\in \\mathbb{R}",
+        "R_{g \\circ f} = \\{ y \\in R_g \\mid y = g(t), \\, t \\in R_f \\cap D_g \\}",
+        "t \\in R_f \\cap D_g = [0, \\infty)",
+        "y = g(t) = t - 1,\\ t \\geq 0 \\;\\Rightarrow\\; y \\geq -1"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "D_f = (R), R_f = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_g = (R), R_g = (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "(g o f)(x) = g(f(x)) = g(x^2)"
+        },
+        {
+          "kind": "expression",
+          "repr": "x^2 - 1"
+        },
+        {
+          "kind": "relation",
+          "repr": "(g o f)(2) = 2^2 - 1 = 3"
+        },
+        {
+          "kind": "relation",
+          "repr": "D_(g o f) = (x D_f f(x) D_g)"
+        },
+        {
+          "kind": "expression",
+          "repr": "(x (R) x^2 (-oo, oo))"
+        },
+        {
+          "kind": "expression",
+          "repr": "x^2 (R)"
+        },
+        {
+          "kind": "relation",
+          "repr": "R_(g o f) = ( y R_g y = g(t), t R_f and D_g )"
+        },
+        {
+          "kind": "relation",
+          "repr": "t R_f and D_g = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "y = g(t) = t - 1, t >= 0 => y >= -1"
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "domain",
+          "title": "Domain dan Range $f$ dan $g$ (ringkas)",
+          "latex": "D_g = \\mathbb{R},\\quad R_g = \\mathbb{R} ; D_{g \\circ f} = \\{x \\in D_f \\mid f(x) \\in D_g\\} ; \\{x \\in \\mathbb{R} \\mid x^2 \\in (-\\infty, \\infty)\\} ; x^2 \\in \\mathbb{R} ; Jadi D_{g \\circ f} = \\mathbb{R} = (-\\infty, \\infty) .",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_g = (R), R_g = (R) ; D_(g o f) = (x D_f f(x) D_g) ; (x (R) x^2 (-oo, oo)) ; x^2 (R) ; Jadi D_(g o f) = (R) = (-oo, oo) ."
+          },
+          "steps": [
+            "D_g = \\mathbb{R},\\quad R_g = \\mathbb{R}",
+            "D_{g \\circ f} = \\{x \\in D_f \\mid f(x) \\in D_g\\}",
+            "\\{x \\in \\mathbb{R} \\mid x^2 \\in (-\\infty, \\infty)\\}",
+            "x^2 \\in \\mathbb{R}",
+            "Jadi D_{g \\circ f} = \\mathbb{R} = (-\\infty, \\infty) ."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "D_g = (R), R_g = (R)"
+            },
+            {
+              "kind": "relation",
+              "repr": "D_(g o f) = (x D_f f(x) D_g)"
+            },
+            {
+              "kind": "expression",
+              "repr": "(x (R) x^2 (-oo, oo))"
+            },
+            {
+              "kind": "expression",
+              "repr": "x^2 (R)"
+            },
+            {
+              "kind": "relation",
+              "repr": "Jadi D_(g o f) = (R) = (-oo, oo) ."
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Domain dan Range $f$ dan $g$ (ringkas)",
+          "latex": "D_f = \\mathbb{R},\\quad R_f = [0, \\infty) ; R_{g \\circ f} = \\{ y \\in R_g \\mid y = g(t), \\, t \\in R_f \\cap D_g \\} ; t \\in R_f \\cap D_g = [0, \\infty) ; y = g(t) = t - 1,\\ t \\geq 0 \\;\\Rightarrow\\; y \\geq -1 ; (g \\circ f)(x) = x^2 - 1, (g \\circ f)(2) = 3, D_{g \\circ f} = (-\\infty, \\infty), R_{g \\circ f} = [-1, \\infty).",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "D_f = (R), R_f = [0, oo) ; R_(g o f) = ( y R_g y = g(t), t R_f and D_g ) ; t R_f and D_g = [0, oo) ; y = g(t) = t - 1, t >= 0 => y >= -1 ; (g o f)(x) = x^2 - 1, (g o f)(2) = 3, D_(g o f) = (-oo, oo), R_(g o f) = [-1, oo)."
+          },
+          "steps": [
+            "D_f = \\mathbb{R},\\quad R_f = [0, \\infty)",
+            "R_{g \\circ f} = \\{ y \\in R_g \\mid y = g(t), \\, t \\in R_f \\cap D_g \\}",
+            "t \\in R_f \\cap D_g = [0, \\infty)",
+            "y = g(t) = t - 1,\\ t \\geq 0 \\;\\Rightarrow\\; y \\geq -1",
+            "(g \\circ f)(x) = x^2 - 1, (g \\circ f)(2) = 3, D_{g \\circ f} = (-\\infty, \\infty), R_{g \\circ f} = [-1, \\infty)."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "D_f = (R), R_f = [0, oo)"
+            },
+            {
+              "kind": "relation",
+              "repr": "R_(g o f) = ( y R_g y = g(t), t R_f and D_g )"
+            },
+            {
+              "kind": "relation",
+              "repr": "t R_f and D_g = [0, oo)"
+            },
+            {
+              "kind": "relation",
+              "repr": "y = g(t) = t - 1, t >= 0 => y >= -1"
+            },
+            {
+              "kind": "relation",
+              "repr": "(g o f)(x) = x^2 - 1, (g o f)(2) = 3, D_(g o f) = (-oo, oo), R_(g o f) = [-1, oo)."
+            }
+          ]
+        },
+        {
+          "role": "composition",
+          "title": "Bagian (b), Rumus dan Nilai $g \\circ f$",
+          "latex": "(g \\circ f)(x) = g\\bigl(f(x)\\bigr) = g(x^2) ; x^2 - 1 ; (g \\circ f)(2) = 2^2 - 1 = 3",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "(g o f)(x) = g(f(x)) = g(x^2) ; x^2 - 1 ; (g o f)(2) = 2^2 - 1 = 3"
+          },
+          "steps": [
+            "(g \\circ f)(x) = g\\bigl(f(x)\\bigr) = g(x^2)",
+            "x^2 - 1",
+            "(g \\circ f)(2) = 2^2 - 1 = 3"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "(g o f)(x) = g(f(x)) = g(x^2)"
+            },
+            {
+              "kind": "expression",
+              "repr": "x^2 - 1"
+            },
+            {
+              "kind": "relation",
+              "repr": "(g o f)(2) = 2^2 - 1 = 3"
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "(g \\circ f)(x) = x^2 - 1 ; (g \\circ f)(2) = 3 ; D_{g \\circ f} = (-\\infty, \\infty) ; R_{g \\circ f} = [-1, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "(g o f)(x) = x^2 - 1 ; (g o f)(2) = 3 ; D_(g o f) = (-oo, oo) ; R_(g o f) = [-1, oo)"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "(g \\circ f)(x) = x^2 - 1 ; (g \\circ f)(2) = 3 ; D_{g \\circ f} = (-\\infty, \\infty) ; R_{g \\circ f} = [-1, \\infty)",
+      "final_symbolic": {
+        "kind": "relation",
+        "repr": "(g o f)(x) = x^2 - 1 ; (g o f)(2) = 3 ; D_(g o f) = (-oo, oo) ; R_(g o f) = [-1, oo)"
+      },
+      "expects_figure": false,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "domain",
+          "order": 2
+        },
+        {
+          "kind": "range",
+          "order": 3
+        },
+        {
+          "kind": "composition",
+          "order": 4
+        },
+        {
+          "kind": "hp",
+          "order": 5
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "part_label": "a",
+      "stem": "Diketahui $f(x) = \\sqrt{x - 4}$ dan $g(x) = \\sqrt{-1 - x}$. Periksa apakah $(g \\circ f)$ ada?",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Diketahui f(x) = sqrt(x - 4) and g(x) = sqrt(-1 - x). Periksa apakah (g o f) ada?"
+      },
+      "steps": [
+        "x - 4 \\geq 0 \\Rightarrow x \\geq 4 \\;\\Rightarrow\\; D_f = [4, \\infty)",
+        "\\sqrt{x - 4} \\geq 0,\\ f(4) = 0 \\;\\Rightarrow\\; R_f = [0, \\infty)",
+        "-1 - x \\geq 0 \\Rightarrow x \\leq -1 \\;\\Rightarrow\\; D_g = (-\\infty, -1]",
+        "\\sqrt{-1 - x} \\geq 0,\\ g(-1) = 0 \\;\\Rightarrow\\; R_g = [0, \\infty)",
+        "R_f \\cap D_g = [0, \\infty) \\cap (-\\infty, -1] = \\emptyset"
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "relation",
+          "repr": "x - 4 >= 0 => x >= 4 => D_f = [4, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "sqrt(x - 4) >= 0, f(4) = 0 => R_f = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "-1 - x >= 0 => x <= -1 => D_g = (-oo, -1]"
+        },
+        {
+          "kind": "relation",
+          "repr": "sqrt(-1 - x) >= 0, g(-1) = 0 => R_g = [0, oo)"
+        },
+        {
+          "kind": "relation",
+          "repr": "R_f and D_g = 0 <= x < oo and -oo < x <= -1 ="
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "domain",
+          "title": "Domain dan Range $f$ dan $g$",
+          "latex": "x - 4 \\geq 0 \\Rightarrow x \\geq 4 \\;\\Rightarrow\\; D_f = [4, \\infty) ; -1 - x \\geq 0 \\Rightarrow x \\leq -1 \\;\\Rightarrow\\; D_g = (-\\infty, -1] ; \\sqrt{-1 - x} \\geq 0,\\ g(-1) = 0 \\;\\Rightarrow\\; R_g = [0, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "x - 4 >= 0 => x >= 4 => D_f = [4, oo) ; -1 - x >= 0 => x <= -1 => D_g = (-oo, -1] ; sqrt(-1 - x) >= 0, g(-1) = 0 => R_g = [0, oo)"
+          },
+          "steps": [
+            "x - 4 \\geq 0 \\Rightarrow x \\geq 4 \\;\\Rightarrow\\; D_f = [4, \\infty)",
+            "-1 - x \\geq 0 \\Rightarrow x \\leq -1 \\;\\Rightarrow\\; D_g = (-\\infty, -1]",
+            "\\sqrt{-1 - x} \\geq 0,\\ g(-1) = 0 \\;\\Rightarrow\\; R_g = [0, \\infty)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "x - 4 >= 0 => x >= 4 => D_f = [4, oo)"
+            },
+            {
+              "kind": "relation",
+              "repr": "-1 - x >= 0 => x <= -1 => D_g = (-oo, -1]"
+            },
+            {
+              "kind": "relation",
+              "repr": "sqrt(-1 - x) >= 0, g(-1) = 0 => R_g = [0, oo)"
+            }
+          ]
+        },
+        {
+          "role": "range",
+          "title": "Domain dan Range $f$ dan $g$",
+          "latex": "\\sqrt{x - 4} \\geq 0,\\ f(4) = 0 \\;\\Rightarrow\\; R_f = [0, \\infty)",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "sqrt(x - 4) >= 0, f(4) = 0 => R_f = [0, oo)"
+          },
+          "steps": [
+            "\\sqrt{x - 4} \\geq 0,\\ f(4) = 0 \\;\\Rightarrow\\; R_f = [0, \\infty)"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "sqrt(x - 4) >= 0, f(4) = 0 => R_f = [0, oo)"
+            }
+          ]
+        },
+        {
+          "role": "composition",
+          "title": "Bagian (a), Periksa Syarat $g \\circ f$",
+          "latex": "R_f \\cap D_g = [0, \\infty) \\cap (-\\infty, -1] = \\emptyset ; Karena R_f \\cap D_g = \\emptyset , maka g \\circ f . ; Keluaran f selalu bernilai \\geq 0 , sedangkan g hanya menerima masukan \\leq -1 , sehingga tidak ada satu pun keluaran f yang dapat diproses oleh g .",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "R_f and D_g = 0 <= x < oo and -oo < x <= -1 = ; Karena R_f and D_g = , maka g o f . ; Keluaran f selalu bernilai >= 0 , sedangkan g hanya menerima masukan <= -1 , sehingga tidak ada satu pun keluaran f yang dapat diproses oleh g ."
+          },
+          "steps": [
+            "R_f \\cap D_g = [0, \\infty) \\cap (-\\infty, -1] = \\emptyset",
+            "Karena R_f \\cap D_g = \\emptyset , maka g \\circ f .",
+            "Keluaran f selalu bernilai \\geq 0 , sedangkan g hanya menerima masukan \\leq -1 , sehingga tidak ada satu pun keluaran f yang dapat diproses oleh g ."
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "R_f and D_g = 0 <= x < oo and -oo < x <= -1 ="
+            },
+            {
+              "kind": "relation",
+              "repr": "Karena R_f and D_g = , maka g o f ."
+            },
+            {
+              "kind": "relation",
+              "repr": "Keluaran f selalu bernilai >= 0 , sedangkan g hanya menerima masukan <= -1 , sehingga tidak ada satu pun keluaran f yang dapat diproses oleh g ."
+            }
+          ]
+        },
+        {
+          "role": "concept",
+          "title": "",
+          "latex": "$g \\circ f$ tidak ada karena $R_f \\cap D_g = \\emptyset$",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "g o f tidak ada karena R_f and D_g ="
+          },
+          "steps": [
+            "$g \\circ f$ tidak ada karena $R_f \\cap D_g = \\emptyset$"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "g o f tidak ada karena R_f and D_g ="
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "\\text{tidak ada}",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "tidak ada"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "\\text{tidak ada}",
+      "final_symbolic": {
+        "kind": "expression",
+        "repr": "tidak ada"
+      },
+      "expects_figure": false,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "domain",
+          "order": 3
+        },
+        {
+          "kind": "range",
+          "order": 4
+        },
+        {
+          "kind": "composition",
+          "order": 5
+        },
+        {
+          "kind": "hp",
+          "order": 6
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "part_label": "b",
+      "stem": "Diketahui $f(x) = \\sqrt{x - 4}$ dan $g(x) = \\sqrt{-1 - x}$. Jika ada, tentukan $(g \\circ f)(x)$, $D_{g \\circ f}$, dan $R_{g \\circ f}$.",
+      "stem_symbolic": {
+        "kind": "relation",
+        "repr": "Diketahui f(x) = sqrt(x - 4) and g(x) = sqrt(-1 - x). Jika ada, tentukan (g o f)(x), D_(g o f), and R_(g o f)."
+      },
+      "steps": [
+        "Karena g \\circ f tidak ada (Bagian a), maka (g \\circ f)(x) , D_{g \\circ f} , dan R_{g \\circ f} tidak dapat ditentukan.",
+        "Dengan definisi domain komposisi pun diperoleh",
+        "D_{g \\circ f} = \\{x \\in [4, \\infty) \\mid \\sqrt{x - 4} \\leq -1\\} = \\emptyset,",
+        "karena \\sqrt{x - 4} \\leq -1 tidak pernah benar."
+      ],
+      "steps_symbolic": [
+        {
+          "kind": "expression",
+          "repr": "Karena g o f tidak ada (Bagian a), maka (g o f)(x) , D_(g o f) , and R_(g o f) tidak dapat ditentukan."
+        },
+        null,
+        {
+          "kind": "relation",
+          "repr": "D_(g o f) = (4 <= x < oo sqrt(x - 4) <= -1) = ,"
+        },
+        {
+          "kind": "relation",
+          "repr": "karena sqrt(x - 4) <= -1 tidak pernah benar."
+        }
+      ],
+      "methods": [],
+      "milestones": [
+        {
+          "role": "concept",
+          "title": "",
+          "latex": "bagian (b) tidak ditentukan karena komposisi tidak ada",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "bagian (b) tidak ditentukan karena komposisi tidak ada"
+          },
+          "steps": [
+            "bagian (b) tidak ditentukan karena komposisi tidak ada"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "expression",
+              "repr": "bagian (b) tidak ditentukan karena komposisi tidak ada"
+            }
+          ]
+        },
+        {
+          "role": "hp",
+          "title": "",
+          "latex": "\\text{tidak ada}",
+          "symbolic": {
+            "kind": "expression",
+            "repr": "tidak ada"
+          },
+          "steps": [],
+          "steps_symbolic": []
+        }
+      ],
+      "final": "\\text{tidak ada}",
+      "final_symbolic": {
+        "kind": "expression",
+        "repr": "tidak ada"
+      },
+      "expects_figure": false,
+      "number_line": null,
+      "graph_points": [],
+      "parts": [
+        {
+          "kind": "algebra",
+          "order": 1
+        },
+        {
+          "kind": "concept",
+          "order": 2
+        },
+        {
+          "kind": "hp",
+          "order": 3
+        }
+      ]
+    }
+  ]
+}

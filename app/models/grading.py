@@ -69,6 +69,7 @@ class StepGrade(BaseModel):
 class QuestionGrade(BaseModel):
     question_id: str
     question_number: int
+    part_label: str = ""
     score: float
     maximum_score: float
     steps: list[StepGrade] = Field(default_factory=list)

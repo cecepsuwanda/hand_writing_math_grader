@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.config import load_config
 from app.controllers.grade_controller import GradeController
 from app.controllers.process_controller import ProcessController
+from app.functions.question_names import question_dir_name
 from app.functions.run_layout import RunLayout
 from app.functions.standards_layout import topic_standard_dir
 from app.models.grading import GradeResult, Rubric
@@ -40,10 +41,10 @@ from tests.support.builders import (
 )
 from tests.support.fakes import FakeJobManager, RecordingProcessController
 
-def q1_standard(tmp_path: Path) -> Path:
-    """Ingest :data:`Q1_KUNCI` (topic 1.5) into ``tmp_path/standards/topik_1``."""
+def q1_standard(tmp_path: Path, text: str = Q1_KUNCI) -> Path:
+    """Ingest ``text`` (default :data:`Q1_KUNCI`, topic 1.5) into ``tmp_path/standards/topik_1``."""
     kunci = tmp_path / "kunci_q1.tex"
-    kunci.write_text(Q1_KUNCI, encoding="utf-8")
+    kunci.write_text(text, encoding="utf-8")
     standard = topic_standard_dir(tmp_path / "standards", "1.5")
     KunciIngester(standard).ingest_file(kunci)
     return standard
@@ -126,9 +127,9 @@ class WebHarness:
         path.write_text(text, encoding="utf-8")
         return path
 
-    def standard(self) -> Path:
-        """Ingest :data:`Q1_KUNCI` into this harness's topic 1.5 standard."""
-        return q1_standard(self.tmp_path)
+    def standard(self, text: str = Q1_KUNCI) -> Path:
+        """Ingest ``text`` (default :data:`Q1_KUNCI`) into this harness's topic 1.5 standard."""
+        return q1_standard(self.tmp_path, text)
 
     def run_dir(self, name: str = "answer", *page_sizes: tuple[int, int]) -> RunLayout:
         """Run folder with rendered blank pages (one 200x300 page by default)."""
@@ -285,14 +286,16 @@ class GradingWorkspace:
         self.questions_dir = tmp_path / "questions"
         self.add_rubric(rubric or sample_rubric())
 
-    def add_rubric(self, rubric: Rubric, number: int = 1) -> Path:
-        path = self.standard / "rubrics" / f"question_{number:03d}.json"
+    def add_rubric(self, rubric: Rubric, number: int = 1, part_label: str = "") -> Path:
+        path = self.standard / "rubrics" / f"{question_dir_name(number, part_label)}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(rubric.model_dump_json(indent=2), encoding="utf-8")
         return path
 
-    def add_solution(self, tex: str = "% final answer\nx < 4\n", number: int = 1) -> Path:
-        path = self.standard / "solutions" / f"question_{number:03d}.tex"
+    def add_solution(
+        self, tex: str = "% final answer\nx < 4\n", number: int = 1, part_label: str = ""
+    ) -> Path:
+        path = self.standard / "solutions" / f"{question_dir_name(number, part_label)}.tex"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(tex, encoding="utf-8")
         return path
@@ -316,11 +319,13 @@ class GradingWorkspace:
         *,
         with_comparer: bool = False,
         role_rubric_parts: Mapping[str, Sequence[str]] | None = None,
+        part_criterion_ids: frozenset[str] | set[str] | None = None,
     ) -> GradeResult:
         comparer = StandardFinalComparer(self.standard) if with_comparer else None
         grader = StepGrader(
             RubricLoader(self.standard),
             standard_comparer=comparer,
             role_rubric_parts=role_rubric_parts,
+            part_criterion_ids=part_criterion_ids,
         )
         return GradeController(grader, self.standard).grade(self.questions_dir)

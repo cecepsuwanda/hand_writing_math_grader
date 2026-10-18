@@ -1,11 +1,12 @@
+{% from "partials/icons.html" import icon %}
 {% if job.status.value == "done" %}
 <div class="flash flash-ok">
-  Selesai.
-  {% if job.next_url %}<a class="btn btn-small" href="{{ job.next_url }}" data-next>Lanjut</a>{% endif %}
+  <span class="flash-body">{{ icon("circle-check") }}<span>Selesai.</span></span>
+  {% if job.next_url %}<a class="btn btn-small" href="{{ job.next_url }}" data-next>Lanjut {{ icon("arrow-right") }}</a>{% endif %}
 </div>
 {% else %}
 <div class="flash flash-error">
-  <span>Gagal: {{ job.error }}</span>
+  <span class="flash-body">{{ icon("circle-x") }}<span>Gagal: {{ job.error }}</span></span>
   <a class="btn btn-small btn-secondary" href="/runs/{{ job.run | urlq }}">Kembali ke run</a>
 </div>
 {% endif %}

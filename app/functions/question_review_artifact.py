@@ -40,12 +40,14 @@ def _consistency_error(question: Question, folder: str) -> str | None:
     if question.question_id != folder:
         return f"question_id {question.question_id!r} tidak sama dengan nama folder"
     try:
-        expected = question_dir_name(question.question_number)
+        expected = question_dir_name(question.question_number, question.part_label)
     except ValueError as exc:
         return str(exc)
     if expected != folder:
+        part = question.part_label or "(kosong)"
         return (
-            f"question_number {question.question_number} tidak sesuai dengan nama folder"
+            f"folder diharapkan {expected!r} dari question_number="
+            f"{question.question_number} part_label={part!r}, didapat {folder!r}"
         )
     numbers = [step.step_number for step in question.student_steps]
     duplicates = sorted({n for n in numbers if numbers.count(n) > 1})

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -18,12 +19,16 @@ _ALIGN_BLOCK_RE = re.compile(
 )
 
 
-def standard_solution_path(standard_dir: Path, question_number: int) -> Path:
-    """Return ``standards/.../solutions/question_NNN.tex`` path."""
+def standard_solution_path(
+    standard_dir: Path,
+    question_number: int,
+    part_label: str = "",
+) -> Path:
+    """Return ``standards/.../solutions/question_NNN[a].tex`` path."""
     return (
         Path(standard_dir)
         / "solutions"
-        / f"{question_dir_name(question_number)}.tex"
+        / f"{question_dir_name(question_number, part_label)}.tex"
     )
 
 
@@ -35,14 +40,31 @@ def exam_schema_path(standard_dir: Path) -> Path:
 def schema_question(
     schema: ExamSchema | None,
     question_number: int,
+    part_label: str = "",
 ) -> ExamQuestion | None:
-    """Return the ``ExamQuestion`` with ``number``, or None."""
+    """Return the ``ExamQuestion`` with ``number`` and ``part_label``, or None."""
     if schema is None:
         return None
     for question in schema.questions:
-        if question.number == question_number:
+        if question.number == question_number and question.part_label == part_label:
             return question
     return None
+
+
+def soal_stems(schema: ExamSchema | None) -> dict[int, str]:
+    """Stem per soal number; a soal with sub-soal gets their shared lead-in."""
+    grouped: dict[int, list[str]] = {}
+    for question in schema.questions if schema is not None else []:
+        grouped.setdefault(question.number, []).append(question.stem)
+    stems: dict[int, str] = {}
+    for number, group in grouped.items():
+        if len(group) == 1:
+            stems[number] = group[0]
+            continue
+        shared = os.path.commonprefix(group)
+        cut = shared.rfind(" ")
+        stems[number] = (shared[:cut] if cut > 0 else shared).strip() or group[0]
+    return stems
 
 
 def standard_final_text(
@@ -175,9 +197,11 @@ def extract_final_answer_from_tex(text: str) -> str | None:
 def extract_solution_steps_from_tex(text: str) -> list[str]:
     """Extract ordered math rows from aligned/align environments.
 
-    Content after ``% final answer`` is ignored. Rows are split on ``\\\\``;
-    ``&`` alignment tabs are stripped. Continuation rows that begin with ``=``
-    keep only the RHS (e.g. ``&= 2`` → ``2``).
+    Content after ``% final answer`` is ignored. Rows are split on ``\\\\``
+    and alignment ``&`` are stripped, but only outside nested environments and
+    braces, so ``bmatrix`` / ``vmatrix`` / ``cases`` cells survive intact. A
+    multi-column row (``a &= 1, & b &= 2``) yields one step per column pair.
+    Continuation rows that begin with ``=`` keep only the RHS (``&= 2`` → ``2``).
     """
     marker_idx = text.lower().find(_FINAL_ANSWER_MARKER)
     source = text[:marker_idx] if marker_idx >= 0 else text
@@ -189,28 +213,66 @@ def extract_solution_steps_from_tex(text: str) -> list[str]:
             block = match.group("body2")
         if not block:
             continue
-        for row in re.split(r"\\\\", block):
-            cleaned = _clean_align_row(row)
-            if cleaned:
-                steps.append(cleaned)
+        for row in _split_align_rows(_COMMENT_RE.sub("", block)):
+            for column in row:
+                cleaned = _clean_align_row(column)
+                if cleaned:
+                    steps.append(cleaned)
     return steps
 
 
-def _clean_align_row(row: str) -> str:
+_COMMENT_RE = re.compile(r"(?<!\\)%[^\n]*")
+
+_ROW_TOKEN_RE = re.compile(
+    r"\\(?P<kind>begin|end)\s*\{[^{}]*\}"
+    r"|(?P<newline>\\\\)"
+    r"|(?P<escaped>\\[{}&%])"
+    r"|(?P<amp>&)"
+    r"|(?P<open>\{)"
+    r"|(?P<close>\})"
+)
+
+_ROW_NOISE_RE = re.compile(r"\\(?:nonumber|notag)\b|\\(?:label|tag)\s*\{[^{}]*\}")
+
+
+def _split_align_rows(block: str) -> list[list[str]]:
+    """Rows of an align body; each row split into columns at even top-level ``&``."""
+    rows: list[list[str]] = []
+    columns: list[str] = []
+    piece_start = 0
     pieces: list[str] = []
-    for line in row.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("%"):
+    amp_count = 0
+    depth = 0
+    for match in _ROW_TOKEN_RE.finditer(block):
+        if match.group("kind") == "begin" or match.group("open") is not None:
+            depth += 1
             continue
-        if "%" in stripped:
-            stripped = re.split(r"(?<!\\)%", stripped, maxsplit=1)[0].strip()
-        if stripped:
-            pieces.append(stripped)
-    if not pieces:
-        return ""
-    joined = " ".join(pieces)
-    joined = joined.replace("&", "")
+        if match.group("kind") == "end" or match.group("close") is not None:
+            depth = max(0, depth - 1)
+            continue
+        if depth > 0 or match.group("escaped") is not None:
+            continue
+        pieces.append(block[piece_start : match.start()])
+        piece_start = match.end()
+        if match.group("amp") is not None:
+            amp_count += 1
+            if amp_count % 2 == 0:
+                columns.append("".join(pieces))
+                pieces = []
+            continue
+        columns.append("".join(pieces))
+        rows.append(columns)
+        columns, pieces, amp_count = [], [], 0
+    pieces.append(block[piece_start:])
+    columns.append("".join(pieces))
+    rows.append(columns)
+    return rows
+
+
+def _clean_align_row(row: str) -> str:
+    joined = _ROW_NOISE_RE.sub("", row)
     joined = " ".join(joined.split())
+    joined = joined.rstrip(",;").strip()
     if joined.startswith("="):
         joined = joined.lstrip("=").strip()
     return joined

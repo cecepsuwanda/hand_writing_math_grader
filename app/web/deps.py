@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -32,9 +33,22 @@ def build_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["urlq"] = url_segment
     templates.env.filters["short_pdf"] = lambda name: shorten_pdf_name(Path(name))
+    templates.env.filters["score"] = format_score
+    templates.env.filters["initials"] = initials
     templates.env.globals["run_url"] = run_url
     templates.env.globals["static_url"] = static_url
     return templates
+
+
+def format_score(value: float) -> str:
+    """Scores for display: at most two decimals, no trailing zeros (``8``, ``52.67``)."""
+    return f"{round(value, 2):g}"
+
+
+def initials(name: str) -> str:
+    """Up to two initials from the words of a run name that start with a letter."""
+    letters = [word[0] for word in re.split(r"[\s_]+", name) if word[:1].isalpha()]
+    return "".join(letters[:2]).upper() or "?"
 
 
 def static_url(path: str) -> str:

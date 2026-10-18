@@ -1,0 +1,69 @@
+% Ingested from kunci_jawaban (tugas_topik_2.tex)
+% method: sifat_1
+\begin{aligned}
+\left|\frac{2-3x}{x+3}\right| \geq \frac{1}{4} \\
+\left|\frac{2-3x}{x+3}\right| = \sqrt{\left(\frac{2-3x}{x+3}\right)^2} \\
+\sqrt{\left(\frac{2-3x}{x+3}\right)^2} \geq \frac{1}{4} \\
+\left(\frac{2-3x}{x+3}\right)^2 \geq \frac{1}{16} \\
+\left(\frac{2-3x}{x+3}\right)^2 - \frac{1}{16} \geq 0 \\
+\frac{16(2-3x)^2 - (x+3)^2}{16(x+3)^2} \geq 0 \\
+\frac{16(4-12x+9x^2) - (x^2+6x+9)}{16(x+3)^2} \geq 0 \\
+\frac{64-192x+144x^2-x^2-6x-9}{16(x+3)^2} \geq 0 \\
+\frac{143x^2-198x+55}{16(x+3)^2} \geq 0
+\end{aligned}
+
+% method: sifat_5
+\begin{aligned}
+\left|\frac{2-3x}{x+3}\right| \geq \frac{1}{4} \\
+\left|\frac{2-3x}{x+3}\right| = \frac{|2-3x|}{|x+3|} \\
+\frac{|2-3x|}{|x+3|} \geq \frac{1}{4} \\
+|2-3x| \geq \frac{|x+3|}{4} \\
+4\,|2-3x| \geq |x+3| \\
+|4|\,|2-3x| \geq |x+3| \\
+|ab| = |a||b|,\quad |4||2-3x| \\
+|4(2-3x)| = |8-12x| \\
+|8-12x| \geq |x+3| \\
+|a| \geq |b| \Leftrightarrow a^2 \geq b^2 \\
+(8-12x)^2 \geq (x+3)^2 \\
+(8-12x)^2 - (x+3)^2 \geq 0 \\
+\text{Menggunakan } a^2 - b^2 = (a + b)(a - b): \\
+[(8-12x) + (x+3)][(8-12x) - (x+3)] \geq 0 \\
+(8-12x + x+3)(8-12x - x-3) \geq 0 \\
+(11-11x)(5-13x) \geq 0
+\end{aligned}
+
+% role: critical_points
+\begin{aligned}
+143x^2 - 198x + 55 = 0 \\
+\text{Dengan } a = 143, b = -198, c = 55: \\
+x_1,x_2 = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a} \\
+x_1,x_2 = \frac{-(-198) \pm \sqrt{(-198)^2 - 4(143)(55)}}{2(143)} \\
+x_1,x_2 = \frac{198 \pm \sqrt{39204 - 31460}}{286} \\
+x_1,x_2 = \frac{198 \pm \sqrt{7744}}{286} = \frac{198 \pm 88}{286} \\
+x_1 = \frac{198 + 88}{286} = \frac{286}{286} = 1 \\
+x_2 = \frac{198 - 88}{286} = \frac{110}{286} = \frac{5}{13} \\
+x + 3 = 0 \Rightarrow x = -3
+\end{aligned}
+
+% role: sign_chart
+\begin{aligned}
+\text{Selang } x < -3: x = -4 \\
+\frac{143x^2-198x+55}{(x+3)^2} = \frac{143(-4)^2-198(-4)+55}{(-4+3)^2} \\
+\frac{2288+792+55}{1} = 3135 > 0 \\
+\text{Selang } -3 < x < \frac{5}{13}: x = 0 \\
+\frac{143x^2-198x+55}{(x+3)^2} = \frac{143(0)^2-198(0)+55}{(0+3)^2} \\
+\frac{55}{9} > 0 \\
+\text{Selang } \frac{5}{13} < x < 1: x = 0.5 \\
+\frac{143x^2-198x+55}{(x+3)^2} = \frac{143(0.5)^2-198(0.5)+55}{(0.5+3)^2} \\
+\frac{35.75-99+55}{12.25} = \frac{-8.25}{12.25} < 0 \\
+\text{Selang } x > 1: x = 2 \\
+\frac{143x^2-198x+55}{(x+3)^2} = \frac{143(2)^2-198(2)+55}{(2+3)^2} \\
+\frac{572-396+55}{25} = \frac{231}{25} > 0 \\
+\quad x = \tfrac{5}{13},\; 1 \text{ termasuk};\; x = -3 \text{ tidak termasuk}
+\end{aligned}
+
+% role: figure
+% number_line: NUMBER_LINE((-oo,-3)U(-3,5/13]U[1,oo))
+
+% final answer
+(-\infty, -3) \cup \left(-3, \frac{5}{13}\right] \cup [1, \infty)

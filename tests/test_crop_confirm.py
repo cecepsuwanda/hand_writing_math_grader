@@ -54,6 +54,7 @@ from app.web.jobs import JobStatus
 from app.web.schemas import parse_crop_labels
 from tests.support.asserts import assert_contains
 from tests.support.builders import (
+    TOPIK4_KUNCI,
     make_question,
     make_step,
     single_question_json,
@@ -482,7 +483,7 @@ class TestQuestionCrops:
         assert report.unassigned_crops == ["b.png"]
 
     def test_labeler_filters_numbers_to_schema(self, tmp_path: Path) -> None:
-        client = FakeClient('{"question_numbers": [2, 9, "2", "x", 3]}')
+        client = FakeClient('{"question_numbers": [2, 9, "2", "x", "3a", 3]}')
         labeler = OllamaQuestionLabeler(client=client, model="vision-test", exam_schema=_schema(3))
         assert labeler.detect(tmp_path / "crop.png") == [2, 3]
         prompt, _path, model = client.calls[0]
@@ -616,6 +617,19 @@ class TestRecognizerQuestionCrops:
         (question,) = run().questions
         assert question.question_number == 2
         assert not question.review_required
+
+    @pytest.mark.parametrize(
+        ("reply", "part_label"),
+        [("2b", "b"), ("3a", "")],
+        ids=["sub-soal-hint-kept", "hint-of-other-soal-dropped"],
+    )
+    def test_sub_soal_reply_keeps_part_only_for_assigned_soal(
+        self, tmp_path: Path, reply: str, part_label: str
+    ) -> None:
+        names, _client, run = self._recognize(tmp_path, single_question_json(reply, "x < 1"), regions=1)
+        write_question_crops(tmp_path / "crops", {2: [names[0]]})
+        (question,) = run().questions
+        assert (question.question_number, question.part_label) == (2, part_label)
 
     def test_multiple_assigned_numbers_restrict_model(self, tmp_path: Path) -> None:
         payload = json.dumps(
@@ -766,7 +780,9 @@ class TestWebLabels:
         [
             ({"crop:a.png": "1, 2", "crop:b.png": "", "other": "x"}, {"a.png": [1, 2], "b.png": []}),
             ({"crop:a.png": " 3;4  5 "}, {"a.png": [3, 4, 5]}),
+            ({"crop:a.png": "1a, 1b 2"}, {"a.png": [1, 2]}),
         ],
+        ids=["comma", "mixed-separators", "sub-soal-to-soal"],
     )
     def test_parse_crop_labels(self, form: dict, expected: dict) -> None:
         assert parse_crop_labels(form) == expected
@@ -824,6 +840,26 @@ class TestWebLabels:
         assert response.headers["HX-Retarget"] == "#flash"
         assert load_question_crops(crops) is None
 
+    def test_labels_page_lists_sub_soal_and_saves_them_per_soal(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        web.standard(TOPIK4_KUNCI)
+        crops = web.run_dir("answer").crops_dir
+        names = _write_regions(crops, 1, 2)
+        page = web.client.get("/runs/answer/labels")
+        assert page.status_code == 200
+        assert_contains(page.text, "<strong class=\"small\">(a)</strong>", "(b)", "Sub-soal (1a, 1b)")
+        response = web.htmx(
+            "POST", "/runs/answer/labels", data={f"crop:{names[0]}": "1a", f"crop:{names[1]}": "2"}
+        )
+        assert response.status_code == 200
+        assert load_question_crops(crops) == {1: [names[0]], 2: [names[1]]}
+        stem = json.loads(
+            (crops / "question_crops" / "question_001.json").read_text(encoding="utf-8")
+        )["stem"]
+        assert stem == "Hitunglah nilai limit fungsi berikut:"
+
     def test_labels_need_an_ingested_kunci(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
         _write_regions(web.run_dir("answer").crops_dir, 1, 1)
@@ -865,7 +901,89 @@ class TestWebReview:
         self._reviewed_run(web)
         page = web.client.get("/runs/answer/review")
         assert page.status_code == 200
-        assert_contains(page.text, "questionEditor(", "question_001", "/api/runs/answer/questions/question_001")
+        assert_contains(
+            page.text,
+            "questionEditor(",
+            "question_001",
+            "/api/runs/answer/questions/question_001",
+            "moveStep(",
+            "Naikkan urutan",
+            "geser urutan",
+        )
+
+    def test_review_page_exposes_pack_roles_and_figure_section(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        web = WebHarness(tmp_path, monkeypatch, topic_id="3")
+        layout = web.run_dir("answer")
+        question = make_question(
+            steps=[make_step(1, raw_text="radikan >= 0", role="concept", confidence=0.9)],
+        )
+        write_question_dir(layout.questions_dir, question)
+        page = web.client.get("/runs/answer/review")
+        assert page.status_code == 200
+        assert_contains(
+            page.text,
+            'id="pack-roles"',
+            'value="concept"',
+            "Gambar / titik ujung",
+            "boleh narasi saja",
+            "list=\"pack-roles\"",
+        )
+
+    def test_review_page_shows_kunci_pattern_for_pack3(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from app.functions.standards_layout import topic_standard_dir
+        from app.models.exam_schema import ExamMilestone, ExamQuestion, ExamSchema
+
+        web = WebHarness(tmp_path, monkeypatch, topic_id="3")
+        standard = topic_standard_dir(web.standards_root, "3")
+        standard.mkdir(parents=True, exist_ok=True)
+        schema = ExamSchema(
+            source="t",
+            topic_id="3",
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem="f",
+                    milestones=[
+                        ExamMilestone(
+                            role="domain",
+                            title="Tentukan Domain",
+                            latex="D_f = (-oo, 9]",
+                            steps=["D_f = (-oo, 9]"],
+                        ),
+                        ExamMilestone(
+                            role="range",
+                            title="Tentukan Range",
+                            latex="R_f = [0, oo)",
+                            steps=["R_f = [0, oo)"],
+                        ),
+                    ],
+                )
+            ],
+        )
+        (standard / "exam_schema.json").write_text(
+            schema.model_dump_json(indent=2), encoding="utf-8"
+        )
+        layout = web.run_dir("answer")
+        write_question_dir(
+            layout.questions_dir,
+            make_question(steps=[make_step(1, raw_text="x <= 9", role="domain")]),
+        )
+        page = web.client.get("/runs/answer/review")
+        assert page.status_code == 200
+        assert_contains(page.text, "Pola kunci", "Tentukan Domain", "Tentukan Range")
+
+    def test_review_page_hides_kunci_pattern_for_pack15(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        self._reviewed_run(web)
+        page = web.client.get("/runs/answer/review")
+        assert page.status_code == 200
+        assert "Pola kunci" not in page.text
 
     def test_put_question_saves_the_edit(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
@@ -877,6 +995,28 @@ class TestWebReview:
         assert response.json()["edited_ids"] == ["question_001"]
         saved = json.loads(path.read_text(encoding="utf-8"))
         assert saved["student_steps"][0]["symbolic"]["repr"] == "2 - 3*x < 12"
+
+    def test_put_question_saves_reordered_steps(self, tmp_path: Path, monkeypatch) -> None:
+        web = WebHarness(tmp_path, monkeypatch)
+        layout = web.run_dir("answer")
+        question = make_question(
+            steps=[
+                make_step(1, symbolic_repr="x < 1", raw_text="step-a"),
+                make_step(2, symbolic_repr="x < 2", raw_text="step-b"),
+            ],
+        )
+        path = write_question_dir(layout.questions_dir, question)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        a, b = payload["student_steps"]
+        payload["student_steps"] = [
+            {**b, "step_number": 1},
+            {**a, "step_number": 2},
+        ]
+        response = web.client.put("/api/runs/answer/questions/question_001", json=payload)
+        assert response.status_code == 200, response.text
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        assert [s["raw_text"] for s in saved["student_steps"]] == ["step-b", "step-a"]
+        assert [s["step_number"] for s in saved["student_steps"]] == [1, 2]
 
     @pytest.mark.parametrize(
         ("question_id", "change", "needle"),

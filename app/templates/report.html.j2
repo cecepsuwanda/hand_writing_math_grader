@@ -39,7 +39,7 @@
     <tbody>
       {% for q in report.questions %}
       <tr>
-        <td>{{ q.question_id }} (q{{ q.question_number }})</td>
+        <td>{{ q.question_id }} (q{{ q.question_number }}{{ q.part_label }})</td>
         <td>{{ q.score }}</td>
         <td>{{ q.maximum_score }}</td>
         <td>{{ q.step_count }}</td>

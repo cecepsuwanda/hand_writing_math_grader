@@ -31,11 +31,16 @@ Hanya setelah bab sebelumnya punya acceptance test hijau (urutan: `docs/math-top
 
 ```text
 Pack progress:
+- [ ] Prefer ChapterPack (app/topics/chapter_pack.py) untuk bab baru, kecuali
+      kebutuhan khusus (mis. dual-track konsep seperti function_3)
 - [ ] app/topics/<nama_bab>/__init__.py: class pack + PACK = ...
 - [ ] Implement semua anggota TopicPack (app/interfaces/topic_pack.py):
-      id, label, topik_refs, part_kinds, roles, step_checks, figure_kinds,
-      capability_ids, recognition_role_instructions, rubric_from_parts,
+      id, label, topik_refs, part_kinds, roles, step_checks, role_rubric_parts,
+      figure_kinds, capability_ids, recognition_role_instructions,
+      ingest_section_roles, figure_from_tikz, extract_final, rubric_from_parts,
       coalesce_step_role
+- [ ] Opt-in di luar Protocol (hanya bila bab membutuhkannya): grades_concept,
+      rich_section_ingest (UI/results + wiring; bukan anggota wajib TopicPack)
 - [ ] step_checks: petakan tiap role ke StepCheck (app/models/validation.py);
       role tanpa entri = TRANSITION. Jenis cek baru = anggota StepCheck + checker
       di SymPyStepValidator._checkers (bukan nama role di service inti)

@@ -15,6 +15,13 @@ _ASSIGN_PREFIX_RE = re.compile(
     r"^(?P<lhs>[A-Za-z]\w*)\s*=\s*(?P<rhs>.+)$",
     re.DOTALL,
 )
+# ``A^{-1} = …`` / ``A + B = …`` / ``2A - B^T = …``: named matrices are opaque
+# (only literals are evaluated), so the claim is the matrix on the right.
+_NAMED_MATRIX = r"[A-Z](?:\^\s*(?:\{\s*(?:T|-\s*1)\s*\}|T|-1))?"
+_NAMED_MATRIX_LHS_RE = re.compile(
+    rf"^\s*(?:\(?\s*-?\d*\s*{_NAMED_MATRIX}\s*\)?\s*[-+]?\s*)+=\s*(?P<rhs>.+)$",
+    re.DOTALL,
+)
 
 # Transpose markers after a MATRIX(...) token (before brace stripping)
 _TRANSPOSE_RE = re.compile(
@@ -75,7 +82,7 @@ def rewrite_matrix_notation(text: str) -> str:
     cleaned = re.sub(r"(\d)\s*(MATRIX\(|TRANSPOSE\()", r"\1*\2", cleaned)
     cleaned = re.sub(r"(\))\s*(MATRIX\(|TRANSPOSE\()", r"\1*\2", cleaned)
 
-    assign = _ASSIGN_PREFIX_RE.match(cleaned)
+    assign = _ASSIGN_PREFIX_RE.match(cleaned) or _NAMED_MATRIX_LHS_RE.match(cleaned)
     if assign is not None:
         rhs = assign.group("rhs").strip()
         if "MATRIX(" in rhs or "TRANSPOSE(" in rhs:

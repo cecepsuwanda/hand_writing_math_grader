@@ -1,16 +1,17 @@
+{% from "partials/icons.html" import icon, flash_icon %}
 <form id="label-form" class="card" method="post" action="{{ run_url(view.run, '/labels') }}"
       hx-post="{{ run_url(view.run, '/labels') }}" hx-target="#label-form" hx-swap="outerHTML">
-  {% if view.saved %}<div class="flash flash-ok">Nomor soal disimpan.</div>{% endif %}
+  {% if view.saved %}<div class="flash flash-ok"><span class="flash-body">{{ flash_icon("ok") }}<span>Nomor soal disimpan.</span></span></div>{% endif %}
   {% set report = view.report %}
   {% if report %}
     {% if report.errors %}
-    <div class="flash flash-error"><ul>{% for e in report.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+    <div class="flash flash-error"><span class="flash-body">{{ flash_icon("error") }}<ul>{% for e in report.errors %}<li>{{ e }}</li>{% endfor %}</ul></span></div>
     {% endif %}
     {% if report.missing_questions %}
-    <div class="flash flash-warn">Soal tanpa crop: {{ report.missing_questions | join(", ") }}</div>
+    <div class="flash flash-warn"><span class="flash-body">{{ flash_icon("warn") }}<span>Soal {{ report.missing_questions | join(", ") }} belum punya region crop — akan dinilai TIDAK DIJAWAB sampai diberi crop.</span></span></div>
     {% endif %}
     {% if report.unassigned_crops %}
-    <div class="flash flash-warn">{{ report.unassigned_crops | length }} crop tanpa nomor soal.</div>
+    <div class="flash flash-warn"><span class="flash-body">{{ flash_icon("warn") }}<span>{{ report.unassigned_crops | length }} crop tanpa nomor soal.</span></span></div>
     {% endif %}
   {% endif %}
 
@@ -30,7 +31,7 @@
     {% endfor %}
   </div>
   <div class="row form-actions">
-    <button class="btn">Simpan nomor soal</button>
+    <button class="btn">{{ icon("save") }}Simpan nomor soal</button>
     <a class="btn btn-secondary" href="{{ run_url(view.run, '/crops') }}">Kembali ke crop</a>
     <a class="btn btn-secondary" href="{{ run_url(view.run) }}">Ke run</a>
   </div>

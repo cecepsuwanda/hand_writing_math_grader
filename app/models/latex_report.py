@@ -38,7 +38,8 @@ class LatexQuestionView(BaseModel):
 
 
 class LatexSummaryRow(BaseModel):
-    number: int
+    # Soal reference: ``3`` or a sub-soal such as ``1a``.
+    number: str
     score: str
     maximum: str
     status: str
@@ -55,3 +56,4 @@ class LatexReportView(BaseModel):
     vision_model: str = ""
     reasoning_model: str = ""
     prompt_versions: str = ""
+    figures_heading: str = "Gambar (OCR)"

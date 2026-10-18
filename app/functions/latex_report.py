@@ -374,7 +374,7 @@ def build_question_view(detail: QuestionReportDetail, base_dir: Path) -> LatexQu
             missing.append(f"{Path(crop).name} (path tidak aman untuk LaTeX: {rel})")
 
     return LatexQuestionView(
-        title=f"Soal {question.question_number}",
+        title=f"Soal {question.question_number}{question.part_label}",
         stem=latex_stem(detail.stem),
         images=images,
         missing_images=[latex_text(name) for name in missing],
@@ -393,10 +393,14 @@ def build_latex_report_context(
     exam: ExamReport,
     details: list[QuestionReportDetail],
     base_dir: Path,
+    *,
+    figures_heading: str = "Gambar (OCR)",
 ) -> LatexReportView:
     meta = exam.metadata
     versions = meta.prompt_versions
-    ordered = sorted(details, key=lambda d: d.question.question_number)
+    ordered = sorted(
+        details, key=lambda d: (d.question.question_number, d.question.part_label)
+    )
     return LatexReportView(
         student_id=_breakable(latex_text(meta.student_id)),
         total=format_score(exam.total_score),
@@ -404,7 +408,7 @@ def build_latex_report_context(
         overall_status=latex_text(exam.overall_status.value),
         summary=[
             LatexSummaryRow(
-                number=row.question_number,
+                number=row.ref,
                 score=format_score(row.score),
                 maximum=format_score(row.maximum_score),
                 status=latex_text(
@@ -424,4 +428,5 @@ def build_latex_report_context(
             f"validation={versions.validation}, "
             f"grading={versions.grading}"
         ),
+        figures_heading=latex_text(figures_heading) or "Gambar (OCR)",
     )

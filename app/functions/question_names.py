@@ -1,22 +1,40 @@
 """Deterministic question artifact names."""
 
+import re
 
-def question_dir_name(question_number: int) -> str:
+_PART_LABEL_RE = re.compile(r"[a-z]{0,4}")
+_QUESTION_REF_RE = re.compile(r"(?P<number>\d+)(?P<part>[a-z]{0,4})")
+
+
+def question_dir_name(question_number: int, part_label: str = "") -> str:
+    """``(1, "")`` → ``question_001``; ``(1, "a")`` → ``question_001a``."""
     if question_number < 1:
         raise ValueError(f"question_number must be >= 1, got {question_number}")
-    return f"question_{question_number:03d}"
+    if not _PART_LABEL_RE.fullmatch(part_label):
+        raise ValueError(f"part_label must be 0-4 lowercase letters, got {part_label!r}")
+    return f"question_{question_number:03d}{part_label}"
 
 
-def parse_question_ref(ref: str) -> str:
-    """``question_007`` / ``question_7`` / ``7`` → canonical ``question_007``.
+def split_question_ref(ref: str) -> tuple[int, str]:
+    """``question_007b`` / ``7b`` / ``7`` → ``(7, "b")`` / ``(7, "")``.
 
     Raises:
         ValueError: if ``ref`` carries no positive question number.
     """
-    raw = ref.strip().removeprefix("question_")
-    if not raw.isdigit():
+    raw = ref.strip().removeprefix("question_").lower()
+    match = _QUESTION_REF_RE.fullmatch(raw)
+    if match is None or int(match.group("number")) < 1:
         raise ValueError(f"not a question reference: {ref!r}")
-    return question_dir_name(int(raw))
+    return int(match.group("number")), match.group("part")
+
+
+def parse_question_ref(ref: str) -> str:
+    """``question_007`` / ``question_7`` / ``7`` / ``7a`` → canonical ``question_007[a]``.
+
+    Raises:
+        ValueError: if ``ref`` carries no positive question number.
+    """
+    return question_dir_name(*split_question_ref(ref))
 
 
 def question_artifact_filename() -> str:

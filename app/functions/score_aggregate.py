@@ -15,10 +15,13 @@ from app.models.grading import (
 )
 from app.models.validation import QuestionValidation, StepValidation, ValidationStatus
 
-# Rubric ids scored outside the per-step algebra pool.
-_PART_CRITERION_IDS = frozenset(
-    {"critical_points", "sign_chart", "figure", "final_answer"}
+# Rubric ids scored outside the per-step algebra pool (default = inequality packs).
+# Topic packs may opt in more ids via ``part_criterion_ids`` (e.g. function pack 3).
+DEFAULT_PART_CRITERION_IDS = frozenset(
+    {"critical_points", "sign_chart", "figure"}
 )
+# Backward-compatible alias (includes unused ``final_answer``; allocate skips it).
+_PART_CRITERION_IDS = DEFAULT_PART_CRITERION_IDS | frozenset({"final_answer"})
 # Algebra pool when every step is already scored under another rubric part.
 ALGEBRA_POOL_PART = "algebra"
 
@@ -51,23 +54,30 @@ def allocate_step_max_scores(
     rubric: Rubric,
     step_count: int,
     part_steps: Sequence[bool] | None = None,
+    *,
+    part_criterion_ids: frozenset[str] | set[str] | None = None,
 ) -> tuple[list[float], float, dict[str, float]]:
     """Split algebra pool across steps; return (per_step_max, final_max, part_max).
 
-    ``part_max`` holds points for ``critical_points`` / ``figure`` (and any
-    other reserved part ids except ``final_answer``, which is ``final_max``).
-    ``part_steps[i]`` marks a step already scored by a rubric part: it gets
-    max 0. When every step is marked there is no algebra step to carry the
-    pool, so it moves to ``part_max["algebra"]`` (judged for review instead of
-    paying the same steps twice).
+    ``part_max`` holds points for reserved part ids (default ``critical_points`` /
+    ``sign_chart`` / ``figure``; packs may pass extra ids). ``final_answer`` is
+    always ``final_max``. ``part_steps[i]`` marks a step already scored by a
+    rubric part: it gets max 0. When every step is marked there is no algebra
+    step to carry the pool, so it moves to ``part_max["algebra"]`` (judged for
+    review instead of paying the same steps twice).
     """
+    reserved = (
+        frozenset(part_criterion_ids)
+        if part_criterion_ids is not None
+        else DEFAULT_PART_CRITERION_IDS
+    )
     final_points = 0.0
     pool = 0.0
     part_max: dict[str, float] = {}
     for criterion in rubric.criteria:
         if criterion.id == "final_answer":
             final_points += criterion.points
-        elif criterion.id in _PART_CRITERION_IDS:
+        elif criterion.id in reserved:
             part_max[criterion.id] = (
                 part_max.get(criterion.id, 0.0) + criterion.points
             )
@@ -307,6 +317,7 @@ def aggregate_question_grade(
     *,
     question_id: str,
     question_number: int,
+    part_label: str = "",
     validation: QuestionValidation,
     rubric: Rubric,
     standard_final_status: ValidationStatus | None = None,
@@ -316,6 +327,7 @@ def aggregate_question_grade(
     step_overrides: dict[int, tuple[ValidationStatus, str]] | None = None,
     step_roles: Mapping[int, str | None] | None = None,
     role_rubric_parts: Mapping[str, Sequence[str]] | None = None,
+    part_criterion_ids: frozenset[str] | set[str] | None = None,
 ) -> QuestionGrade:
     """``step_overrides`` may only downgrade a VALID step to UNCERTAIN (never raise a score).
 
@@ -330,7 +342,10 @@ def aggregate_question_grade(
         rubric, [s.step_number for s in steps], step_roles, role_rubric_parts
     )
     per_step_max, final_max, part_max = allocate_step_max_scores(
-        rubric, len(steps), [part_id is not None for part_id in scored_under]
+        rubric,
+        len(steps),
+        [part_id is not None for part_id in scored_under],
+        part_criterion_ids=part_criterion_ids,
     )
 
     step_grades: list[StepGrade] = []
@@ -509,6 +524,7 @@ def aggregate_question_grade(
     return QuestionGrade(
         question_id=question_id,
         question_number=question_number,
+        part_label=part_label,
         score=total,
         maximum_score=rubric.maximum_score,
         steps=step_grades,

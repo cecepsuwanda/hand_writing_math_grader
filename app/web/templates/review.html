@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon, flash_icon %}
 {% block title %}Review transkripsi · {{ run | short_pdf }}{% endblock %}
 {% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(run) }}">{{ run | short_pdf }}</a> / Review{% endblock %}
 {% block main_class %}container-wide{% endblock %}
@@ -6,15 +7,29 @@
 {% block content %}
 <section class="card">
   <div class="row-between">
-    <h1>Review transkripsi</h1>
+    <div class="card-head">
+      <span class="icon-bubble">{{ icon("list-checks", "icon-lg") }}</span>
+      <h1>Review transkripsi</h1>
+    </div>
     <form method="post" action="{{ run_url(run, '/finish-questions') }}">
-      <button class="btn">Nilai sekarang</button>
+      <button class="btn">{{ icon("list-checks") }}Nilai sekarang</button>
     </form>
   </div>
-  <p class="muted small">Perbaiki teks dan bentuk simbolik setiap langkah. Pratinjau memakai parser SymPy yang sama dengan validator.
-    Langkah bertanda kuning perlu diperiksa.</p>
+  <p class="muted small">Perbaiki teks dan bentuk simbolik setiap langkah, atau geser urutan dengan tombol ↑↓.
+    Pratinjau memakai parser SymPy yang sama dengan validator
+    (kecuali token <code>GRAPH_POINTS</code> / <code>NUMBER_LINE</code> dan jenis figure).
+    Langkah bertanda kuning perlu diperiksa.
+    {% if grades_concept %}
+    Untuk topik ini, sesuaikan <strong>Peran</strong> langkah siswa ke pola kunci di bawah setiap soal
+    (urutan langkah siswa bebas; skor = cakupan isi per role).
+    Langkah peran <code>concept</code> boleh narasi saja (tanpa simbolik).
+    {% endif %}
+  </p>
+  <datalist id="pack-roles">
+    {% for role in active_topic.roles %}<option value="{{ role }}"></option>{% endfor %}
+  </datalist>
   {% if review.errors %}
-  <div class="flash flash-error"><ul>{% for e in review.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+  <div class="flash flash-error"><span class="flash-body">{{ flash_icon("error") }}<ul>{% for e in review.errors %}<li>{{ e }}</li>{% endfor %}</ul></span></div>
   {% endif %}
   {% if not review.items %}
   <p class="muted">Belum ada <code>question.json</code>. Jalankan transkripsi dari <a href="{{ run_url(run) }}">halaman run</a>.</p>
@@ -32,16 +47,31 @@
 } %}
 <section class="card review-item" id="q-{{ q.question_id }}" x-data='questionEditor({{ editor | tojson }})' :data-dirty="dirty">
   <div class="row-between">
-    <h2>Soal {{ q.question_number }} <small class="muted">{{ q.question_id }}</small></h2>
+    <h2>Soal {{ q.question_number }}{{ q.part_label }} <small class="muted">{{ q.question_id }}</small></h2>
     <span class="row">
       <span class="badge badge-warn" x-show="dirty" x-cloak>belum disimpan</span>
       <span class="badge badge-ok" x-show="saved && !dirty" x-cloak>tersimpan</span>
       <button type="button" class="btn btn-small" @click="save()" :disabled="saving || !dirty">
-        <span x-text="saving ? 'Menyimpan…' : 'Simpan'"></span>
+        {{ icon("save") }}<span x-text="saving ? 'Menyimpan…' : 'Simpan'"></span>
       </button>
     </span>
   </div>
   <p class="error-text small" x-show="error" x-text="error" x-cloak></p>
+
+  {% if item.expected_milestones %}
+  <div class="milestone-pattern">
+    <h3 class="milestone-pattern-title">Pola kunci</h3>
+    <ol class="milestone-pattern-list">
+      {% for slot in item.expected_milestones %}
+      <li>
+        <span class="badge">{{ slot.role }}</span>
+        <strong>{{ slot.title or slot.role }}</strong>
+        {% if slot.summary %}<span class="muted small mono">{{ slot.summary }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
 
   <div class="review-body">
     <div class="review-crops">
@@ -73,14 +103,43 @@
                 </select>
               </td>
               <td><input type="text" class="mono" x-model="step.repr" @input="touch()" @input.debounce.400ms="preview(step)"></td>
-              <td class="preview" x-effect="tex($el, step.previewTex, step.repr)"></td>
-              <td><input type="text" class="input-role" x-model="step.role" @input="touch()"></td>
-              <td><button type="button" class="btn btn-tiny btn-danger" @click="removeStep(i)" title="Hapus langkah">×</button></td>
+              <td class="preview" x-effect="tex($el, step.previewTex, step.repr, step.kind)"></td>
+              <td><input type="text" class="input-role" list="pack-roles" x-model="step.role" @input="touch()"></td>
+              <td class="row">
+                <button type="button" class="btn btn-tiny btn-secondary" @click="moveStep(i, -1)" :disabled="i === 0" title="Naikkan urutan">↑</button>
+                <button type="button" class="btn btn-tiny btn-secondary" @click="moveStep(i, 1)" :disabled="i === steps.length - 1" title="Turunkan urutan">↓</button>
+                <button type="button" class="btn btn-tiny btn-danger" @click="removeStep(i)" title="Hapus langkah">×</button>
+              </td>
             </tr>
           </template>
         </tbody>
       </table>
-      <button type="button" class="btn btn-small btn-secondary" @click="addStep()">+ Langkah</button>
+      <button type="button" class="btn btn-small btn-secondary" @click="addStep()">{{ icon("plus") }}Langkah</button>
+
+      <h3>Gambar / titik ujung</h3>
+      <p class="muted small">Caption OCR dan token simbolik (<code>GRAPH_POINTS(...)</code> / <code>NUMBER_LINE(...)</code>).</p>
+      <table class="table steps-table" x-show="figures.length">
+        <thead>
+          <tr><th>Caption</th><th>Jenis</th><th>Simbolik</th><th>Pratinjau</th><th></th></tr>
+        </thead>
+        <tbody>
+          <template x-for="(fig, i) in figures" :key="fig.key">
+            <tr>
+              <td><input type="text" x-model="fig.caption" @input="touch()"></td>
+              <td>
+                <select x-model="fig.kind" @change="touch(); preview(fig)">
+                  <option value="">—</option>
+                  {% for kind in symbolic_kinds %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
+                </select>
+              </td>
+              <td><input type="text" class="mono" x-model="fig.repr" @input="touch()" @input.debounce.400ms="preview(fig)"></td>
+              <td class="preview" x-effect="tex($el, fig.previewTex, fig.repr, fig.kind)"></td>
+              <td><button type="button" class="btn btn-tiny btn-danger" @click="removeFigure(i)" title="Hapus">×</button></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <button type="button" class="btn btn-small btn-secondary" @click="addFigure()">{{ icon("plus") }}Gambar</button>
 
       <h3>Jawaban akhir</h3>
       <div class="final-grid">
@@ -92,7 +151,7 @@
           </select>
         </label>
         <label class="small">Simbolik <input type="text" class="mono" x-model="final.repr" @input="touch()" @input.debounce.400ms="preview(final)"></label>
-        <div class="preview" x-effect="tex($el, final.previewTex, final.repr)"></div>
+        <div class="preview" x-effect="tex($el, final.previewTex, final.repr, final.kind)"></div>
       </div>
     </div>
   </div>
@@ -103,7 +162,7 @@
 <section class="card row-between">
   <a class="btn btn-secondary" href="{{ run_url(run) }}">Kembali ke run</a>
   <form method="post" action="{{ run_url(run, '/finish-questions') }}">
-    <button class="btn">Nilai sekarang</button>
+    <button class="btn">{{ icon("list-checks") }}Nilai sekarang</button>
   </form>
 </section>
 {% endif %}

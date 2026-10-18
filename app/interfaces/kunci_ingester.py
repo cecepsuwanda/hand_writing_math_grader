@@ -16,4 +16,4 @@ class KunciIngestPort(Protocol):
         """Ingest one kunci ``.tex`` file; return written artifact paths."""
 
     def ingest_dir(self, kunci_dir: Path) -> list[Path]:
-        """Ingest the only kunci ``.tex`` in a folder; error on zero or several."""
+        """Ingest the only kunci ``.tex`` (or the pack's ``tugas_topik_<bab>.tex``); error otherwise."""

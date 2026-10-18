@@ -23,6 +23,7 @@ from sympy import (
     Matrix,
     Ne,
     Or,
+    Piecewise,
     S,
     Symbol,
     cos,
@@ -81,9 +82,11 @@ _COMPOUND_RE = re.compile(
 
 _FUNC_ASSIGN_RE = re.compile(
     r"^(?P<lhs>"
-    r"y'|"
+    r"y''?|"
     r"y|"
-    r"[fg]'\s*\(\s*[a-zA-Z_]\w*\s*\)|"
+    # f'(x), f''(3), one-sided f'_-(3) / f'_{+}(3) / f'_(-)(3)
+    r"[fg]''?\s*(?:_\s*(?:\{\s*[-+]\s*\}|\(\s*[-+]\s*\)|[-+])\s*)?"
+    r"\(\s*(?:[a-zA-Z_]\w*|-?\d+(?:\.\d+)?)\s*\)|"
     # Combined functions only: (f+g)(x), (f∘g)(x) — not a factor like (x-1)(x).
     r"\(\s*[fg](?:\s*[-+*/.∘o]?\s*[fg])*\s*\)\s*\(\s*[a-zA-Z_]\w*\s*\)|"
     r"[fg]\s*\(\s*(?:[a-zA-Z_]\w*|-?\d+(?:\.\d+)?)\s*\)"
@@ -246,6 +249,9 @@ def _step_local_dict(symbol: Symbol | None) -> dict[str, object]:
         "e": E,
         "E": E,
         "Interval": Interval,
+        "Piecewise": Piecewise,
+        "And": And,
+        "Or": Or,
     }
     if symbol is not None:
         local_dict[str(symbol)] = symbol
@@ -368,10 +374,12 @@ def _try_parse_matrix_expr(
     normalized: str,
     local_dict: dict[str, object],
 ) -> ParsedStep | None:
-    """Parse MATRIX / TRANSPOSE / DET / INV / NORM / DOT into matrix or scalar."""
+    """Parse MATRIX / TRANSPOSE / DET / INV / TRACE / ADJ / NORM / DOT into matrix or scalar."""
     if not any(
         tok in normalized
-        for tok in ("MATRIX(", "TRANSPOSE(", "DET(", "INV(", "NORM(", "DOT(")
+        for tok in (
+            "MATRIX(", "TRANSPOSE(", "DET(", "INV(", "TRACE(", "ADJ(", "NORM(", "DOT(", "CROSS(",
+        )
     ):
         return None
 
@@ -394,19 +402,31 @@ def _try_parse_matrix_expr(
     def _inv(value: object) -> Matrix:
         return _as_matrix(value).inv()
 
+    def _trace(value: object) -> Expr:
+        return _as_matrix(value).trace()  # type: ignore[return-value]
+
+    def _adj(value: object) -> Matrix:
+        return _as_matrix(value).adjugate()
+
     def _norm(value: object) -> Expr:
         return _as_matrix(value).norm()  # type: ignore[return-value]
 
     def _dot(left: object, right: object) -> Expr:
         return _as_matrix(left).dot(_as_matrix(right))  # type: ignore[return-value]
 
+    def _cross(left: object, right: object) -> Matrix:
+        return _as_matrix(left).cross(_as_matrix(right))
+
     env: dict[str, object] = {
         "Matrix": Matrix,
         "TRANSPOSE": _transpose,
         "DET": _det,
         "INV": _inv,
+        "TRACE": _trace,
+        "ADJ": _adj,
         "NORM": _norm,
         "DOT": _dot,
+        "CROSS": _cross,
         "Abs": Abs,
         "oo": oo,
     }
@@ -436,6 +456,8 @@ def _try_parse_matrix_expr(
 _COMMA_TUPLE_RE = re.compile(
     r"[\(\[][^\)\]]*,[^\)\]]*[\)\]]"
 )
+
+_CALCULUS_TOKEN_RE = re.compile(r"(?<![A-Za-z])(?:LIMIT|DIFF|INT)\(")
 
 
 def _looks_like_math_expression(normalized: str) -> bool:
@@ -767,17 +789,24 @@ def _expr_contains_tuple(expr: object) -> bool:
 
 def _parse_side(side: str, local_dict: dict[str, object]) -> Expr:
     stripped = side.strip()
+    # Piecewise((expr, cond), …) is a legitimate Expr whose args are Tuples;
+    # skip the bare comma-tuple preflight used for interval / point pairs.
+    allow_piecewise = bool(re.search(r"\bPiecewise\s*\(", stripped))
     # Preflight: never call parse_expr on comma-tuples / juxtaposed intervals —
     # implicit_multiplication would emit SymPyDeprecationWarning (Mul+Tuple).
     # Juxtaposed factors without commas, e.g. (x-1)(x+2), are ordinary products.
-    if _COMMA_TUPLE_RE.search(stripped):
+    if not allow_piecewise and _COMMA_TUPLE_RE.search(stripped):
         raise MathParseError(side, "tuple/interval is not an algebraic expression")
+    if _CALCULUS_TOKEN_RE.search(stripped):
+        raise MathParseError(side, "LIMIT/DIFF/INT is only checked as a whole step")
     result = parse_expr(
         stripped,
         local_dict=local_dict,
         transformations=_TRANSFORMATIONS,
         evaluate=False,
     )
+    if isinstance(result, Piecewise):
+        return result
     if _expr_contains_tuple(result):
         raise MathParseError(side, "tuple/interval is not an algebraic expression")
     if not isinstance(result, Expr):

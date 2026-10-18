@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from app.config import AppConfig
@@ -26,12 +25,15 @@ from app.functions.run_layout import (
     RunLayout,
     build_run_layout,
 )
-from app.functions.workspace_reset import DEFAULT_PRESERVE, prepare_pipeline_workspace
+from app.functions.workspace_reset import (
+    DEFAULT_PRESERVE,
+    delete_run_directory,
+    prepare_pipeline_workspace,
+)
 from app.interfaces.latex_compiler import LatexCompiler
 from app.interfaces.llm_client import LlmClient
 from app.interfaces.topic_pack import TopicPack
 from app.interfaces.validator import StepValidator
-from app.models.recognition import RecognizeResult
 from app.models.report import PromptVersions
 from app.services.grading.feedback_annotator import FeedbackAnnotator
 from app.services.grading.feedback_annotator import PROMPT_VERSION as GRADING_PROMPT_VERSION
@@ -77,6 +79,12 @@ def resolve_topic_pack(
     return get_pack(config.grading.topic_id)
 
 
+def _figures_heading_for_pack(pack: TopicPack) -> str:
+    from app.functions.results_view import figures_section_heading
+
+    return figures_section_heading(pack.figure_kinds)
+
+
 def build_ollama_client(config: AppConfig) -> LlmClient:
     return OllamaClient(
         base_url=config.ollama.base_url,
@@ -100,8 +108,8 @@ def prepare_run_workspace(
 ) -> list[str]:
     """Clear only ``layout.root`` (plus overridden dirs outside it) for a new run.
 
-    ``preserve_crops`` keeps ``crops/`` (regions JSON + question_crops) so
-    ``--use-existing-crops`` can reuse them.
+    ``preserve_crops`` keeps ``crops/`` (regions JSON + question_crops) so a
+    follow-up run can reuse them (``use_existing_crops`` on ``ProcessController``).
     """
     return prepare_pipeline_workspace(
         layout.root,
@@ -116,6 +124,11 @@ def prepare_run_workspace(
         preserve=DEFAULT_PRESERVE | {CROPS_SUBDIR} if preserve_crops else DEFAULT_PRESERVE,
         keep_crops=preserve_crops,
     )
+
+
+def delete_run_workspace(layout: RunLayout) -> str:
+    """Remove the whole run folder under ``layout.root`` (not just its contents)."""
+    return delete_run_directory(layout.root)
 
 
 def build_validator(config: AppConfig, pack: TopicPack | None = None) -> StepValidator:
@@ -156,20 +169,29 @@ def build_grade_controller(
     standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
     pack = resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard)
     set_active_pack(pack)
+    exam_schema = load_exam_schema(standard)
     annotator = None
-    if config.ollama.reasoning_model.strip():
-        annotator = FeedbackAnnotator(
-            client=build_ollama_client(config),
-            model=config.ollama.reasoning_model,
-        )
+    concept_comparer = None
+    reasoning = config.ollama.reasoning_model.strip()
+    if reasoning:
+        client = build_ollama_client(config)
+        annotator = FeedbackAnnotator(client=client, model=reasoning)
+        if getattr(pack, "grades_concept", False):
+            from app.services.grading.concept_comparer import ConceptComparer
+
+            concept_comparer = ConceptComparer(
+                client=client, model=reasoning, exam_schema=exam_schema
+            )
     grader = StepGrader(
         rubric_loader=RubricLoader(standard),
         feedback_annotator=annotator,
         standard_comparer=StandardFinalComparer(
             standard,
-            exam_schema=load_exam_schema(standard),
+            exam_schema=exam_schema,
         ),
         role_rubric_parts=pack.role_rubric_parts,
+        part_criterion_ids=getattr(pack, "part_criterion_ids", None),
+        concept_comparer=concept_comparer,
     )
     return GradeController(grader=grader, standard_dir=standard)
 
@@ -188,7 +210,9 @@ def build_report_controller(
         vision_model=config.ollama.vision_model,
         reasoning_model=config.ollama.reasoning_model,
         prompt_versions=current_prompt_versions(),
-        latex_reporter=LatexReportWriter(),
+        latex_reporter=LatexReportWriter(
+            figures_heading=_figures_heading_for_pack(pack),
+        ),
         pdf_compiler=build_pdf_compiler(config),
         exam_schema=load_exam_schema(standard),
         rubric_loader=RubricLoader(standard),
@@ -220,51 +244,6 @@ def _recognition_dir_or_default(config: AppConfig, recognition_dir: Path | None)
     if recognition_dir is not None:
         return Path(recognition_dir)
     return default_run_layout(config).recognition_dir
-
-
-def _activate_pack(
-    config: AppConfig, *, topic_id: str | None, standard_dir: Path | None
-) -> Path:
-    """Resolve the topic standards folder and make its pack active; return the folder."""
-    standard = resolve_standard_dir(config, topic_id=topic_id, standard_dir=standard_dir)
-    set_active_pack(resolve_topic_pack(config, topic_id=topic_id, standard_dir=standard))
-    return standard
-
-
-def build_recognize_controller(
-    config: AppConfig,
-    recognition_dir: Path | None = None,
-    *,
-    crops_dir: Path | None = None,
-    standard_dir: Path | None = None,
-    topic_id: str | None = None,
-) -> RecognizeController:
-    recognition = _recognition_dir_or_default(config, recognition_dir)
-    standard = _activate_pack(config, topic_id=topic_id, standard_dir=standard_dir)
-    return RecognizeController(
-        renderer=PyMuPdfRenderer(),
-        recognizer=build_vision_recognizer(
-            config, recognition, crops_dir=crops_dir, standard_dir=standard
-        ),
-    )
-
-
-def build_render_controller() -> RenderController:
-    return RenderController(PyMuPdfRenderer())
-
-
-def build_extract_controller(
-    config: AppConfig,
-    standard_dir: Path | None = None,
-    *,
-    topic_id: str | None = None,
-    recognize_runner: Callable[[], RecognizeResult] | None = None,
-) -> ExtractController:
-    standard = _activate_pack(config, topic_id=topic_id, standard_dir=standard_dir)
-    return ExtractController(
-        extractor=QuestionExtractor(exam_schema=load_exam_schema(standard)),
-        recognize_runner=recognize_runner,
-    )
 
 
 def build_latex_controller() -> LatexController:
@@ -334,9 +313,7 @@ def build_process_controller(
     renderer = PyMuPdfRenderer()
     return ProcessController(
         render_controller=RenderController(renderer),
-        recognize_controller=RecognizeController(
-            renderer=renderer, recognizer=recognizer
-        ),
+        recognize_controller=RecognizeController(recognizer=recognizer),
         crop_controller=CropController(renderer=renderer, workspace=recognizer),
         extract_controller=ExtractController(
             extractor=QuestionExtractor(exam_schema=schema)
@@ -346,16 +323,39 @@ def build_process_controller(
         grade_controller=build_grade_controller(
             config, standard, topic_id=topic_id
         ),
-        report_controller=build_report_controller(config, standard),
+        report_controller=build_report_controller(
+            config, standard, topic_id=topic_id
+        ),
         on_progress=on_progress,
-        question_numbers=[q.number for q in schema.questions] if schema else [],
+        question_numbers=sorted({q.number for q in schema.questions}) if schema else [],
         on_question_crops_missing=on_question_crops_missing,
-        question_review=build_question_review_controller(config),
+        question_review=build_question_review_controller(config, topic_pack=pack),
     )
 
 
-def build_question_review_controller(config: AppConfig) -> QuestionReviewController:
-    return QuestionReviewController(min_confidence=config.recognition.review_min_confidence)
+def build_question_review_controller(
+    config: AppConfig,
+    *,
+    topic_pack: TopicPack | None = None,
+    standard_dir: Path | None = None,
+) -> QuestionReviewController:
+    from app.functions.kunci_ingest import load_exam_schema
+    from app.topics.registry import get_pack
+
+    pack = topic_pack or get_pack(config.grading.topic_id)
+    attach = bool(getattr(pack, "rich_section_ingest", False))
+    schema = None
+    if attach:
+        standard = resolve_standard_dir(
+            config, topic_id=pack.id, standard_dir=standard_dir
+        )
+        schema = load_exam_schema(standard)
+    return QuestionReviewController(
+        min_confidence=config.recognition.review_min_confidence,
+        step_checks=pack.step_checks,
+        exam_schema=schema,
+        attach_milestone_pattern=attach,
+    )
 
 
 def build_question_label_controller(

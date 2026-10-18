@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 
 from app.exceptions import QuestionArtifactsInvalidError
+from app.functions.milestone_pattern import build_expected_milestones
 from app.functions.question_review import review_flags
 from app.functions.question_review_artifact import (
     drop_latex_sources,
@@ -13,15 +15,28 @@ from app.functions.question_review_artifact import (
     stale_latex_sources,
     write_reviewed_question,
 )
+from app.functions.standard_extract import schema_question
+from app.models.exam_schema import ExamSchema
 from app.models.question import Question
 from app.models.question_review import QuestionReviewItem, QuestionReviewResult
+from app.models.validation import StepCheck
 
 logger = logging.getLogger(__name__)
 
 
 class QuestionReviewController:
-    def __init__(self, *, min_confidence: float) -> None:
+    def __init__(
+        self,
+        *,
+        min_confidence: float,
+        step_checks: Mapping[str, StepCheck] | None = None,
+        exam_schema: ExamSchema | None = None,
+        attach_milestone_pattern: bool = False,
+    ) -> None:
         self._min_confidence = min_confidence
+        self._step_checks = step_checks
+        self._exam_schema = exam_schema
+        self._attach_milestone_pattern = attach_milestone_pattern
 
     def collect(self, questions_dir: Path) -> QuestionReviewResult:
         """Load every question.json and flag steps worth a human look."""
@@ -30,11 +45,26 @@ class QuestionReviewController:
             QuestionReviewItem(
                 path=path,
                 question=question,
-                flagged_steps=review_flags(question, min_confidence=self._min_confidence),
+                flagged_steps=review_flags(
+                    question,
+                    min_confidence=self._min_confidence,
+                    step_checks=self._step_checks,
+                ),
+                expected_milestones=self._expected_for(question),
             )
             for path, question in loaded
         ]
         return QuestionReviewResult(questions_dir=Path(questions_dir), items=items, errors=errors)
+
+    def _expected_for(self, question: Question):
+        if not self._attach_milestone_pattern or self._exam_schema is None:
+            return []
+        schema_q = schema_question(
+            self._exam_schema,
+            question.question_number,
+            question.part_label,
+        )
+        return build_expected_milestones(schema_q)
 
     def require_valid(self, questions_dir: Path) -> QuestionReviewResult:
         """Collected questions, or ``QuestionArtifactsInvalidError`` if any fails to parse."""

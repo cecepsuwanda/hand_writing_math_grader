@@ -13,9 +13,14 @@ from sympy.logic.boolalg import Boolean
 from app.exceptions import MathParseError
 from app.functions.kunci_ingest import load_exam_schema
 from app.functions.math_normalize import split_implication_clauses
+from app.functions.function_ingest import (
+    compare_value_table_pairs,
+    parse_value_table_pairs,
+)
+from app.functions.graph_points import compare_graph_points, parse_graph_points_repr
+from app.functions.kunci_finals import canonicalize_existence_final
 from app.functions.number_line import (
     compare_number_lines,
-    number_line_from_symbolic,
     parse_number_line_intervals_only,
 )
 from app.functions.standard_extract import (
@@ -28,7 +33,13 @@ from app.functions.standard_extract import (
 from app.functions.question_split import schema_final_text, schema_stem_text
 from app.functions.sign_chart import caption_signs, evaluation_row_signs, format_signs
 from app.functions.step_align import align_student_steps_to_standard
-from app.models.exam_schema import ExamMilestone, ExamQuestion, ExamSchema, NumberLineSpec
+from app.models.exam_schema import (
+    ExamMilestone,
+    ExamQuestion,
+    ExamSchema,
+    GraphPoint,
+    NumberLineSpec,
+)
 from app.models.question import FigureRef, Question, StudentStep
 from app.models.validation import ValidationStatus
 from app.services.math.equivalence import (
@@ -59,6 +70,10 @@ from app.services.math.role_checks import finite_solutions
 logger = logging.getLogger(__name__)
 
 FIGURE_UNCOMPARED_REASON = "figure present; no key number line to compare"
+FIGURE_NO_GEOMETRY_REASON = "figure present; no geometry key"
+FIGURE_GRAPH_UNPARSED_REASON = "figure present but graph points unparseable"
+FIGURE_SOFT_FRACTION = 0.5
+VALUE_TABLE_ROLE = "value_table"
 SIGN_CHART_ROLE = "sign_chart"
 HP_ROLE = "hp"
 HP_ALIGN_SKIP_REASON = "HP step is compared as the final answer"
@@ -79,6 +94,15 @@ def _mark_fraction(
     if status == ValidationStatus.UNCERTAIN:
         return 0.5
     return 0.0
+
+
+def _with_milestone_title(milestone: ExamMilestone, reason: str) -> str:
+    """Prefix feedback with ``role (Section Title):`` when title is known."""
+    title = (milestone.title or "").strip()
+    role = (milestone.role or "").strip() or "milestone"
+    if not title:
+        return reason
+    return f"{role} ({title}): {reason}"
 
 
 def _milestone_atom_texts(milestone: ExamMilestone) -> list[str]:
@@ -136,7 +160,7 @@ class StandardFinalComparer:
 
     def _bind_symbol(self, question: Question) -> ExamQuestion | None:
         """Pick the question's variable (stem, key final, student work); return its schema entry."""
-        schema_q = schema_question(self._schema, question.question_number)
+        schema_q = schema_question(self._schema, question.question_number, question.part_label)
         if self._fixed_symbol is not None:
             self._symbol = self._fixed_symbol
             return schema_q
@@ -232,7 +256,7 @@ class StandardFinalComparer:
         """Return (status, reason), or None if no schema question and no .tex."""
         schema_q = self._bind_symbol(question)
         path = standard_solution_path(
-            self._standard_dir, question.question_number
+            self._standard_dir, question.question_number, question.part_label
         )
         tex: str | None = None
         if path.is_file():
@@ -259,6 +283,10 @@ class StandardFinalComparer:
         student_text = self._student_final_text(question)
         if not student_text:
             return ValidationStatus.INVALID, "student final answer is empty"
+
+        existence = _compare_existence_finals(standard_text, student_text)
+        if existence is not None:
+            return existence
 
         try:
             student_step = self._parse(student_text)
@@ -303,7 +331,7 @@ class StandardFinalComparer:
         """
         schema_q = self._bind_symbol(question)
         path = standard_solution_path(
-            self._standard_dir, question.question_number
+            self._standard_dir, question.question_number, question.part_label
         )
         tex: str | None = None
         if path.is_file():
@@ -383,7 +411,8 @@ class StandardFinalComparer:
         for milestone in schema_q.milestones:
             if milestone.role == HP_ROLE:
                 continue
-            mark = self._milestone_match(question, milestone)
+            status, reason, fraction = self._milestone_match(question, milestone)
+            mark = (status, _with_milestone_title(milestone, reason), fraction)
             prev = role_results.get(milestone.role)
             if prev is None or _mark_fraction(mark) > _mark_fraction(prev):
                 role_results[milestone.role] = mark
@@ -392,25 +421,39 @@ class StandardFinalComparer:
     def compare_figure(
         self,
         question: Question,
-    ) -> tuple[ValidationStatus, str]:
-        """Score figure part: number-line geometry vs schema, else human review."""
-        schema_q = schema_question(self._schema, question.question_number)
+    ) -> tuple[ValidationStatus, str] | tuple[ValidationStatus, str, float | None]:
+        """Score figure: graph endpoints, else number-line, else soft presence."""
+        schema_q = schema_question(self._schema, question.question_number, question.part_label)
         has_figure = _question_has_figure(question)
-        expected = _expected_number_line(schema_q)
+        expected_line = _expected_number_line(schema_q)
+        expected_graph = _expected_graph_points(schema_q)
 
         if not has_figure:
             return ValidationStatus.INVALID, "no figure step"
 
-        if expected is None:
-            return ValidationStatus.UNCERTAIN, FIGURE_UNCOMPARED_REASON
+        if expected_graph:
+            actual_pts = _student_graph_points(question)
+            if actual_pts is None:
+                return ValidationStatus.UNCERTAIN, FIGURE_GRAPH_UNPARSED_REASON
+            return compare_graph_points(expected_graph, actual_pts)
 
-        actual = _student_number_line(question)
-        if actual is None:
+        if expected_line is not None:
+            actual = _student_number_line(question)
+            if actual is None:
+                return (
+                    ValidationStatus.UNCERTAIN,
+                    "figure present but number_line unparseable",
+                )
+            return compare_number_lines(expected_line, actual)
+
+        # expects_figure / sketch with no geometry key: partial credit, no review.
+        if schema_q is not None and schema_q.expects_figure:
             return (
-                ValidationStatus.UNCERTAIN,
-                "figure present but number_line unparseable",
+                ValidationStatus.VALID,
+                FIGURE_NO_GEOMETRY_REASON,
+                FIGURE_SOFT_FRACTION,
             )
-        return compare_number_lines(expected, actual)
+        return ValidationStatus.UNCERTAIN, FIGURE_UNCOMPARED_REASON
 
     def _milestone_match(
         self,
@@ -422,6 +465,9 @@ class StandardFinalComparer:
         The third value is an explicit score fraction when coverage is
         partial. ``None`` means the caller should use ``score_fraction``.
         """
+        if milestone.role == VALUE_TABLE_ROLE:
+            return self._value_table_match(question, milestone)
+
         texts = _milestone_atom_texts(milestone)
         if not texts:
             return (
@@ -548,6 +594,38 @@ class StandardFinalComparer:
             f"matches {matched}/{total} of milestone {milestone.role}",
             fraction,
         )
+
+    def _value_table_match(
+        self,
+        question: Question,
+        milestone: ExamMilestone,
+    ) -> tuple[ValidationStatus, str, float | None]:
+        """Compare ``(x, y)`` table points without interval mis-parse."""
+        key_texts = list(milestone.steps or [])
+        if milestone.latex:
+            key_texts.append(milestone.latex)
+        if milestone.symbolic is not None and milestone.symbolic.repr:
+            key_texts.append(milestone.symbolic.repr)
+        expected = parse_value_table_pairs(key_texts)
+        if not expected:
+            return (
+                ValidationStatus.UNCERTAIN,
+                "empty milestone value_table",
+                None,
+            )
+
+        student_texts: list[str] = []
+        for step in question.student_steps:
+            if _is_figure_student_step(step):
+                continue
+            blob = _student_step_text(step)
+            if not blob:
+                continue
+            role = (step.role or "").strip().lower()
+            if role == VALUE_TABLE_ROLE or parse_value_table_pairs([blob]):
+                student_texts.append(blob)
+        actual = parse_value_table_pairs(student_texts)
+        return compare_value_table_pairs(expected, actual)
 
     def _points(self, parsed: ParsedStep) -> list[Expr] | None:
         """Finite, non-empty real solution points of a relation; else ``None``."""
@@ -933,13 +1011,58 @@ def _expected_number_line(schema_q: ExamQuestion | None) -> NumberLineSpec | Non
         return None
     if schema_q.number_line is not None and schema_q.number_line.intervals:
         return schema_q.number_line
-    # Interval HP on a non-figure question is not number-line geometry.
-    if not schema_q.expects_figure:
+    # Do not invent geometry from HP/final: cartesian sketches and graph-point
+    # soals omit ``number_line`` on purpose (soft figure / graph_points path).
+    return None
+
+
+def _compare_existence_finals(
+    standard_text: str,
+    student_text: str,
+) -> tuple[ValidationStatus, str] | None:
+    """Compare ``ada`` / ``tidak ada`` finals without SymPy; ``None`` if not pure existence."""
+    expected = canonicalize_existence_final(standard_text)
+    if expected is None:
         return None
-    if schema_q.final_symbolic is not None:
-        return number_line_from_symbolic(schema_q.final_symbolic)
-    if (schema_q.final or "").strip():
-        return number_line_from_symbolic(schema_q.final)
+    actual = canonicalize_existence_final(student_text)
+    if actual is None:
+        return (
+            ValidationStatus.INVALID,
+            "final answer differs from standard",
+        )
+    if actual == expected:
+        return ValidationStatus.VALID, "final answer matches standard"
+    return ValidationStatus.INVALID, "final answer differs from standard"
+
+
+def _expected_graph_points(schema_q: ExamQuestion | None) -> list[GraphPoint]:
+    if schema_q is None:
+        return []
+    return list(schema_q.graph_points or [])
+
+
+def _student_graph_points(question: Question) -> list[GraphPoint] | None:
+    for ref in question.figure_refs:
+        if ref.symbolic is not None and (ref.symbolic.repr or "").strip():
+            parsed = parse_graph_points_repr(ref.symbolic.repr)
+            if parsed is not None:
+                return parsed
+        if (ref.caption or "").strip():
+            parsed = parse_graph_points_repr(ref.caption)
+            if parsed is not None:
+                return parsed
+    for step in question.student_steps:
+        if not _is_figure_student_step(step):
+            continue
+        if step.symbolic is not None and (step.symbolic.repr or "").strip():
+            parsed = parse_graph_points_repr(step.symbolic.repr)
+            if parsed is not None:
+                return parsed
+        blob = _student_step_text(step)
+        if blob:
+            parsed = parse_graph_points_repr(blob)
+            if parsed is not None:
+                return parsed
     return None
 
 

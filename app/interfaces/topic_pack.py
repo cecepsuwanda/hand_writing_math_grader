@@ -72,6 +72,12 @@ class TopicPack(Protocol):
     def figure_from_tikz(self) -> bool:
         """Kunci ingest: a tikzpicture in the answer means the soal expects a figure."""
 
+    # Optional pack attrs (read via getattr; default False):
+    # - show_milestone_pattern: Review/Hasil show kunci Langkah checklist
+    # - rich_section_ingest: pack-3 % concept / % value_table / Domain–Range split
+    # - grades_concept: dual-track concept scoring (unused while a pack installs sheet_butir)
+    # - sheet_butir / sheet_policy_for: 100-point nilai sheet and mean total (pack 3)
+
     def extract_final(self, answer_tex: str) -> str | None:
         """Kunci ingest fallback when the soal has no ``% final:`` marker."""
 

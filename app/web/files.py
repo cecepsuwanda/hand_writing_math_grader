@@ -49,10 +49,10 @@ _REPORT_FILENAMES: dict[ReportFile, str] = {
 }
 
 
-def require_run(output_root: Path, run_name: str) -> RunLayout:
-    """Layout of an existing run folder, matched by exact name (never joined blindly)."""
+def require_run(runs_root: Path, run_name: str) -> RunLayout:
+    """Layout of an existing run under the topic bucket (exact name; never joined blindly)."""
     wanted = run_name.strip()
-    for run_dir in list_run_dirs(output_root):
+    for run_dir in list_run_dirs(runs_root):
         if run_dir.name == wanted:
             return RunLayout(root=run_dir)
     raise RunNotFoundError(wanted)

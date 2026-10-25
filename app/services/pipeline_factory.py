@@ -95,7 +95,12 @@ def build_ollama_client(config: AppConfig) -> LlmClient:
 
 def default_run_layout(config: AppConfig) -> RunLayout:
     """Layout used only when a caller wires controllers without a PDF/run."""
-    return build_run_layout(config.output.root_dir, FALLBACK_RUN_NAME)
+    from app.functions.standards_layout import topic_runs_root
+
+    return build_run_layout(
+        topic_runs_root(config.output.root_dir, config.grading.topic_id),
+        FALLBACK_RUN_NAME,
+    )
 
 
 def prepare_run_workspace(
@@ -192,6 +197,7 @@ def build_grade_controller(
         role_rubric_parts=pack.role_rubric_parts,
         part_criterion_ids=getattr(pack, "part_criterion_ids", None),
         concept_comparer=concept_comparer,
+        sheet_policy_for=getattr(pack, "sheet_policy_for", None),
     )
     return GradeController(grader=grader, standard_dir=standard)
 
@@ -217,6 +223,8 @@ def build_report_controller(
         exam_schema=load_exam_schema(standard),
         rubric_loader=RubricLoader(standard),
         default_rubric=pack.rubric_from_parts,
+        sheet_butir=getattr(pack, "sheet_butir", None),
+        total_mode="mean" if getattr(pack, "sheet_butir", None) else "sum",
     )
 
 
@@ -343,7 +351,7 @@ def build_question_review_controller(
     from app.topics.registry import get_pack
 
     pack = topic_pack or get_pack(config.grading.topic_id)
-    attach = bool(getattr(pack, "rich_section_ingest", False))
+    attach = bool(getattr(pack, "show_milestone_pattern", False))
     schema = None
     if attach:
         standard = resolve_standard_dir(

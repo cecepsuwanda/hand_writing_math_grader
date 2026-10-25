@@ -1,4 +1,4 @@
-"""Per-topic standards folder naming (``<standards_root>/topik_<bab>``)."""
+"""Per-topic folder naming (``topik_<bab>``) for standards, jawaban, and runs."""
 
 from __future__ import annotations
 
@@ -23,3 +23,22 @@ def standards_folder_name(topic_id: str) -> str:
 
 def topic_standard_dir(standards_root: Path, topic_id: str) -> Path:
     return Path(standards_root) / standards_folder_name(topic_id)
+
+
+def topic_jawaban_dir(jawaban_root: Path, topic_id: str) -> Path:
+    """``<jawaban_root>/topik_<bab>`` for student PDFs of the active topic."""
+    return Path(jawaban_root) / standards_folder_name(topic_id)
+
+
+def topic_runs_root(output_root: Path, topic_id: str) -> Path:
+    """``<output_root>/topik_<bab>`` holding per-PDF run folders."""
+    return Path(output_root) / standards_folder_name(topic_id)
+
+
+def is_topic_bucket_name(name: str) -> bool:
+    """True for reserved ``topik_<bab>`` bucket folders (not a run name)."""
+    lowered = (name or "").strip().lower()
+    if not lowered.startswith(STANDARDS_FOLDER_PREFIX):
+        return False
+    suffix = lowered[len(STANDARDS_FOLDER_PREFIX) :]
+    return bool(suffix) and suffix.isdigit()

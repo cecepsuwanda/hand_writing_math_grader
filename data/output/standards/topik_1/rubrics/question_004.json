@@ -7,8 +7,12 @@
       "points": 3.0
     },
     {
+      "id": "critical_points",
+      "points": 1.0
+    },
+    {
       "id": "sign_chart",
-      "points": 2.0
+      "points": 1.0
     },
     {
       "id": "figure",

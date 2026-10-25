@@ -1,10 +1,15 @@
-"""Per-PDF output layout: ``<output_root>/<run_name>/{pages,crops,recognition,questions}``."""
+"""Per-PDF output layout: ``<runs_root>/<run_name>/{pages,crops,recognition,questions}``.
+
+``runs_root`` is normally ``<output.root_dir>/topik_<bab>`` (see ``topic_runs_root``).
+"""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.functions.standards_layout import STANDARDS_FOLDER_PREFIX, is_topic_bucket_name
 
 PAGES_SUBDIR = "pages"
 CROPS_SUBDIR = "crops"
@@ -67,7 +72,12 @@ def sanitize_run_name(raw: str) -> str:
         return FALLBACK_RUN_NAME
     lowered = name.lower()
     base = lowered.split(".", 1)[0]
-    if lowered == STANDARDS_DIRNAME or base in _WINDOWS_RESERVED:
+    if (
+        lowered == STANDARDS_DIRNAME
+        or is_topic_bucket_name(lowered)
+        or lowered.startswith(STANDARDS_FOLDER_PREFIX)
+        or base in _WINDOWS_RESERVED
+    ):
         return f"{name}{RESERVED_SUFFIX}"
     return name
 
@@ -77,24 +87,26 @@ def safe_run_name(pdf: Path) -> str:
     return sanitize_run_name(Path(pdf).stem)
 
 
-def build_run_layout(output_root: Path, run_name: str) -> RunLayout:
-    return RunLayout(root=Path(output_root) / run_name)
+def build_run_layout(runs_root: Path, run_name: str) -> RunLayout:
+    """``runs_root`` is the topic bucket (``…/topik_N``), not the global output root."""
+    return RunLayout(root=Path(runs_root) / run_name)
 
 
-def layout_for_pdf(output_root: Path, pdf: Path) -> RunLayout:
-    return build_run_layout(output_root, safe_run_name(pdf))
+def layout_for_pdf(runs_root: Path, pdf: Path) -> RunLayout:
+    return build_run_layout(runs_root, safe_run_name(pdf))
 
 
-def list_run_dirs(output_root: Path) -> list[Path]:
-    """Run folders under ``output_root`` (skips ``standards`` and flat legacy dirs)."""
-    output_root = Path(output_root)
-    if not output_root.is_dir():
+def list_run_dirs(runs_root: Path) -> list[Path]:
+    """Run folders under ``runs_root`` (skips ``standards``, ``topik_*`` buckets, flat dirs)."""
+    runs_root = Path(runs_root)
+    if not runs_root.is_dir():
         return []
     runs = [
         child
-        for child in output_root.iterdir()
+        for child in runs_root.iterdir()
         if child.is_dir()
         and child.name.lower() != STANDARDS_DIRNAME
+        and not is_topic_bucket_name(child.name)
         and any((child / sub).is_dir() for sub in RUN_SUBDIRS)
     ]
     return sorted(runs, key=lambda p: p.name.lower())

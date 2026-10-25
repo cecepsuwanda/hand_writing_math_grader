@@ -91,7 +91,7 @@ Pack = implementasi `TopicPack` di `app/topics/<id>/` + entri di `_PACKS` (`app/
 | `1.5` | 1.5 Pertidaksamaan | `standards/topik_1` | **MVP, default** — ingest, roles, `step_checks`, rubric, grading, tes |
 | `2` | 2 Pertidaksamaan nilai mutlak | `standards/topik_2` | **Registered** — delegasi roles/`step_checks`/rubric/role instructions ke `1.5`; tes masih minimal |
 | `4` | 4 Limit | `standards/topik_4` | **Registered** — roles `algebra` / `indeterminate` / `one_sided` / `figure` / `hp`; final dari `% final:` (cadangan: nilai kalimat `Jadi`); acceptance ingest `tugas_topik_4.tex` (19 sub-soal) |
-| `3` | 3 Fungsi | `standards/topik_3` | **Registered** (`Function3Pack`, isolasi) — dual-track **50/50**: simbolik 5 + **`concept` 5** (fallback heuristic bila JSON LLM rusak); ingest kaya (`VALUE_TABLE` pairs, prose unwrap `$…$`, final `ada`/`tidak ada`); figure soft bila tikz tanpa number_line; sub-soal **1a/1b, 4a/4b, 5a/5b, 6a/6b** + grafik 2–3; peringatan crop kosong → TIDAK DIJAWAB; acceptance `tugas_topik_3.tex` (10 (sub-)soal) |
+| `3` | 3 Fungsi | `standards/topik_3` | **Registered** (`Function3Pack`, isolasi) — lembar rubrik: 7 butir × 100, nilai tugas = rata-rata; Langkah 60/50, Jawaban 40/30 (0 atau penuh), Penyajian 20 hanya butir 2–3; lantai langkah 25; butir 4–6 = gabungan (a)+(b); ingest kaya (`VALUE_TABLE`, final `ada`/`tidak ada`); sub-soal **1a/1b, 4a/4b, 5a/5b, 6a/6b** + grafik 2–3; acceptance `tugas_topik_3.tex` (10 (sub-)soal) |
 | `5` | 5 Kekontinuan | `standards/topik_5` | **Registered** (`ChapterPack`) — `one_sided` / `function_value` / `continuity` + `figure`; acceptance `tugas_topik_5.tex` (7) |
 | `6` | 6 Turunan | `standards/topik_6` | **Registered** (`ChapterPack`) — `definition` / `one_sided_derivative` / `tangent_line` + `figure`; acceptance `tugas_topik_6.tex` (12) |
 | `7` | 7 Integral | `standards/topik_7` | **Registered** (`ChapterPack`) — `antiderivative` / `integral_property` / `ftc` / `substitution` / `evaluate_bounds`; acceptance `tugas_topik_7.tex` (15) |
@@ -104,11 +104,11 @@ Pack = implementasi `TopicPack` di `app/topics/<id>/` + entri di `_PACKS` (`app/
 
 Pemilihan pack: dropdown **Topik** di halaman awal web UI (berlaku untuk ingest kunci dan semua job), `grading.topic_id` di `config.yaml`, atau `topic_id` di `exam_schema.json` selama user belum memilih topik.
 
-**Folder standar per bab.** Hasil ingest setiap pack disimpan di `<grading.standards_root>/topik_<bab>`, dengan bab = bagian id sebelum titik. Karena itu maksimal **satu pack per bab**: registry menolak dua pack yang memetakan ke folder yang sama (misalnya `1.3` dan `1.5` sama-sama `topik_1`).
+**Folder per bab.** Naming `topik_<bab>` (bab = bagian id sebelum titik) dipakai untuk: standards (`<grading.standards_root>/topik_<bab>`), PDF jawaban (`<input.jawaban_dir>/topik_<bab>`), dan run output (`<output.root_dir>/topik_<bab>/<nama_pdf>`). Maksimal **satu pack per bab**: registry menolak dua pack yang memetakan ke folder yang sama (misalnya `1.3` dan `1.5` sama-sama `topik_1`).
 
 ## Capabilities
 
-Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recognizer + validator. Terdaftar di `app/capabilities/registry.py`; pack memilih lewat `capability_ids` (pack `1.5` dan `2` mengaktifkan semuanya; pack bab ≥ 3 memakai `ALL_CAPABILITY_IDS`, tanpa `indexed_roots`; pack `3` menambah `piecewise`; pack `11` menambah `vector_tuple`). Ingest kunci menormalisasi di bawah pack aktif (`using_pack`), jadi capability opt-in ikut berlaku untuk `final_symbolic` / `steps_symbolic`. Pack `3`: halaman Review/Hasil menampilkan **Pola kunci** (judul `Langkah N` → role); skor tetap coverage per role, bukan matching urutan langkah siswa. Setelah ubah ingest, re-ingest `tugas_topik_3.tex` agar `ExamMilestone.title` terisi.
+Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recognizer + validator. Terdaftar di `app/capabilities/registry.py`; pack memilih lewat `capability_ids` (pack `1.5` dan `2` mengaktifkan semuanya; pack bab ≥ 3 memakai `ALL_CAPABILITY_IDS`, tanpa `indexed_roots`; pack `3` menambah `piecewise`; pack `11` menambah `vector_tuple`). Ingest kunci menormalisasi di bawah pack aktif (`using_pack`), jadi capability opt-in ikut berlaku untuk `final_symbolic` / `steps_symbolic`. Pack dengan `show_milestone_pattern` (`1.5`, `2`, `3`): halaman Review/Hasil menampilkan **Pola kunci** (judul `Langkah N` → role); skor tetap coverage per role, bukan matching urutan langkah siswa. Re-ingest `tugas_topik_1.tex` / `tugas_topik_2.tex` / `tugas_topik_3.tex` agar `ExamMilestone.title` terisi di schema.
 
 | Capability id | Bab terkait |
 |---------------|-------------|
@@ -132,7 +132,7 @@ Capability = rewrite notasi (LaTeX / ASCII → token SymPy) yang dipakai recogni
 | 1.1–1.4 | Sistem bilangan, garis bilangan, selang, sifat | Pendukung MVP | Konseptual; cek notasi selang + LLM |
 | 1.5 | Pertidaksamaan (bentuk umum + HP) | **MVP** | SymPy-first (solve/reduce inequality), garis bilangan = set-equivalence |
 | 2 | Pertidaksamaan nilai mutlak | **Pack terdaftar** | SymPy-first Abs + compound/`Or`; kasus naratif → UNCERTAIN → LLM |
-| 3 | Fungsi | **Pack terdaftar** (dual-track 50/50; isolasi dari bab lain) | Simbolik (5): domain/range/tabel/grafik endpoints/komposisi/`% final:`; recognition `cases`→`Piecewise` + `GRAPH_POINTS`. Narasi (5): role `concept` dinilai LLM vs milestone kunci; tanpa reasoning model → heuristic / UNCERTAIN + review |
+| 3 | Fungsi | **Pack terdaftar** (lembar rubrik 100, rata-rata 7 butir) | Domain/range/tabel/komposisi/`% final:` masuk pool Langkah. Jawaban dan penyajian 0 atau penuh. Narasi role `concept` ikut langkah, bukan kolom poin sendiri. Recognition `cases`→`Piecewise` + `GRAPH_POINTS` |
 | 4 | Limit | **Pack terdaftar** (ingest + rubric + roles; acceptance ingest hijau) | SymPy `limit` dua sisi / sepihak per token `LIMIT(...)`; rantai `lim … = a = b` dan trig tak terputuskan → UNCERTAIN → LLM |
 | 5 | Kekontinuan | **Pack terdaftar** (acceptance ingest hijau) | lim dua sisi = f(a); ε-δ / prosa → UNCERTAIN → LLM |
 | 6 | Turunan | **Pack terdaftar** (acceptance ingest hijau) | `f'(x) = …` / `f''(x)` / `f'_-(a)` dibaca sebagai nilai; rantai berisi `LIMIT`/`DIFF`/`INT` → UNCERTAIN → LLM |

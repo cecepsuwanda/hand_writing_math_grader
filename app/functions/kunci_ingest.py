@@ -1,4 +1,4 @@
-"""Pure helpers to ingest kunci_jawaban TeX into standards solution files."""
+﻿"""Pure helpers to ingest kunci_jawaban TeX into standards solution files."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ _TEX_COMMENT_RE = re.compile(r"(?<!\\)%[^\n]*")
 _QUAD_TEXT_RE = re.compile(
     r"\\quad\s*\\text\{(?:[^{}]|\{[^{}]*\})*\}",
 )
-# ``\text{Ekspansi: } x^2 + ...`` → keep the math after a label ending in ``:``.
+# ``\text{Ekspansi: } x^2 + ...`` â†’ keep the math after a label ending in ``:``.
 _LEADING_LABEL_RE = re.compile(r"^\\text\s*\{[^{}]*:\s*\}\s*(?=\S)")
 
 _TIKZ_RE = re.compile(r"\\begin\s*\{\s*tikzpicture\s*\}", re.IGNORECASE)
@@ -91,7 +91,7 @@ _SUB_LABEL_RE = re.compile(
     r"\\item\s*\[\s*\(?\s*(?P<label>[a-z]{1,4})\s*[.)]?\s*\]",
     re.IGNORECASE,
 )
-# ``\text{(a)}\quad u \cdot v = 0`` — an align row tagged for sub-soal (a).
+# ``\text{(a)}\quad u \cdot v = 0`` â€” an align row tagged for sub-soal (a).
 _ROW_PART_LABEL_RE = re.compile(
     r"^\\text\s*\{\s*\((?P<label>[a-z]{1,4})\)\s*\}\s*(?:\\q?quad\b|\\[;,:!]|~|\s)*",
     re.IGNORECASE,
@@ -150,7 +150,7 @@ class _IngestRules:
     number_line: bool
     # Pack-opt-in (function_3): derive number_line from D_f when not a graph soal.
     domain_number_line: bool
-    # Pack has ``graph`` in figure_kinds — Gambar Grafik sections skip HP→number_line.
+    # Pack has ``graph`` in figure_kinds â€” Gambar Grafik sections skip HPâ†’number_line.
     graph_kind: bool
     # Pack-opt-in (function_3): prose + tabular + Domain/Range split.
     rich_section_ingest: bool
@@ -279,7 +279,7 @@ def _strip_comment_line(line: str) -> str:
 
 
 def _normalize_title(raw_title: str) -> tuple[str, bool]:
-    """``\\textbf{Langkah 2: Tentukan Titik Kritis}`` → (``Tentukan Titik Kritis``, True)."""
+    """``\\textbf{Langkah 2: Tentukan Titik Kritis}`` â†’ (``Tentukan Titik Kritis``, True)."""
     title = unwrap_text_commands(raw_title)
     is_langkah = bool(_LANGKAH_TITLE_RE.match(title))
     stripped = _LANGKAH_PREFIX_RE.sub("", title, count=1).strip()
@@ -407,7 +407,7 @@ def _walk_sections(
 
     The canonical flow is the part outside any method plus the first method
     that is a full alternative path (``Cara 1``); milestones only come from it.
-    Methods nested under a milestone section (``Titik Kritis`` → ``Metode 1``)
+    Methods nested under a milestone section (``Titik Kritis`` â†’ ``Metode 1``)
     are alternatives for that milestone; the first one fills it.
     """
     for section in _list_sections(list_body):
@@ -614,7 +614,7 @@ class _SubList:
 
 
 def _item_label(chunk: str) -> str | None:
-    """``\\item[(a)]`` / ``\\item[a)]`` / ``\\item[a.]`` → ``"a"``; plain ``\\item`` → None."""
+    """``\\item[(a)]`` / ``\\item[a)]`` / ``\\item[a.]`` â†’ ``"a"``; plain ``\\item`` â†’ None."""
     match = _SUB_LABEL_RE.match(chunk.lstrip())
     return match.group("label").lower() if match is not None else None
 
@@ -656,7 +656,7 @@ def _stem_sub_list(item_tex: str) -> _SubList | None:
 def extract_question_stems(tex: str, *, topic_id: str | None = None) -> list[tuple[int, str]]:
     """Parse kunci TeX into ``(question_number, stem)`` pairs (1-based).
 
-    Stems are problem statements only — never align steps or HP.
+    Stems are problem statements only â€” never align steps or HP.
     Honors ``% soal ke N`` when present. Sub-soal repeat their number.
     """
     questions = _build_questions(tex, _resolve_pack(None, topic_id))
@@ -974,13 +974,13 @@ def _assemble_question(
         )
     is_graph_figure = bool(rules.graph_kind and saw_figure)
     # Cartesian tikz (e.g. Verifikasi dengan Grafik) is not a number-line figure.
-    has_cartesian_tikz = item_has_tikzpicture(item_tex) and not is_graph_figure
+    has_cartesian_tikz = rules.graph_kind and item_has_tikzpicture(item_tex) and not is_graph_figure
     number_line = None
     if is_graph_figure:
-        # Gambar Grafik soals: endpoints via graph_points, not HP→number_line.
+        # Gambar Grafik soals: endpoints via graph_points, not HPâ†’number_line.
         pass
     elif has_cartesian_tikz:
-        # Sketch present; figure credit without inventing D_f→number_line geometry.
+        # Sketch present; figure credit without inventing D_fâ†’number_line geometry.
         pass
     elif rules.number_line and expects_figure and final_text:
         number_line = number_line_from_symbolic(

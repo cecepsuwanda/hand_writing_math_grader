@@ -1,30 +1,14 @@
 {
   "question": 4,
-  "maximum_score": 10.0,
+  "maximum_score": 100.0,
   "criteria": [
     {
-      "id": "domain",
-      "points": 0.8333
-    },
-    {
-      "id": "range",
-      "points": 0.8333
-    },
-    {
-      "id": "composition",
-      "points": 0.8333
+      "id": "algebra",
+      "points": 60.0
     },
     {
       "id": "final_answer",
-      "points": 1.6667
-    },
-    {
-      "id": "algebra",
-      "points": 0.8334
-    },
-    {
-      "id": "concept",
-      "points": 5.0
+      "points": 40.0
     }
   ]
 }

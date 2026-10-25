@@ -112,7 +112,7 @@
       {% if grade.final_answer %}
       {% set step = grade.final_answer %}
       <tr class="status-{{ step.status.value }}">
-        <td>Jawaban akhir</td>
+        <td>{{ labels.get('final_answer', 'Jawaban akhir') }}</td>
         <td><span class="badge badge-step-{{ step.status.value }}">{{ step.status.value }}</span></td>
         <td class="num">{{ step.score | score }} / {{ step.max_score | score }}</td>
         <td>{% if step.error_type.value != "none" %}{{ step.error_type.value }}{% endif %}</td>

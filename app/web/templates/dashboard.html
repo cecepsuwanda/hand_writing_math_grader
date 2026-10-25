@@ -82,6 +82,8 @@
       <span class="icon-bubble">{{ icon("file-up", "icon-lg") }}</span>
       <h2>2 · PDF jawaban mahasiswa</h2>
     </div>
+    <p class="muted small">PDF dan hasil proses untuk topik ini ada di folder <code>{{ view.topic_folder }}</code>
+      (jawaban + run output). Ganti topik di kiri untuk melihat set lain.</p>
     {% if view.pdfs %}
     <ul class="list">
       {% for pdf in view.pdfs %}
@@ -119,6 +121,7 @@
     <span class="icon-bubble">{{ icon("users", "icon-lg") }}</span>
     <h2>3 · Run</h2>
   </div>
+  <p class="muted small">Hanya run di <code>{{ view.topic_folder }}</code> untuk topik aktif.</p>
   {% if view.runs %}
   <div class="run-grid">
     {% for run in view.runs %}

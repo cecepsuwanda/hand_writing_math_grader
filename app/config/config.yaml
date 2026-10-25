@@ -2,19 +2,21 @@ pdf:
   dpi: 200
 
 input:
+  # Root; PDFs live in <jawaban_dir>/topik_<bab>/ for the active topic.
   jawaban_dir: data/input/jawaban
   # Source TeX for kunci ingest (web: Ingest) → standards/.../solutions (enumerate+align+HP slice).
   kunci_jawaban_dir: data/input/kunci_jawaban
 
 output:
-  # Per PDF: <root_dir>/<nama_pdf>/{pages,crops,recognition,questions,report.*,summary.csv}
+  # Root; per-PDF runs live in <root_dir>/topik_<bab>/<nama_pdf>/{pages,crops,...}.
+  # Standards stay at grading.standards_root/topik_<bab>/.
   root_dir: data/output
 
 ollama:
   base_url: "http://localhost:11434"
   # Cloud via local Ollama proxy (sign in required). Images leave the machine.
-  vision_model: "gemma4:31b-cloud"
-  reasoning_model: "gpt-oss:120b-cloud"
+  vision_model: "mistral-large-4:cloud"
+  reasoning_model: "deepseek-v4-pro:cloud"
   timeout_seconds: 180
   max_retries: 2
 

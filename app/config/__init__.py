@@ -26,11 +26,12 @@ class PdfConfig(BaseModel):
 
 
 class OutputConfig(BaseModel):
-    # Each processed PDF gets <root_dir>/<pdf stem>/{pages,crops,recognition,questions}.
+    # Root; each PDF run is <root_dir>/topik_<bab>/<pdf stem>/{pages,crops,...}.
     root_dir: Path = Path("data/output")
 
 
 class InputConfig(BaseModel):
+    # Root; student PDFs are <jawaban_dir>/topik_<bab>/*.pdf for the active topic.
     jawaban_dir: Path = Path("data/input/jawaban")
     # Source for kunci ingest → standards/solutions (enumerate+align+HP slice).
     kunci_jawaban_dir: Path = Path("data/input/kunci_jawaban")

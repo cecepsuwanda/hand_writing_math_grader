@@ -36,7 +36,12 @@ from app.functions.regions_artifact import crop_paths_for
 from app.functions.report_artifact import load_exam_report
 from app.functions.run_layout import RunLayout, layout_for_pdf, list_run_dirs, safe_run_name
 from app.functions.standard_extract import exam_schema_path
-from app.functions.standards_layout import topic_standard_dir
+from app.functions.standards_layout import (
+    standards_folder_name,
+    topic_jawaban_dir,
+    topic_runs_root,
+    topic_standard_dir,
+)
 from app.functions.validation_artifact import question_artifact_paths
 from app.interfaces.topic_pack import TopicPack
 from app.models.exam_schema import ExamQuestion
@@ -84,12 +89,20 @@ class WebPipeline:
     def pack(self) -> TopicPack:
         return self._session.pack
 
+    def _jawaban_dir(self) -> Path:
+        return topic_jawaban_dir(self.config.input.jawaban_dir, self.pack.id)
+
+    def _runs_root(self) -> Path:
+        return topic_runs_root(self.config.output.root_dir, self.pack.id)
+
     # --- dashboard ------------------------------------------------------------
 
     def dashboard(self) -> DashboardView:
         config = self.config
         active = self._session.pack
-        run_names = {p.name for p in list_run_dirs(config.output.root_dir)}
+        jawaban_dir = self._jawaban_dir()
+        runs_root = self._runs_root()
+        run_names = {p.name for p in list_run_dirs(runs_root)}
         models = [config.ollama.vision_model, config.ollama.reasoning_model]
         return DashboardView(
             topics=[
@@ -105,6 +118,7 @@ class WebPipeline:
             standard_dir=str(self._standard_dir()),
             standard_ready=self._standard_ready(active.id),
             kunci_files=[p.name for p in list_kunci_tex(config.input.kunci_jawaban_dir)],
+            topic_folder=standards_folder_name(active.id),
             pdfs=[
                 PdfEntry(
                     name=pdf.name,
@@ -112,9 +126,9 @@ class WebPipeline:
                     run_name=safe_run_name(pdf),
                     has_run=safe_run_name(pdf) in run_names,
                 )
-                for pdf in list_jawaban_pdfs(config.input.jawaban_dir)
+                for pdf in list_jawaban_pdfs(jawaban_dir)
             ],
-            runs=[self._summary(RunLayout(root=root)) for root in list_run_dirs(config.output.root_dir)],
+            runs=[self._summary(RunLayout(root=root)) for root in list_run_dirs(runs_root)],
             vision_model=config.ollama.vision_model,
             reasoning_model=config.ollama.reasoning_model,
             cloud_models=[m for m in models if m.strip().endswith(_CLOUD_SUFFIX)],
@@ -136,7 +150,7 @@ class WebPipeline:
 
     def upload_pdf(self, filename: str, data: bytes) -> Path:
         return files.save_upload(
-            self.config.input.jawaban_dir,
+            self._jawaban_dir(),
             filename,
             data,
             suffix=".pdf",
@@ -157,13 +171,13 @@ class WebPipeline:
     # --- runs -----------------------------------------------------------------
 
     def run(self, run_name: str) -> RunLayout:
-        return files.require_run(self.config.output.root_dir, run_name)
+        return files.require_run(self._runs_root(), run_name)
 
     def run_summary(self, run_name: str) -> RunSummary:
         return self._summary(self.run(run_name))
 
     def run_name_for_pdf(self, pdf_name: str) -> str:
-        pdf = files.require_input_file(self.config.input.jawaban_dir, pdf_name, suffix=".pdf")
+        pdf = files.require_input_file(self._jawaban_dir(), pdf_name, suffix=".pdf")
         return safe_run_name(pdf)
 
     def delete_run(self, run_name: str) -> str:
@@ -177,11 +191,11 @@ class WebPipeline:
         Returns:
             ``(pdf_name, removed_run_name_or_None)``.
         """
-        pdf = files.require_input_file(self.config.input.jawaban_dir, pdf_name, suffix=".pdf")
+        pdf = files.require_input_file(self._jawaban_dir(), pdf_name, suffix=".pdf")
         run_name = safe_run_name(pdf)
         removed_run: str | None = None
         try:
-            layout = files.require_run(self.config.output.root_dir, run_name)
+            layout = files.require_run(self._runs_root(), run_name)
         except RunNotFoundError:
             layout = None
         if layout is not None:
@@ -192,8 +206,8 @@ class WebPipeline:
     def propose_crops(self, pdf_name: str, reporter: JobReporter) -> RunLayout:
         """Empty this PDF's run folder, render it, and propose ink boxes."""
         config = self.config
-        pdf = files.require_input_file(config.input.jawaban_dir, pdf_name, suffix=".pdf")
-        layout = layout_for_pdf(config.output.root_dir, pdf)
+        pdf = files.require_input_file(self._jawaban_dir(), pdf_name, suffix=".pdf")
+        layout = layout_for_pdf(self._runs_root(), pdf)
         removed = pipeline_factory.prepare_run_workspace(layout)
         if removed:
             reporter.message(f"Folder run dikosongkan: {', '.join(removed)}")
@@ -349,8 +363,8 @@ class WebPipeline:
     ) -> ProcessResult:
         """Whole pipeline for one PDF with every checkpoint auto-accepted (API)."""
         config = self.config
-        pdf = files.require_input_file(config.input.jawaban_dir, pdf_name, suffix=".pdf")
-        layout = layout_for_pdf(config.output.root_dir, pdf)
+        pdf = files.require_input_file(self._jawaban_dir(), pdf_name, suffix=".pdf")
+        layout = layout_for_pdf(self._runs_root(), pdf)
         controller = self._process_controller(layout, reporter)
         return controller.process(
             pdf,
@@ -370,8 +384,8 @@ class WebPipeline:
         from app.functions.milestone_pattern import build_expected_milestones
         from app.functions.question_names import split_question_ref
         from app.functions.results_view import (
-            PART_DISPLAY_LABELS,
             dual_track_scores,
+            part_labels_for,
             split_grade_rows,
         )
         from app.functions.standard_extract import schema_question
@@ -383,7 +397,7 @@ class WebPipeline:
             raise QuestionArtifactsInvalidError([str(exc)]) from exc
         pack = self.grading_pack()
         grades_concept = bool(getattr(pack, "grades_concept", False))
-        attach_pattern = bool(getattr(pack, "rich_section_ingest", False))
+        attach_pattern = bool(getattr(pack, "show_milestone_pattern", False))
         schema = None
         if attach_pattern:
             try:
@@ -445,7 +459,7 @@ class WebPipeline:
             grades=grades,
             report_files=files.existing_report_files(layout),
             grades_concept=grades_concept,
-            part_labels=dict(PART_DISPLAY_LABELS),
+            part_labels=part_labels_for(pack),
             crop_warnings=empty_crop_warnings(crop_map, schema_numbers),
         )
 

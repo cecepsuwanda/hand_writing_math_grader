@@ -767,7 +767,7 @@ class TestManualRegionEditor:
 
     def test_run_without_pages_has_no_editor(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
-        (web.output_root / "answer" / "crops").mkdir(parents=True)
+        (web.topic_runs() / "answer" / "crops").mkdir(parents=True)
         response = web.client.get("/runs/answer/crops")
         assert response.status_code == 404
         assert "Propose crops" in response.text
@@ -976,7 +976,7 @@ class TestWebReview:
         assert page.status_code == 200
         assert_contains(page.text, "Pola kunci", "Tentukan Domain", "Tentukan Range")
 
-    def test_review_page_hides_kunci_pattern_for_pack15(
+    def test_review_page_hides_kunci_pattern_without_schema(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         web = WebHarness(tmp_path, monkeypatch)
@@ -984,6 +984,60 @@ class TestWebReview:
         page = web.client.get("/runs/answer/review")
         assert page.status_code == 200
         assert "Pola kunci" not in page.text
+
+    def test_review_page_shows_kunci_pattern_for_pack15(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from app.functions.standards_layout import topic_standard_dir
+        from app.models.exam_schema import ExamMilestone, ExamQuestion, ExamSchema
+
+        web = WebHarness(tmp_path, monkeypatch, topic_id="1.5")
+        standard = topic_standard_dir(web.standards_root, "1.5")
+        standard.mkdir(parents=True, exist_ok=True)
+        schema = ExamSchema(
+            source="t",
+            topic_id="1.5",
+            questions=[
+                ExamQuestion(
+                    number=1,
+                    stem="x^2 > 1",
+                    milestones=[
+                        ExamMilestone(
+                            role="critical_points",
+                            title="Tentukan Titik Kritis",
+                            latex="x = -1 ; x = 1",
+                            steps=["x = -1", "x = 1"],
+                        ),
+                        ExamMilestone(
+                            role="sign_chart",
+                            title="Analisis Tanda",
+                            latex="tabel tanda",
+                            steps=["+ - +"],
+                        ),
+                    ],
+                    expects_figure=True,
+                )
+            ],
+        )
+        (standard / "exam_schema.json").write_text(
+            schema.model_dump_json(indent=2), encoding="utf-8"
+        )
+        layout = web.run_dir("answer")
+        write_question_dir(
+            layout.questions_dir,
+            make_question(
+                steps=[make_step(1, raw_text="x = -1", role="critical_points")]
+            ),
+        )
+        page = web.client.get("/runs/answer/review")
+        assert page.status_code == 200
+        assert_contains(
+            page.text,
+            "Pola kunci",
+            "Tentukan Titik Kritis",
+            "Analisis Tanda",
+            "Sesuaikan",
+        )
 
     def test_put_question_saves_the_edit(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)

@@ -128,6 +128,7 @@ from app.functions.results_view import (
     figures_section_heading,
     split_grade_rows,
 )
+from app.functions.sheet_score import SheetScorePolicy, apply_sheet_policy, sheet_report_rows
 from app.functions.regions_artifact import write_regions_artifact
 from app.functions.question_split import (
     assign_provisional_by_stem,
@@ -163,7 +164,11 @@ from app.functions.score_aggregate import (
     part_step_flags,
     split_feedback_markers,
 )
-from app.functions.standards_layout import standards_folder_name
+from app.functions.standards_layout import (
+    standards_folder_name,
+    topic_jawaban_dir,
+    topic_runs_root,
+)
 from app.functions.standard_extract import (
     exam_schema_path,
     extract_final_answer_from_tex,
@@ -510,6 +515,7 @@ class TestRunLayout:
 
     def test_safe_run_name_guards_reserved_and_empty(self) -> None:
         assert safe_run_name(Path('standards.pdf')) == 'standards_run'
+        assert safe_run_name(Path('topik_3.pdf')) == 'topik_3_run'
         assert safe_run_name(Path('CON.pdf')) == 'CON_run'
         assert sanitize_run_name('...') == 'run'
 
@@ -526,6 +532,7 @@ class TestRunLayout:
 
     def test_list_run_dirs_skips_standards_and_flat_legacy(self, tmp_path: Path) -> None:
         (tmp_path / 'standards' / 'exam_001').mkdir(parents=True)
+        (tmp_path / 'topik_3' / 'pages').mkdir(parents=True)  # topic bucket, not a run
         (tmp_path / 'pages').mkdir()
         (tmp_path / 'pages' / 'page_001.png').write_bytes(b'x')
         (tmp_path / 'beta' / 'questions').mkdir(parents=True)
@@ -3205,6 +3212,201 @@ class TestScoreAggregate:
         assert invalid.steps[0].validation_status == ValidationStatus.INVALID
         assert invalid.steps[0].score == pytest.approx(0.0)
 
+    def test_sheet_jawaban_and_penyajian_are_all_or_nothing(self) -> None:
+        policy = SheetScorePolicy(60, 40, 20, apply_floor=False)
+        uncertain = QuestionGrade(
+            question_id='question_002',
+            question_number=2,
+            score=80,
+            maximum_score=100,
+            steps=[make_step_grade(1, 60, 60)],
+            final_answer=make_step_grade(
+                0, 20, 40, validation=ValidationStatus.UNCERTAIN, status=StepGradeStatus.REVIEW
+            ),
+            standard_final_status=ValidationStatus.UNCERTAIN,
+            review_status=ReviewStatus.REVIEW_REQUIRED,
+        )
+        graded = apply_sheet_policy(uncertain, policy, readable=True)
+        assert graded.final_answer is not None
+        assert graded.final_answer.score == pytest.approx(0.0)
+        assert graded.review_status == ReviewStatus.REVIEW_REQUIRED
+
+        matched = uncertain.model_copy(
+            update={
+                'standard_final_status': ValidationStatus.VALID,
+                'final_answer': make_step_grade(
+                    0, 0, 40, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT
+                ),
+                'review_status': ReviewStatus.AUTO_ACCEPT,
+            }
+        )
+        full = apply_sheet_policy(matched, policy, readable=True)
+        assert full.final_answer is not None
+        assert full.final_answer.score == pytest.approx(40.0)
+
+        figure = QuestionGrade(
+            question_id='question_002',
+            question_number=2,
+            score=90,
+            maximum_score=100,
+            steps=[
+                make_step_grade(1, 50, 50),
+                make_step_grade(0, 10, 20, part_id='figure'),
+                make_step_grade(0, 0, 20, part_id='figure', validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT),
+            ],
+            final_answer=make_step_grade(0, 30, 30),
+            standard_final_status=ValidationStatus.VALID,
+        )
+        # Two figure rows: the partial one must not keep its half credit.
+        snapped = apply_sheet_policy(figure, SheetScorePolicy(50, 30, 20, apply_floor=False), readable=True)
+        figures = [step for step in snapped.steps if step.part_id == 'figure']
+        assert [step.score for step in figures] == pytest.approx([0.0, 0.0])
+        exact = figure.model_copy(
+            update={
+                'steps': [
+                    make_step_grade(1, 50, 50),
+                    make_step_grade(0, 20, 20, part_id='figure'),
+                ]
+            }
+        )
+        kept = apply_sheet_policy(exact, SheetScorePolicy(50, 30, 20, apply_floor=False), readable=True)
+        shown = next(step for step in kept.steps if step.part_id == 'figure')
+        assert shown.score == pytest.approx(20.0)
+
+    def test_sheet_langkah_floor_and_merged_butir_mean(self) -> None:
+        steps = [
+            make_step_grade(1, 0, 15, validation=ValidationStatus.UNCERTAIN, status=StepGradeStatus.REVIEW),
+            make_step_grade(2, 0, 15, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT),
+            make_step_grade(3, 0, 15, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT),
+            make_step_grade(4, 0, 15, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT),
+        ]
+        base = QuestionGrade(
+            question_id='question_001a',
+            question_number=1,
+            part_label='a',
+            score=0,
+            maximum_score=100,
+            steps=steps,
+            final_answer=make_step_grade(
+                0, 0, 40, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT
+            ),
+            standard_final_status=ValidationStatus.INVALID,
+        )
+        policy = SheetScorePolicy(60, 40, 0, apply_floor=True)
+        lifted = apply_sheet_policy(base, policy, readable=True)
+        assert lifted.score == pytest.approx(25.0)
+        raw = apply_sheet_policy(base, policy, readable=False)
+        assert raw.score == pytest.approx(7.5)
+        wrong = base.model_copy(
+            update={
+                'steps': [
+                    make_step_grade(
+                        i, 0, 15, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT
+                    )
+                    for i in range(1, 5)
+                ]
+            }
+        )
+        assert apply_sheet_policy(wrong, policy, readable=True).score == pytest.approx(0.0)
+
+        milestone = QuestionGrade(
+            question_id='question_001a',
+            question_number=1,
+            part_label='a',
+            score=60,
+            maximum_score=100,
+            steps=[make_step_grade(1, 60, 60)],
+            final_answer=make_step_grade(
+                0, 0, 40, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT
+            ),
+            standard_final_status=ValidationStatus.INVALID,
+        )
+        mixed = apply_sheet_policy(
+            milestone,
+            SheetScorePolicy(60, 40, 0, apply_floor=False),
+            milestone_marks={'domain': (ValidationStatus.INVALID, 'miss', 0.0)},
+            readable=True,
+        )
+        assert mixed.score == pytest.approx(30.0)
+
+        def member(part: str, langkah: float, final_valid: bool) -> QuestionGrade:
+            status = ValidationStatus.VALID if final_valid else ValidationStatus.INVALID
+            grade_status = StepGradeStatus.CORRECT if final_valid else StepGradeStatus.INCORRECT
+            langkah_status = ValidationStatus.VALID if langkah else ValidationStatus.INVALID
+            return QuestionGrade(
+                question_id=f'question_004{part}',
+                question_number=4,
+                part_label=part,
+                score=langkah + (40.0 if final_valid else 0.0),
+                maximum_score=100,
+                steps=[
+                    make_step_grade(
+                        1,
+                        langkah,
+                        60,
+                        validation=langkah_status,
+                        status=StepGradeStatus.CORRECT if langkah else StepGradeStatus.INCORRECT,
+                    )
+                ],
+                final_answer=make_step_grade(0, 40.0 if final_valid else 0.0, 40, validation=status, status=grade_status),
+                standard_final_status=status,
+            )
+
+        pack = get_pack('3')
+        readable = {(4, 'a'): True, (4, 'b'): True}
+        one_wrong = sheet_report_rows(
+            [member('a', 60, True), member('b', 60, False)],
+            pack.sheet_butir,
+            readable=readable,
+        )
+        butir4 = next(row for row in one_wrong if row.question_number == 4 and row.part_label == '')
+        assert butir4.score == pytest.approx(60.0)
+        assert len(one_wrong) == 7
+        both = sheet_report_rows(
+            [member('a', 60, True), member('b', 60, True)],
+            pack.sheet_butir,
+            readable=readable,
+        )
+        assert next(row for row in both if row.question_number == 4).score == pytest.approx(100.0)
+        floored = sheet_report_rows(
+            [member('a', 6, True), member('b', 0, True)],
+            pack.sheet_butir,
+            readable=readable,
+        )
+        # (0.1 + 0) / 2 * 60 = 3, then the floor lifts langkah to 25; jawaban stays 40.
+        assert next(row for row in floored if row.question_number == 4).score == pytest.approx(65.0)
+
+        singles = [
+            QuestionGrade(
+                question_id='question_001a', question_number=1, part_label='a',
+                score=100, maximum_score=100, review_status=ReviewStatus.AUTO_ACCEPT,
+            ),
+            QuestionGrade(
+                question_id='question_001b', question_number=1, part_label='b',
+                score=0, maximum_score=100, review_status=ReviewStatus.AUTO_ACCEPT,
+            ),
+            QuestionGrade(
+                question_id='question_002', question_number=2, part_label='',
+                score=100, maximum_score=100, review_status=ReviewStatus.AUTO_ACCEPT,
+            ),
+            QuestionGrade(
+                question_id='question_003', question_number=3, part_label='',
+                score=0, maximum_score=100, review_status=ReviewStatus.AUTO_ACCEPT,
+            ),
+        ]
+        rows = sheet_report_rows(singles + [member('a', 60, True), member('b', 60, False)], pack.sheet_butir)
+        assert [row.score for row in rows] == pytest.approx([100, 0, 100, 0, 60, 0, 0])
+        assert rows[5].missing and rows[5].missing_label == 'TIDAK DIJAWAB'
+        report = aggregate_exam_report([], make_report_metadata(Path('.')), prepared_rows=rows, total_mode='mean')
+        assert report.maximum_total == pytest.approx(100.0)
+        assert report.total_score == pytest.approx(round(260 / 7, 4))
+        summed = aggregate_exam_report(
+            [QuestionGrade(question_id='question_001', question_number=1, score=10, maximum_score=10)],
+            make_report_metadata(Path('.')),
+        )
+        assert summed.total_score == pytest.approx(10.0)
+        assert summed.maximum_total == pytest.approx(10.0)
+
 class TestStepGrader:
 
     def test_step_grader_writes_grading_json_without_mutating_question(self, tmp_path: Path) -> None:
@@ -4537,7 +4739,8 @@ R_f &= (-\infty, 4)
             ref: (by_ref[ref].final_symbolic.repr if by_ref[ref].final_symbolic else None) for ref in symbolic
         } == symbolic
         rubrics = [RubricLoader(standard).load(q.number, q.part_label) for q in schema.questions]
-        assert all(r.maximum_score == 10.0 for r in rubrics)
+        expected_max = 100.0 if topic_id == '3' else 10.0
+        assert all(r.maximum_score == expected_max for r in rubrics)
         assert len([p for p in written if p.parent.name == 'rubrics']) == len(refs)
 
     def test_load_question_stems_from_file(self, tmp_path: Path) -> None:
@@ -6219,6 +6422,8 @@ class TestTopicRegistry:
     )
     def test_standards_folder_name_uses_chapter(self, topic_id: str, folder: str) -> None:
         assert standards_folder_name(topic_id) == folder
+        assert topic_jawaban_dir(Path('jawaban'), topic_id).name == folder
+        assert topic_runs_root(Path('output'), topic_id).name == folder
 
     def test_registered_packs_have_distinct_standards_folders(self) -> None:
         folders = [standards_folder_name(topic_id) for topic_id in known_topic_ids()]
@@ -6241,6 +6446,29 @@ class TestTopicPackBehavior:
         assert pack.coalesce_step_role('HP = (1, oo)', None, None) == 'hp'
         assert not hasattr(pack, 'domain_number_line_from_final') or not pack.domain_number_line_from_final
         assert getattr(pack, 'part_criterion_ids', None) in (None, DEFAULT_PART_CRITERION_IDS)
+        assert pack.show_milestone_pattern is True
+        assert get_pack('2').show_milestone_pattern is True
+        assert not getattr(get_pack('4'), 'show_milestone_pattern', False)
+        tex = r'''
+\begin{enumerate}
+\item $x^2 > 1$.
+\textbf{Jawab:}
+\begin{itemize}
+\item \textbf{Langkah 2: Tentukan Titik Kritis}
+\begin{align}
+x &= -1 \\
+x &= 1
+\end{align}
+\item \textbf{Langkah 6: Tentukan HP}
+\begin{align}
+\text{HP} &= (-\infty, -1) \cup (1, \infty)
+\end{align}
+\end{itemize}
+\end{enumerate}
+'''
+        (q,) = build_exam_schema(tex, source='i15', topic_pack=pack).questions
+        by_role = {m.role: m for m in q.milestones}
+        assert by_role['critical_points'].title == 'Tentukan Titik Kritis'
 
     def test_function_pack_roles_and_isolation(self) -> None:
         pack = get_pack('3')
@@ -6251,8 +6479,12 @@ class TestTopicPackBehavior:
         assert 'value_table' in pack.roles
         assert pack.figure_kinds == ('number_line', 'graph')
         assert pack.domain_number_line_from_final is True
-        assert pack.grades_concept is True
+        assert pack.grades_concept is False
+        assert len(pack.sheet_butir) == 7
+        assert pack.sheet_policy_for(4, 'a').apply_floor is False
+        assert pack.sheet_policy_for(1, 'a').apply_floor is True
         assert pack.rich_section_ingest is True
+        assert pack.show_milestone_pattern is True
         assert 'domain' in pack.part_criterion_ids and 'concept' in pack.part_criterion_ids
         assert pack.coalesce_step_role('D_f = (-oo, 9]', None, None) == 'domain'
         assert pack.coalesce_step_role('R_f = [0, oo)', None, None) == 'range'
@@ -6277,8 +6509,10 @@ class TestTopicPackBehavior:
             ],
         )
         by_id = {c.id: c.points for c in rubric.criteria}
-        assert by_id['concept'] == pytest.approx(5.0)
-        assert sum(p for cid, p in by_id.items() if cid != 'concept') == pytest.approx(5.0)
+        assert rubric.maximum_score == pytest.approx(100.0)
+        assert by_id == {'algebra': 60.0, 'final_answer': 40.0}
+        assert get_pack('3').rubric_from_parts(2, []).criteria[-1].id == 'figure'
+        assert not getattr(get_pack('4'), 'sheet_butir', None)
         # ChapterPack default (bab 4) remains TRANSITION on hp — isolation.
         assert get_pack('4').step_checks['hp'] == StepCheck.TRANSITION
         assert not getattr(get_pack('4'), 'grades_concept', False)
@@ -6500,7 +6734,7 @@ class TestWebDashboard:
             '/pdfs/upload', files={'file': ('..\\..\\evil.pdf', b'%PDF-1.4 x', 'application/pdf')}
         )
         assert response.status_code == 303
-        assert (web.jawaban_dir / 'evil.pdf').read_bytes() == b'%PDF-1.4 x'
+        assert (web.topic_jawaban() / 'evil.pdf').read_bytes() == b'%PDF-1.4 x'
         assert not (tmp_path / 'evil.pdf').exists()
 
     @pytest.mark.parametrize(
@@ -6512,7 +6746,7 @@ class TestWebDashboard:
         web = WebHarness(tmp_path, monkeypatch)
         response = web.client.post('/pdfs/upload', files={'file': (filename, data, 'application/pdf')})
         assert response.status_code == 400
-        assert list(web.jawaban_dir.iterdir()) == []
+        assert list(web.topic_jawaban().iterdir()) == []
 
     def test_upload_then_ingest_kunci(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
@@ -6646,7 +6880,7 @@ class TestWebJobs:
         job = web.job(web.client.post('/pdfs/propose', data={'pdf': 'answer.pdf'}))
         assert job.status == JobStatus.DONE, job.error
         assert job.next_url == '/runs/answer/crops'
-        assert calls == [(web.jawaban_dir / 'answer.pdf', web.output_root / 'answer' / 'pages', 200)]
+        assert calls == [(web.topic_jawaban() / 'answer.pdf', web.topic_runs() / 'answer' / 'pages', 200)]
         assert not stale.with_suffix('.png').exists()
         assert other.is_file()
 
@@ -6663,7 +6897,7 @@ class TestWebJobs:
         assert response.headers['location'].startswith('/?ok=')
         assert 'Hasil+proses+dihapus' in response.headers['location']
         assert pdf.is_file()
-        assert not (web.output_root / 'answer').exists()
+        assert not (web.topic_runs() / 'answer').exists()
         assert other.root.is_dir()
         assert (standards / 'rubric.json').is_file()
         page = web.client.get('/')
@@ -6683,8 +6917,8 @@ class TestWebJobs:
         assert 'Jawaban+dihapus' in location
         assert 'hasil+proses+answer+ikut+dihapus' in location
         assert not pdf.exists()
-        assert not (web.output_root / 'answer').exists()
-        assert (web.jawaban_dir / 'keep.pdf').is_file()
+        assert not (web.topic_runs() / 'answer').exists()
+        assert (web.topic_jawaban() / 'keep.pdf').is_file()
         assert other.root.is_dir()
 
     def test_delete_pdf_without_run(self, tmp_path: Path, monkeypatch) -> None:
@@ -6714,8 +6948,8 @@ class TestWebJobs:
         assert web.client.post('/runs/answer/transcribe').status_code == 303
         assert web.client.post('/runs/answer/delete').status_code == 409
         assert web.client.post('/pdfs/delete', data={'pdf': 'answer.pdf'}).status_code == 409
-        assert (web.output_root / 'answer').is_dir()
-        assert (web.jawaban_dir / 'answer.pdf').is_file()
+        assert (web.topic_runs() / 'answer').is_dir()
+        assert (web.topic_jawaban() / 'answer.pdf').is_file()
 
     def test_propose_unknown_pdf_is_404(self, tmp_path: Path, monkeypatch) -> None:
         response = WebHarness(tmp_path, monkeypatch).client.post('/pdfs/propose', data={'pdf': 'nope.pdf'})
@@ -6811,7 +7045,7 @@ class TestWebResults:
     def _graded_run(web: WebHarness) -> RunLayout:
         question = make_question('x < 4', number=1)
         layout = write_report_workspace(
-            web.output_root / 'answer', question, make_report_question_grade(1, 8, 10)
+            web.topic_runs() / 'answer', question, make_report_question_grade(1, 8, 10)
         )
         report = make_report_result(web.tmp_path).exam_report
         (layout.report_dir / 'report.json').write_text(report.model_dump_json(), encoding='utf-8')
@@ -6835,18 +7069,20 @@ class TestWebResults:
         grade = QuestionGrade(
             question_id='question_001',
             question_number=1,
-            score=8.0,
-            maximum_score=10.0,
+            score=80.0,
+            maximum_score=100.0,
             steps=[
-                make_step_grade(1, 1.0, 1.0),
-                make_step_grade(0, 4.0, 5.0, part_id='concept'),
-                make_step_grade(0, 3.0, 5.0, part_id='domain'),
+                make_step_grade(1, 60.0, 60.0),
+                make_step_grade(0, 20.0, 20.0, part_id='figure'),
             ],
-            part_statuses={'concept': 'valid', 'domain': 'valid'},
+            final_answer=make_step_grade(
+                0, 0.0, 40.0, validation=ValidationStatus.INVALID, status=StepGradeStatus.INCORRECT
+            ),
+            part_statuses={'algebra': 'valid', 'figure': 'valid'},
             review_status=ReviewStatus.AUTO_ACCEPT,
         )
         layout = write_report_workspace(
-            web.output_root / 'answer', make_question('domain', number=1), grade
+            web.topic_runs() / 'answer', make_question('domain', number=1), grade
         )
         report = aggregate_exam_report([grade], make_report_metadata(tmp_path))
         (layout.report_dir / 'report.json').write_text(report.model_dump_json(), encoding='utf-8')
@@ -6854,24 +7090,25 @@ class TestWebResults:
         assert page.status_code == 200
         assert_contains(
             page.text,
-            'Konsep 4',
-            'Simbolik 4',
             'Komponen penilaian',
-            'Domain',
-            'Konsep',
+            'Penyajian',
+            'Langkah: valid',
+            '>Jawaban<',
         )
+        assert 'Konsep 4' not in page.text
+        assert 'Simbolik' not in page.text
         assert figures_section_heading(('number_line', 'graph')) == 'Gambar / grafik (OCR)'
         assert figures_section_heading(('number_line',)) == 'Gambar / garis bilangan (OCR)'
         assert display_part_label('value_table') == 'Tabel nilai'
         steps, parts = split_grade_rows(grade)
-        assert len(steps) == 1 and {p.part_id for p in parts} == {'concept', 'domain'}
-        assert dual_track_scores(grade) == (4.0, 5.0, 4.0, 5.0)
+        assert len(steps) == 1 and {p.part_id for p in parts} == {'figure'}
+        assert dual_track_scores(grade) == (None, None, None, None)
 
     def test_results_and_review_pages_show_sub_soal_ref(self, tmp_path: Path, monkeypatch) -> None:
         web = WebHarness(tmp_path, monkeypatch)
         grade = make_report_question_grade(1, 4, 5, part_label='b')
         layout = write_report_workspace(
-            web.output_root / 'answer', make_question('x < 4', number=1, part_label='b'), grade
+            web.topic_runs() / 'answer', make_question('x < 4', number=1, part_label='b'), grade
         )
         report = aggregate_exam_report(
             [grade], make_report_metadata(tmp_path), expected_maximums={(1, 'a'): 5.0, (1, 'b'): 5.0}

@@ -39,6 +39,7 @@ class AbsInequalityPack:
     recognition_role_instructions = INEQUALITY_15.recognition_role_instructions
     ingest_section_roles = INEQUALITY_15.ingest_section_roles
     figure_from_tikz = INEQUALITY_15.figure_from_tikz
+    show_milestone_pattern = True
 
     def extract_final(self, answer_tex: str) -> str | None:
         return INEQUALITY_15.extract_final(answer_tex)

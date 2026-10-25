@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,9 +23,10 @@ from app.functions.question_names import (
     summary_csv_filename,
 )
 from app.functions.report_aggregate import QuestionKey, aggregate_exam_report
+from app.functions.sheet_score import SheetButir, question_is_readable, sheet_report_rows
 from app.functions.report_details import load_question_report_details
 from app.functions.run_layout import CROPS_SUBDIR
-from app.functions.validation_artifact import question_artifact_paths
+from app.functions.validation_artifact import load_question_artifact, question_artifact_paths
 from app.interfaces.latex_compiler import LatexCompiler
 from app.interfaces.reporter import DetailedReporter, GradeReporter
 from app.models.defaults import DEFAULT_STUDENT_ID
@@ -58,6 +59,8 @@ class ReportController:
         exam_schema: ExamSchema | None = None,
         rubric_loader: RubricLoader | None = None,
         default_rubric: Callable[[int, list[ExamPart]], Rubric] | None = None,
+        sheet_butir: Sequence[SheetButir] | None = None,
+        total_mode: str = "sum",
     ) -> None:
         """``default_rubric`` (the pack's ``rubric_from_parts``) supplies the maximum
         of a question whose rubric file is missing."""
@@ -71,6 +74,8 @@ class ReportController:
         self._prompt_versions = prompt_versions or PromptVersions()
         self._latex_reporter = latex_reporter
         self._pdf_compiler = pdf_compiler
+        self._sheet_butir = tuple(sheet_butir) if sheet_butir else ()
+        self._total_mode = total_mode
 
     def report(
         self,
@@ -92,12 +97,28 @@ class ReportController:
         maximums, labels = self._expected_rows(
             question_paths, {(g.question_number, g.part_label) for g in grades}
         )
-        exam = aggregate_exam_report(
-            grades,
-            self._metadata(questions_dir, student_id),
-            expected_maximums=maximums,
-            missing_labels=labels,
-        )
+        metadata = self._metadata(questions_dir, student_id)
+        if self._sheet_butir:
+            prepared = sheet_report_rows(
+                grades,
+                self._sheet_butir,
+                readable=self._readable_flags(question_paths),
+                missing_labels=labels,
+            )
+            exam = aggregate_exam_report(
+                grades,
+                metadata,
+                prepared_rows=prepared,
+                total_mode=self._total_mode,
+            )
+        else:
+            exam = aggregate_exam_report(
+                grades,
+                metadata,
+                expected_maximums=maximums,
+                missing_labels=labels,
+                total_mode=self._total_mode,
+            )
         written = self._reporter.write(exam, output_dir)
         tex_path = self._write_latex(
             exam,
@@ -184,6 +205,19 @@ class ReportController:
                 return self._default_rubric(number, parts).maximum_score
             logger.warning(f"Soal {ref} tidak masuk nilai maksimum: {exc}")
             return None
+
+    @staticmethod
+    def _readable_flags(question_paths: list[Path]) -> dict[QuestionKey, bool]:
+        flags: dict[QuestionKey, bool] = {}
+        for path in question_paths:
+            key = _folder_question_key(path.parent)
+            if key is None:
+                continue
+            try:
+                flags[key] = question_is_readable(load_question_artifact(path))
+            except ValueError:
+                flags[key] = False
+        return flags
 
     @staticmethod
     def _load_grades(paths: list[Path]) -> list[QuestionGrade]:

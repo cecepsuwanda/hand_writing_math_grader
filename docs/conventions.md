@@ -62,7 +62,7 @@ Silabus, status per bab, dan topic pack: [`math-topics.md`](math-topics.md).
 
 Recognition memakai **ink bbox**: clustering tinta deterministik (`ink_layout`), lalu crop Pillow + konfirmasi user (`page_*_regions.json` editable) + `crop_math`. Konteks ujian ke vision hanya **stem + `expects_figure`** dari `exam_schema` — jangan kirim steps/HP ke OCR.
 
-Koreksi transkripsi hanya oleh **user**, di checkpoint tinjau `question.json` setelah Extract (`QuestionReviewController`); sistem cuma memberi tanda (`ReviewFlag`) dan tidak pernah mengubah langkah sendiri. Penanda memakai `symbolic.kind` / role `figure`, plus `step_checks` pack (mis. `NOT_SYMBOLIC` untuk `concept` di topik 3) agar narasi tidak selalu bertanda `missing_symbolic`. Halaman Review/Hasil membaca `active_topic` (datalist role, dual-track Konsep/Simbolik bila `grades_concept`). Pack `3` (`rich_section_ingest`): Review menampilkan checklist **Pola kunci** dari `ExamMilestone.title` + role agar user menyesuaikan kolom Peran; Hasil menyandingkan judul langkah kunci ke baris komponen; feedback milestone berprefiks `role (Judul): …`.
+Koreksi transkripsi hanya oleh **user**, di checkpoint tinjau `question.json` setelah Extract (`QuestionReviewController`); sistem cuma memberi tanda (`ReviewFlag`) dan tidak pernah mengubah langkah sendiri. Penanda memakai `symbolic.kind` / role `figure`, plus `step_checks` pack (mis. `NOT_SYMBOLIC` untuk `concept` di topik 3) agar narasi tidak selalu bertanda `missing_symbolic`. Halaman Review/Hasil membaca `active_topic` (datalist role, dual-track Konsep/Simbolik bila `grades_concept`). Pack 3 memakai lembar rubrik (label Langkah / Jawaban / Penyajian) dan tidak memasang `grades_concept`. Pack dengan `show_milestone_pattern` (`1.5`, `2`, `3`): Review menampilkan checklist **Pola kunci** dari `ExamMilestone.title` + role agar user menyesuaikan kolom Peran; Hasil menyandingkan judul langkah kunci ke baris komponen; feedback milestone berprefiks `role (Judul): …`. (`rich_section_ingest` tetap pack-3 saja.)
 
 Saat recognition, LLM **tidak boleh**:
 
@@ -81,7 +81,7 @@ Jika ragu: tandai `uncertain` / confidence rendah / `review_required`, dan perta
 4. **Grading:** skor langkah = konsistensi; soft-align ke `exam_schema` / solutions `.tex` = audit; skor `final_answer` = min(konsistensi, standard SymPy).
 5. Partial credit; jangan nolkan semua skor hanya karena final answer salah.
 6. Error type deterministik: `calculation` / `carry_forward` / `transcription` / `uncertain`; `conceptual` hanya dari annotator LLM (feedback, tidak mengubah skor).
-7. **Dual-track (pack `3` saja):** rubrik 50/50 — 5 poin simbolik (SymPy / set / graph points) + 5 poin `concept` (narasi, `ConceptComparer` + `concept_grade.txt`). Pack lain tidak punya bucket `concept`. Tanpa model reasoning, `concept` = `uncertain` (fraksi 0.5) + review.
+7. **Lembar rubrik (pack `3` saja):** tiap butir maksimum 100 (Langkah 60 atau 50, Jawaban 40 atau 30, Penyajian 20 hanya butir 2 dan 3). Jawaban dan penyajian hanya 0 atau penuh (kunci `VALID`; penyajian hanya bila skor gambar sudah penuh). Langkah adalah satu pool: domain, range, tabel, komposisi, dan narasi tidak punya kolom sendiri. Bila teks terbaca dan tidak semua bukti `INVALID`, langkah minimal 25. Butir 4, 5, dan 6 menggabungkan sub-soal (a)+(b); lantai 25 dikenakan sekali pada gabungan itu. Nilai tugas = rata-rata ketujuh butir (maksimum 100). Pack lain tetap skala 10 dan total = jumlah.
 
 Output LLM divalidasi terhadap schema Pydantic. Status `uncertain` dan `REVIEW_REQUIRED` diizinkan.
 

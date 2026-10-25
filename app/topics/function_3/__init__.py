@@ -1,8 +1,8 @@
-"""Function topic pack (syllabus bab 3) — dual-track 50/50 symbolic + concept.
+"""Function topic pack (syllabus bab 3).
 
 Isolated from other ChapterPacks: SOLUTION_SET finals, value_table, graph
-endpoints, and a paid ``concept`` narrative bucket (LLM), without changing
-bab 1.5/2 or ChapterPack defaults for bab 4–11.
+endpoints, and the nilai sheet (100 per butir, exam mean). Bab 1.5/2 and
+ChapterPack defaults for bab 4–11 stay on the 10-point summed rubric.
 """
 
 from __future__ import annotations
@@ -12,11 +12,17 @@ from types import MappingProxyType
 
 from app.capabilities.registry import ALL_CAPABILITY_IDS
 from app.functions.score_aggregate import DEFAULT_PART_CRITERION_IDS
+from app.functions.sheet_score import (
+    LANGKAH_FLOOR,
+    SHEET_MAXIMUM,
+    SheetButir,
+    SheetScorePolicy,
+)
 from app.models.exam_schema import ExamPart
 from app.models.grading import Rubric, RubricCriterion
 from app.models.recognition import SymbolicPayload
 from app.models.validation import StepCheck
-from app.topics.chapter_pack import RUBRIC_TOTAL, ChapterPack, MilestonePart
+from app.topics.chapter_pack import ChapterPack, MilestonePart
 
 _FUNCTION3_CAPABILITY_IDS: tuple[str, ...] = ("piecewise",) + tuple(
     cid for cid in ALL_CAPABILITY_IDS if cid != "piecewise"
@@ -43,11 +49,20 @@ _MATHISH_RE = re.compile(
     re.IGNORECASE,
 )
 
-SYMBOLIC_TOTAL = 5.0
 CONCEPT_POINTS = 5.0
-_FIGURE_RELATIVE = 2.0
-_FINAL_RELATIVE = 2.0
-_ALGEBRA_RELATIVE = 1.0
+
+# rubrik_nilai_tugas_topik_3.tex — tujuh butir, masing-masing maksimum 100.
+# Butir 4, 5, dan 6 menggabungkan sub-soal (a) dan (b) saat laporan.
+_SHEET_BUTIR: tuple[SheetButir, ...] = (
+    SheetButir(1, "a", ((1, "a"),), 60, 40, 0),
+    SheetButir(1, "b", ((1, "b"),), 60, 40, 0),
+    SheetButir(2, "", ((2, ""),), 50, 30, 20),
+    SheetButir(3, "", ((3, ""),), 50, 30, 20),
+    SheetButir(4, "", ((4, "a"), (4, "b")), 60, 40, 0),
+    SheetButir(5, "", ((5, "a"), (5, "b")), 60, 40, 0),
+    SheetButir(6, "", ((6, "a"), (6, "b")), 60, 40, 0),
+)
+_SHEET_BY_NUMBER = {butir.question_number: butir for butir in _SHEET_BUTIR}
 
 
 class Function3Pack(ChapterPack):
@@ -55,9 +70,14 @@ class Function3Pack(ChapterPack):
 
     domain_number_line_from_final = True
     figure_from_tikz = True
-    grades_concept = True
+    grades_concept = False
     # Opt-in: prose + tabular + Domain/Range split + % concept / % value_table.
     rich_section_ingest = True
+    show_milestone_pattern = True
+    sheet_butir = _SHEET_BUTIR
+    sheet_part_labels = MappingProxyType(
+        {"algebra": "Langkah", "final_answer": "Jawaban", "figure": "Penyajian"}
+    )
     part_criterion_ids = DEFAULT_PART_CRITERION_IDS | frozenset(
         {"domain", "range", "composition", "value_table", "concept"}
     )
@@ -173,43 +193,48 @@ class Function3Pack(ChapterPack):
         )
 
     def rubric_from_parts(self, question_number: int, parts: list[ExamPart]) -> Rubric:
-        """Dual-track: ``concept`` = 5; remaining symbolic criteria scale to 5."""
-        kinds = {part.kind for part in parts}
-        relative: dict[str, float] = {
-            role: points
-            for role, points in self._points.items()
-            if role in kinds and role != "concept"
-        }
-        if "figure" in kinds:
-            relative["figure"] = _FIGURE_RELATIVE
-        if "hp" in kinds:
-            relative["final_answer"] = _FINAL_RELATIVE
-        if "algebra" in kinds or not relative:
-            relative["algebra"] = relative.get("algebra", 0.0) + _ALGEBRA_RELATIVE
+        """Nilai sheet: Langkah / Jawaban / Penyajian, maximum 100.
 
-        total_rel = sum(relative.values()) or 1.0
-        scale = SYMBOLIC_TOTAL / total_rel
-        scaled = {
-            cid: round(points * scale, 4) for cid, points in relative.items()
-        }
-        # Absorb rounding drift into algebra (or the last criterion).
-        drift = round(SYMBOLIC_TOTAL - sum(scaled.values()), 4)
-        if "algebra" in scaled:
-            scaled["algebra"] = round(scaled["algebra"] + drift, 4)
-        else:
-            last = next(reversed(scaled))
-            scaled[last] = round(scaled[last] + drift, 4)
-
+        Domain, range, tabel, komposisi, and narrative stay out of their own
+        columns. Those roles fall into the langkah pool because this rubric
+        does not define their buckets. ``parts`` is unused: the sheet, not the
+        detected milestones, fixes the weights. Penyajian is only butir 2 and 3.
+        """
+        del parts
+        butir = _SHEET_BY_NUMBER.get(question_number)
+        langkah, jawaban, penyajian = (
+            (butir.langkah, butir.jawaban, butir.penyajian) if butir is not None else (60.0, 40.0, 0.0)
+        )
         criteria = [
-            RubricCriterion(id=cid, points=points)
-            for cid, points in scaled.items()
-            if points > 0
+            RubricCriterion(id="algebra", points=langkah),
+            RubricCriterion(id="final_answer", points=jawaban),
         ]
-        criteria.append(RubricCriterion(id="concept", points=CONCEPT_POINTS))
+        if penyajian > 0:
+            criteria.append(RubricCriterion(id="figure", points=penyajian))
         return Rubric(
             question=question_number,
-            maximum_score=RUBRIC_TOTAL,
+            maximum_score=SHEET_MAXIMUM,
             criteria=criteria,
+        )
+
+    def sheet_policy_for(self, question_number: int, part_label: str) -> SheetScorePolicy:
+        """Floor 25 once per butir. Merged members (4a/4b, …) defer it to the report."""
+        butir = next(
+            (
+                item
+                for item in _SHEET_BUTIR
+                if (question_number, part_label) in item.members
+            ),
+            None,
+        )
+        if butir is None:
+            return SheetScorePolicy(60.0, 40.0, 0.0, apply_floor=True, floor=LANGKAH_FLOOR)
+        return SheetScorePolicy(
+            butir.langkah,
+            butir.jawaban,
+            butir.penyajian,
+            apply_floor=len(butir.members) == 1,
+            floor=LANGKAH_FLOOR,
         )
 
     def coalesce_step_role(

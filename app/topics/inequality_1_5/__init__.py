@@ -166,6 +166,7 @@ class Inequality15Pack:
     recognition_role_instructions = _ROLE_INSTRUCTIONS
     ingest_section_roles = _INGEST_SECTION_ROLES
     figure_from_tikz = True
+    show_milestone_pattern = True
 
     def extract_final(self, answer_tex: str) -> str | None:
         return extract_hp_final(answer_tex)

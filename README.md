@@ -44,7 +44,7 @@ Server hanya mendengarkan `127.0.0.1` (halaman menampilkan tulisan mahasiswa). S
 |---------|------------------|-------|
 | 1 | Halaman awal → **Topik** → *Pilih* | Topic pack aktif (`1.5` default, `2`, `3`–`11`) + folder standar `standards/topik_<bab>` |
 | 2 | **Kunci jawaban** → unggah `.tex` → *Ingest ke topik …* | `exam_schema.json`, `solutions/`, `rubrics/` |
-| 3 | **PDF jawaban** → unggah PDF → *Propose crops* (atau *Mulai ulang*); *Hapus* menghapus PDF (+ run bila ada); di kartu run *Hapus hasil* hanya menghapus `data/output/<run>/` | Job propose: folder run dikosongkan, halaman dirender, kotak ink diusulkan → editor crop |
+| 3 | **PDF jawaban** → unggah PDF → *Propose crops* (atau *Mulai ulang*); *Hapus* menghapus PDF (+ run bila ada); di kartu run *Hapus hasil* hanya menghapus `data/output/topik_<bab>/<run>/` | Job propose: folder run dikosongkan, halaman dirender, kotak ink diusulkan → editor crop |
 | 4 | **Editor crop** (`/runs/<run>/crops`) | Gambar kotak baru dengan drag, geser/ubah ukuran, hapus (Del), atur urutan, set nomor soal & tipe → *Simpan & crop ulang* |
 | 5 | **Label** (`/runs/<run>/labels`) — opsional | *Deteksi otomatis (vision)* lalu koreksi nomor soal per crop → *Simpan nomor soal* |
 | 6 | Halaman run → *Transkripsi lalu review* | Job: recognize + extract dari crop, berhenti di **Review** |
@@ -104,13 +104,13 @@ Kalau Anda mengedit `question.json` di luar aplikasi, pakai *Nilai dari question
 
 ### Artefak
 
-Setiap PDF yang diproses mendapat folder sendiri di `data/output/` sesuai nama file (tanpa `.pdf`):
+PDF jawaban dan hasil proses dipisah per topik (`topik_<bab>`, sama naming standards). Topik aktif di dashboard memilih bucket:
 
 ```text
+data/input/jawaban/topik_3/<nama>.pdf
 data/output/
-  standards/
-    topik_1/  topik_2/  ...    # kunci/rubric/schema per topik, dipakai bersama
-  <nama_pdf>/
+  standards/topik_1/  topik_2/  topik_3/  ...   # kunci/rubric/schema
+  topik_3/<nama_pdf>/
     pages/  crops/  recognition/  questions/
     report.json  summary.csv  report.html  report.tex  report.pdf  report.log
 ```
@@ -121,9 +121,9 @@ data/output/
 
 Pengaturan ada di `config.yaml` bagian `report.pdf`: `enabled`, `pdflatex_path` (kosong = cari di PATH, lalu lokasi standar MiKTeX / TeX Live; bisa juga lewat env `PDFLATEX_PATH`), `passes`, dan `timeout_seconds`.
 
-**Pengosongan / hapus output:** folder `data/output/<nama_pdf>/` milik PDF tersebut dikosongkan di awal *Propose crops* / *Mulai ulang* (dan `POST /api/process`), atau dihapus seluruhnya lewat *Hapus hasil* di kartu run (PDF jawaban tetap). *Hapus* di daftar PDF menghapus file di `data/input/jawaban` dan cascade-menghapus folder run terkait. Kedua aksi hapus ditolak (409) jika run masih punya job aktif. Transkripsi dan penilaian tidak mengosongkan folder run; artefak lama baru diganti **setelah** pengenalan tulisan berhasil: JSON `recognition/` milik halaman yang sudah tidak ada dihapus, lalu `questions/` dikosongkan sebelum extract. Kalau pengenalan gagal (misalnya Ollama mati), `recognition/` dan `questions/` lama tetap utuh. `standards/` dan hasil PDF lain tidak pernah disentuh oleh run; hanya ingest yang menulis ke `standards/topik_<bab>`.
+**Pengosongan / hapus output:** folder `data/output/topik_<bab>/<nama_pdf>/` milik PDF tersebut dikosongkan di awal *Propose crops* / *Mulai ulang* (dan `POST /api/process`), atau dihapus seluruhnya lewat *Hapus hasil* di kartu run (PDF jawaban tetap). *Hapus* di daftar PDF menghapus file di `data/input/jawaban/topik_<bab>/` dan cascade-menghapus folder run terkait. Kedua aksi hapus ditolak (409) jika run masih punya job aktif. Transkripsi dan penilaian tidak mengosongkan folder run; artefak lama baru diganti **setelah** pengenalan tulisan berhasil: JSON `recognition/` milik halaman yang sudah tidak ada dihapus, lalu `questions/` dikosongkan sebelum extract. Kalau pengenalan gagal (misalnya Ollama mati), `recognition/` dan `questions/` lama tetap utuh. `standards/` dan hasil PDF topik lain tidak pernah disentuh oleh run; hanya ingest yang menulis ke `standards/topik_<bab>`.
 
-**Nama run** = nama PDF tanpa `.pdf` (karakter ilegal Windows diganti `_`). Path di URL divalidasi: nama run, crop, dan berkas unduhan tidak bisa keluar dari folder run.
+**Nama run** = nama PDF tanpa `.pdf` (karakter ilegal Windows diganti `_`; bentrok dengan `standards` / `topik_*` / perangkat Windows → sufiks `_run`). URL tetap `/runs/<nama>/` dalam konteks topik aktif. Path divalidasi agar tidak keluar dari folder run.
 
 **API JSON** (untuk skrip): `POST /api/process` (`{"pdf", "student_id"}` → 202 + `status_url`), `GET /api/jobs/<id>`, `GET /api/results/<question_id>?run=<nama_pdf>`, `GET /health`. Detail: [docs/architecture.md](docs/architecture.md#kontrak-web).
 
@@ -141,7 +141,7 @@ Konvensi: [docs/testing.md](docs/testing.md). Tes tidak memanggil Ollama, tidak 
 python scripts/smoke_live.py smoke_inequality.pdf smoke_001
 ```
 
-atau `scripts\smoke_live.bat`. Skrip ini menjalankan `POST /api/process` in-process lalu mencetak progress job. Sample PDF: `data\input\jawaban\smoke_inequality.pdf`. Tidak termasuk suite `pytest` default. Hasil yang diharapkan: progress per tahap, "Selesai: /runs/smoke_inequality/results", dan artefak lengkap di `data/output/smoke_inequality/`.
+atau `scripts\smoke_live.bat`. Skrip ini menjalankan `POST /api/process` in-process lalu mencetak progress job. Sample PDF: `data\input\jawaban\topik_1\smoke_inequality.pdf` (sesuaikan topik aktif di config). Tidak termasuk suite `pytest` default. Hasil yang diharapkan: progress per tahap, "Selesai: /runs/smoke_inequality/results", dan artefak di `data/output/topik_1/smoke_inequality/`.
 
 ## Status
 

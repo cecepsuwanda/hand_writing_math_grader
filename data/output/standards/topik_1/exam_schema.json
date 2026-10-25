@@ -1,13 +1,14 @@
 {
-  "source": "jawaban_tugas_1.tex",
+  "source": "tugas_topik_1.tex",
   "topic_id": "1.5",
   "questions": [
     {
       "number": 1,
-      "stem": "$2-3x \\le 12$",
+      "part_label": "",
+      "stem": "$2 - 3x \\leq 12$",
       "stem_symbolic": {
         "kind": "relation",
-        "repr": "2-3x <= 12"
+        "repr": "2 - 3x <= 12"
       },
       "steps": [
         "2 - 3x \\leq 12",
@@ -42,6 +43,7 @@
       "milestones": [
         {
           "role": "hp",
+          "title": "",
           "latex": "\\left[-\\frac{10}{3}, \\infty\\right)",
           "symbolic": {
             "kind": "relation",
@@ -57,17 +59,8 @@
         "repr": "-((10)/(3)) <= x < oo"
       },
       "expects_figure": true,
-      "number_line": {
-        "intervals": [
-          {
-            "left": {
-              "value": "-10/3",
-              "closed": true
-            },
-            "right": null
-          }
-        ]
-      },
+      "number_line": null,
+      "graph_points": [],
       "parts": [
         {
           "kind": "algebra",
@@ -85,15 +78,15 @@
     },
     {
       "number": 2,
-      "stem": "$3x-5 < 4x-6$",
+      "part_label": "",
+      "stem": "$3x - 5 < 4x - 6$",
       "stem_symbolic": {
         "kind": "relation",
-        "repr": "3x-5 < 4x-6"
+        "repr": "3x - 5 < 4x - 6"
       },
       "steps": [
         "3x - 5 < 4x - 6",
         "3x - 5 - 4x < 4x - 6 - 4x",
-        "3x - 4x - 5 < 4x - 4x - 6",
         "-x - 5 < -6",
         "-x - 5 + 5 < -6 + 5",
         "-x < -1",
@@ -108,10 +101,6 @@
         {
           "kind": "relation",
           "repr": "3x - 5 - 4x < 4x - 6 - 4x"
-        },
-        {
-          "kind": "relation",
-          "repr": "3x - 4x - 5 < 4x - 4x - 6"
         },
         {
           "kind": "relation",
@@ -138,6 +127,7 @@
       "milestones": [
         {
           "role": "hp",
+          "title": "",
           "latex": "(1, \\infty)",
           "symbolic": {
             "kind": "relation",
@@ -153,17 +143,8 @@
         "repr": "1 < x < oo"
       },
       "expects_figure": true,
-      "number_line": {
-        "intervals": [
-          {
-            "left": {
-              "value": "1",
-              "closed": false
-            },
-            "right": null
-          }
-        ]
-      },
+      "number_line": null,
+      "graph_points": [],
       "parts": [
         {
           "kind": "algebra",
@@ -181,10 +162,11 @@
     },
     {
       "number": 3,
-      "stem": "$-3 \\le 1-6x < 4$",
+      "part_label": "",
+      "stem": "$-3 \\leq 1 - 6x < 4$",
       "stem_symbolic": {
         "kind": "relation",
-        "repr": "-3 <= 1-6x < 4"
+        "repr": "-3 <= 1 - 6x < 4"
       },
       "steps": [
         "-3 \\leq 1-6x < 4",
@@ -229,6 +211,7 @@
       "milestones": [
         {
           "role": "hp",
+          "title": "",
           "latex": "\\left(-\\frac{1}{2}, \\frac{2}{3}\\right]",
           "symbolic": {
             "kind": "relation",
@@ -244,20 +227,8 @@
         "repr": "-((1)/(2)) < x <= ((2)/(3))"
       },
       "expects_figure": true,
-      "number_line": {
-        "intervals": [
-          {
-            "left": {
-              "value": "-1/2",
-              "closed": false
-            },
-            "right": {
-              "value": "2/3",
-              "closed": true
-            }
-          }
-        ]
-      },
+      "number_line": null,
+      "graph_points": [],
       "parts": [
         {
           "kind": "algebra",
@@ -275,10 +246,11 @@
     },
     {
       "number": 4,
-      "stem": "$2x^{2}-5x-3 < 0$",
+      "part_label": "",
+      "stem": "$2x^2 - 5x - 3 < 0$",
       "stem_symbolic": {
         "kind": "relation",
-        "repr": "2x^(2)-5x-3 < 0"
+        "repr": "2x^2 - 5x - 3 < 0"
       },
       "steps": [
         "2x^2 - 5x - 3 < 0",
@@ -297,12 +269,11 @@
       "methods": [
         {
           "id": "factoring",
-          "label": "Pemaktoran",
+          "label": "Pemfaktoran",
           "steps": [
             "2x^2 - 5x - 3 = 0",
             "(2x + 1)(x - 3) = 0",
             "2x + 1 = 0 \\quad x - 3 = 0",
-            "2x = -1 \\quad x = 3",
             "x = -\\frac{1}{2} \\quad x = 3"
           ],
           "steps_symbolic": [
@@ -317,10 +288,6 @@
             {
               "kind": "relation",
               "repr": "2x + 1 = 0 x - 3 = 0"
-            },
-            {
-              "kind": "relation",
-              "repr": "2x = -1 x = 3"
             },
             {
               "kind": "relation",
@@ -352,19 +319,19 @@
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((-b (b^2 - 4ac))/(2a))"
+              "repr": "x,x = ((-b sqrt(b^2 - 4ac))/(2a))"
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((-(-5) ((-5)^2 - 4(2)(-3)))/(2(2)))"
+              "repr": "x,x = ((-(-5) sqrt((-5)^2 - 4(2)(-3)))/(2(2)))"
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((5 (25 + 24))/(4))"
+              "repr": "x,x = ((5 sqrt(25 + 24))/(4))"
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((5 (49))/(4))"
+              "repr": "x,x = ((5 sqrt(49))/(4))"
             },
             {
               "kind": "relation",
@@ -379,11 +346,45 @@
       ],
       "milestones": [
         {
-          "role": "sign_chart",
-          "latex": "\\text{Selang } x < -\\frac{1}{2}: x = -1 ; 2x^2 - 5x - 3 = 2(-1)^2 - 5(-1) - 3 = 2 + 5 - 3 = 4 > 0 ; \\text{Selang } -\\frac{1}{2} < x < 3: x = 0 ; 2x^2 - 5x - 3 = 2(0)^2 - 5(0) - 3 = -3 < 0 ; \\text{Selang } x > 3: x = 4 ; 2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0",
+          "role": "critical_points",
+          "title": "Tentukan Titik Kritis",
+          "latex": "2x^2 - 5x - 3 = 0 ; (2x + 1)(x - 3) = 0 ; 2x + 1 = 0 \\quad x - 3 = 0 ; x = -\\frac{1}{2} \\quad x = 3",
           "symbolic": {
             "kind": "relation",
-            "repr": "Selang x < -((1)/(2)): x = -1 ; 2x^2 - 5x - 3 = 2(-1)^2 - 5(-1) - 3 = 2 + 5 - 3 = 4 > 0 ; Selang -((1)/(2)) < x < 3: x = 0 ; 2x^2 - 5x - 3 = 2(0)^2 - 5(0) - 3 = -3 < 0 ; Selang x > 3: x = 4 ; 2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0"
+            "repr": "2x^2 - 5x - 3 = 0 ; (2x + 1)(x - 3) = 0 ; 2x + 1 = 0 x - 3 = 0 ; x = -((1)/(2)) x = 3"
+          },
+          "steps": [
+            "2x^2 - 5x - 3 = 0",
+            "(2x + 1)(x - 3) = 0",
+            "2x + 1 = 0 \\quad x - 3 = 0",
+            "x = -\\frac{1}{2} \\quad x = 3"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "2x^2 - 5x - 3 = 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "(2x + 1)(x - 3) = 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "2x + 1 = 0 x - 3 = 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = -((1)/(2)) x = 3"
+            }
+          ]
+        },
+        {
+          "role": "sign_chart",
+          "title": "Analisis Tanda",
+          "latex": "\\text{Selang } x < -\\frac{1}{2}: x = -1 ; 2x^2 - 5x - 3 = 2(-1)^2 - 5(-1) - 3 = 2 + 5 - 3 = 4 > 0 ; \\text{Selang } -\\frac{1}{2} < x < 3: x = 0 ; 2x^2 - 5x - 3 = 2(0)^2 - 5(0) - 3 = -3 < 0 ; \\text{Selang } x > 3: x = 4 ; 2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0 ; \\quad x = -\\tfrac{1}{2},\\; 3",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "Selang x < -((1)/(2)): x = -1 ; 2x^2 - 5x - 3 = 2(-1)^2 - 5(-1) - 3 = 2 + 5 - 3 = 4 > 0 ; Selang -((1)/(2)) < x < 3: x = 0 ; 2x^2 - 5x - 3 = 2(0)^2 - 5(0) - 3 = -3 < 0 ; Selang x > 3: x = 4 ; 2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0 ; x = -((1)/(2)), 3"
           },
           "steps": [
             "\\text{Selang } x < -\\frac{1}{2}: x = -1",
@@ -391,7 +392,8 @@
             "\\text{Selang } -\\frac{1}{2} < x < 3: x = 0",
             "2x^2 - 5x - 3 = 2(0)^2 - 5(0) - 3 = -3 < 0",
             "\\text{Selang } x > 3: x = 4",
-            "2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0"
+            "2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0",
+            "\\quad x = -\\tfrac{1}{2},\\; 3"
           ],
           "steps_symbolic": [
             {
@@ -417,11 +419,16 @@
             {
               "kind": "relation",
               "repr": "2x^2 - 5x - 3 = 2(4)^2 - 5(4) - 3 = 32 - 20 - 3 = 9 > 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = -((1)/(2)), 3"
             }
           ]
         },
         {
           "role": "hp",
+          "title": "",
           "latex": "\\left(-\\frac{1}{2}, 3\\right)",
           "symbolic": {
             "kind": "relation",
@@ -437,45 +444,38 @@
         "repr": "-((1)/(2)) < x < 3"
       },
       "expects_figure": true,
-      "number_line": {
-        "intervals": [
-          {
-            "left": {
-              "value": "-1/2",
-              "closed": false
-            },
-            "right": {
-              "value": "3",
-              "closed": false
-            }
-          }
-        ]
-      },
+      "number_line": null,
+      "graph_points": [],
       "parts": [
         {
           "kind": "algebra",
           "order": 1
         },
         {
-          "kind": "sign_chart",
+          "kind": "critical_points",
           "order": 2
         },
         {
-          "kind": "figure",
+          "kind": "sign_chart",
           "order": 3
         },
         {
-          "kind": "hp",
+          "kind": "figure",
           "order": 4
+        },
+        {
+          "kind": "hp",
+          "order": 5
         }
       ]
     },
     {
       "number": 5,
-      "stem": "$x^{2}-5x-6 \\le 0$",
+      "part_label": "",
+      "stem": "$x^2 - 5x - 6 \\leq 0$",
       "stem_symbolic": {
         "kind": "relation",
-        "repr": "x^(2)-5x-6 <= 0"
+        "repr": "x^2 - 5x - 6 <= 0"
       },
       "steps": [
         "x^2 - 5x - 6 \\leq 0",
@@ -494,7 +494,7 @@
       "methods": [
         {
           "id": "factoring",
-          "label": "Pemaktoran",
+          "label": "Pemfaktoran",
           "steps": [
             "x^2 - 5x - 6 = 0",
             "(x - 6)(x + 1) = 0",
@@ -544,19 +544,19 @@
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((-b (b^2 - 4ac))/(2a))"
+              "repr": "x,x = ((-b sqrt(b^2 - 4ac))/(2a))"
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((-(-5) ((-5)^2 - 4(1)(-6)))/(2(1)))"
+              "repr": "x,x = ((-(-5) sqrt((-5)^2 - 4(1)(-6)))/(2(1)))"
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((5 (25 + 24))/(2))"
+              "repr": "x,x = ((5 sqrt(25 + 24))/(2))"
             },
             {
               "kind": "relation",
-              "repr": "x,x = ((5 (49))/(2))"
+              "repr": "x,x = ((5 sqrt(49))/(2))"
             },
             {
               "kind": "relation",
@@ -571,7 +571,41 @@
       ],
       "milestones": [
         {
+          "role": "critical_points",
+          "title": "Tentukan Titik Kritis",
+          "latex": "x^2 - 5x - 6 = 0 ; (x - 6)(x + 1) = 0 ; x - 6 = 0 \\quad x + 1 = 0 ; x = 6 \\quad x = -1",
+          "symbolic": {
+            "kind": "relation",
+            "repr": "x^2 - 5x - 6 = 0 ; (x - 6)(x + 1) = 0 ; x - 6 = 0 x + 1 = 0 ; x = 6 x = -1"
+          },
+          "steps": [
+            "x^2 - 5x - 6 = 0",
+            "(x - 6)(x + 1) = 0",
+            "x - 6 = 0 \\quad x + 1 = 0",
+            "x = 6 \\quad x = -1"
+          ],
+          "steps_symbolic": [
+            {
+              "kind": "relation",
+              "repr": "x^2 - 5x - 6 = 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "(x - 6)(x + 1) = 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "x - 6 = 0 x + 1 = 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = 6 x = -1"
+            }
+          ]
+        },
+        {
           "role": "sign_chart",
+          "title": "Analisis Tanda",
           "latex": "\\text{Selang } x < -1: x = -2 ; x^2 - 5x - 6 = (-2)^2 - 5(-2) - 6 = 4 + 10 - 6 = 8 > 0 ; \\text{Selang } -1 < x < 6: x = 0 ; x^2 - 5x - 6 = (0)^2 - 5(0) - 6 = -6 < 0 ; \\text{Selang } x > 6: x = 7 ; x^2 - 5x - 6 = (7)^2 - 5(7) - 6 = 49 - 35 - 6 = 8 > 0 ; \\text{Titik Potong }: \\quad x = -1 ; x^2 - 5x - 6 = (-1)^2 - 5(-1) - 6 = 1 + 5 - 6 = 0 ; \\text{Titik Potong }: \\quad x = 6 ; x^2 - 5x - 6 = (6)^2 - 5(6) - 6 = 36 - 30 - 6 = 0",
           "symbolic": {
             "kind": "relation",
@@ -634,6 +668,7 @@
         },
         {
           "role": "hp",
+          "title": "",
           "latex": "[-1, 6]",
           "symbolic": {
             "kind": "relation",
@@ -649,41 +684,34 @@
         "repr": "-1 <= x <= 6"
       },
       "expects_figure": true,
-      "number_line": {
-        "intervals": [
-          {
-            "left": {
-              "value": "-1",
-              "closed": true
-            },
-            "right": {
-              "value": "6",
-              "closed": true
-            }
-          }
-        ]
-      },
+      "number_line": null,
+      "graph_points": [],
       "parts": [
         {
           "kind": "algebra",
           "order": 1
         },
         {
-          "kind": "sign_chart",
+          "kind": "critical_points",
           "order": 2
         },
         {
-          "kind": "figure",
+          "kind": "sign_chart",
           "order": 3
         },
         {
-          "kind": "hp",
+          "kind": "figure",
           "order": 4
+        },
+        {
+          "kind": "hp",
+          "order": 5
         }
       ]
     },
     {
       "number": 6,
+      "part_label": "",
       "stem": "$\\displaystyle \\frac{1}{x+1} < \\frac{2}{3x-1}$",
       "stem_symbolic": {
         "kind": "relation",
@@ -727,6 +755,7 @@
       "milestones": [
         {
           "role": "critical_points",
+          "title": "Tentukan Titik Kritis",
           "latex": "x-3 = 0 \\Rightarrow x = 3 ; x+1 = 0 \\Rightarrow x = -1 ; 3x-1 = 0 \\Rightarrow x = \\frac{1}{3}",
           "symbolic": {
             "kind": "relation",
@@ -754,20 +783,26 @@
         },
         {
           "role": "sign_chart",
-          "latex": "\\text{Selang } x < -1: x = -2 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{-2-3}{(-2+1)(3(-2)-1)} = \\frac{-5}{(-1)(-7)} = \\frac{-5}{7} < 0 ; \\text{Selang } -1 < x < \\frac{1}{3}: x = 0 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{0-3}{(0+1)(3(0)-1)} = \\frac{-3}{(1)(-1)} = \\frac{-3}{-1} = 3 > 0 ; \\text{Selang } \\frac{1}{3} < x < 3: x = 1 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{1-3}{(1+1)(3(1)-1)} = \\frac{-2}{(2)(2)} = \\frac{-2}{4} = -\\frac{1}{2} < 0 ; \\text{Selang } x > 3: x = 4 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{4-3}{(4+1)(3(4)-1)} = \\frac{1}{(5)(11)} = \\frac{1}{55} > 0",
+          "title": "Analisis Tanda",
+          "latex": "\\text{Selang } x < -1: x = -2 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{-2-3}{(-2+1)(3(-2)-1)} ; \\frac{-5}{(-1)(-7)} = \\frac{-5}{7} < 0 ; \\text{Selang } -1 < x < \\frac{1}{3}: x = 0 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{0-3}{(0+1)(3(0)-1)} ; \\frac{-3}{-1} = 3 > 0 ; \\text{Selang } \\frac{1}{3} < x < 3: x = 1 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{1-3}{(1+1)(3(1)-1)} ; \\frac{-2}{4} = -\\frac{1}{2} < 0 ; \\text{Selang } x > 3: x = 4 ; \\frac{x-3}{(x+1)(3x-1)} = \\frac{4-3}{(4+1)(3(4)-1)} ; \\frac{1}{55} > 0 ; \\quad x = -1,\\; \\tfrac{1}{3},\\; 3",
           "symbolic": {
             "kind": "relation",
-            "repr": "Selang x < -1: x = -2 ; ((x-3)/((x+1)(3x-1))) = ((-2-3)/((-2+1)(3(-2)-1))) = ((-5)/((-1)(-7))) = ((-5)/(7)) < 0 ; Selang -1 < x < ((1)/(3)): x = 0 ; ((x-3)/((x+1)(3x-1))) = ((0-3)/((0+1)(3(0)-1))) = ((-3)/((1)(-1))) = ((-3)/(-1)) = 3 > 0 ; Selang ((1)/(3)) < x < 3: x = 1 ; ((x-3)/((x+1)(3x-1))) = ((1-3)/((1+1)(3(1)-1))) = ((-2)/((2)(2))) = ((-2)/(4)) = -((1)/(2)) < 0 ; Selang x > 3: x = 4 ; ((x-3)/((x+1)(3x-1))) = ((4-3)/((4+1)(3(4)-1))) = ((1)/((5)(11))) = ((1)/(55)) > 0"
+            "repr": "Selang x < -1: x = -2 ; ((x-3)/((x+1)(3x-1))) = ((-2-3)/((-2+1)(3(-2)-1))) ; ((-5)/((-1)(-7))) = ((-5)/(7)) < 0 ; Selang -1 < x < ((1)/(3)): x = 0 ; ((x-3)/((x+1)(3x-1))) = ((0-3)/((0+1)(3(0)-1))) ; ((-3)/(-1)) = 3 > 0 ; Selang ((1)/(3)) < x < 3: x = 1 ; ((x-3)/((x+1)(3x-1))) = ((1-3)/((1+1)(3(1)-1))) ; ((-2)/(4)) = -((1)/(2)) < 0 ; Selang x > 3: x = 4 ; ((x-3)/((x+1)(3x-1))) = ((4-3)/((4+1)(3(4)-1))) ; ((1)/(55)) > 0 ; x = -1, ((1)/(3)), 3"
           },
           "steps": [
             "\\text{Selang } x < -1: x = -2",
-            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{-2-3}{(-2+1)(3(-2)-1)} = \\frac{-5}{(-1)(-7)} = \\frac{-5}{7} < 0",
+            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{-2-3}{(-2+1)(3(-2)-1)}",
+            "\\frac{-5}{(-1)(-7)} = \\frac{-5}{7} < 0",
             "\\text{Selang } -1 < x < \\frac{1}{3}: x = 0",
-            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{0-3}{(0+1)(3(0)-1)} = \\frac{-3}{(1)(-1)} = \\frac{-3}{-1} = 3 > 0",
+            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{0-3}{(0+1)(3(0)-1)}",
+            "\\frac{-3}{-1} = 3 > 0",
             "\\text{Selang } \\frac{1}{3} < x < 3: x = 1",
-            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{1-3}{(1+1)(3(1)-1)} = \\frac{-2}{(2)(2)} = \\frac{-2}{4} = -\\frac{1}{2} < 0",
+            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{1-3}{(1+1)(3(1)-1)}",
+            "\\frac{-2}{4} = -\\frac{1}{2} < 0",
             "\\text{Selang } x > 3: x = 4",
-            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{4-3}{(4+1)(3(4)-1)} = \\frac{1}{(5)(11)} = \\frac{1}{55} > 0"
+            "\\frac{x-3}{(x+1)(3x-1)} = \\frac{4-3}{(4+1)(3(4)-1)}",
+            "\\frac{1}{55} > 0",
+            "\\quad x = -1,\\; \\tfrac{1}{3},\\; 3"
           ],
           "steps_symbolic": [
             {
@@ -776,7 +811,11 @@
             },
             {
               "kind": "relation",
-              "repr": "((x-3)/((x+1)(3x-1))) = ((-2-3)/((-2+1)(3(-2)-1))) = ((-5)/((-1)(-7))) = ((-5)/(7)) < 0"
+              "repr": "((x-3)/((x+1)(3x-1))) = ((-2-3)/((-2+1)(3(-2)-1)))"
+            },
+            {
+              "kind": "relation",
+              "repr": "((-5)/((-1)(-7))) = ((-5)/(7)) < 0"
             },
             {
               "kind": "relation",
@@ -784,7 +823,11 @@
             },
             {
               "kind": "relation",
-              "repr": "((x-3)/((x+1)(3x-1))) = ((0-3)/((0+1)(3(0)-1))) = ((-3)/((1)(-1))) = ((-3)/(-1)) = 3 > 0"
+              "repr": "((x-3)/((x+1)(3x-1))) = ((0-3)/((0+1)(3(0)-1)))"
+            },
+            {
+              "kind": "relation",
+              "repr": "((-3)/(-1)) = 3 > 0"
             },
             {
               "kind": "relation",
@@ -792,7 +835,11 @@
             },
             {
               "kind": "relation",
-              "repr": "((x-3)/((x+1)(3x-1))) = ((1-3)/((1+1)(3(1)-1))) = ((-2)/((2)(2))) = ((-2)/(4)) = -((1)/(2)) < 0"
+              "repr": "((x-3)/((x+1)(3x-1))) = ((1-3)/((1+1)(3(1)-1)))"
+            },
+            {
+              "kind": "relation",
+              "repr": "((-2)/(4)) = -((1)/(2)) < 0"
             },
             {
               "kind": "relation",
@@ -800,12 +847,21 @@
             },
             {
               "kind": "relation",
-              "repr": "((x-3)/((x+1)(3x-1))) = ((4-3)/((4+1)(3(4)-1))) = ((1)/((5)(11))) = ((1)/(55)) > 0"
+              "repr": "((x-3)/((x+1)(3x-1))) = ((4-3)/((4+1)(3(4)-1)))"
+            },
+            {
+              "kind": "relation",
+              "repr": "((1)/(55)) > 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = -1, ((1)/(3)), 3"
             }
           ]
         },
         {
           "role": "hp",
+          "title": "",
           "latex": "(-\\infty, -1) \\cup \\left(\\frac{1}{3}, 3\\right)",
           "symbolic": {
             "kind": "relation",
@@ -821,27 +877,8 @@
         "repr": "-oo < x < -1 or ((1)/(3)) < x < 3"
       },
       "expects_figure": true,
-      "number_line": {
-        "intervals": [
-          {
-            "left": null,
-            "right": {
-              "value": "-1",
-              "closed": false
-            }
-          },
-          {
-            "left": {
-              "value": "1/3",
-              "closed": false
-            },
-            "right": {
-              "value": "3",
-              "closed": false
-            }
-          }
-        ]
-      },
+      "number_line": null,
+      "graph_points": [],
       "parts": [
         {
           "kind": "algebra",
@@ -867,6 +904,7 @@
     },
     {
       "number": 7,
+      "part_label": "",
       "stem": "$\\displaystyle \\frac{x+2}{x+4} < \\frac{x-1}{x-2}$",
       "stem_symbolic": {
         "kind": "relation",
@@ -876,7 +914,6 @@
         "\\frac{x+2}{x+4} < \\frac{x-1}{x-2}",
         "\\frac{x+2}{x+4} - \\frac{x-1}{x-2} < \\frac{x-1}{x-2} - \\frac{x-1}{x-2}",
         "\\frac{x+2}{x+4} - \\frac{x-1}{x-2} < 0",
-        "\\frac{(x+2)(x-2) - (x-1)(x+4)}{(x+4)(x-2)} < 0",
         "\\frac{(x+2)(x-2) - (x-1)(x+4)}{(x+4)(x-2)} < 0",
         "\\frac{x^2-4-(x^2+3x-4)}{(x+4)(x-2)} < 0",
         "\\frac{x^2-4-x^2-3x+4}{(x+4)(x-2)} < 0",
@@ -901,10 +938,6 @@
         },
         {
           "kind": "relation",
-          "repr": "(((x+2)(x-2) - (x-1)(x+4))/((x+4)(x-2))) < 0"
-        },
-        {
-          "kind": "relation",
           "repr": "((x^2-4-(x^2+3x-4))/((x+4)(x-2))) < 0"
         },
         {
@@ -920,6 +953,7 @@
       "milestones": [
         {
           "role": "critical_points",
+          "title": "Tentukan Titik Kritis",
           "latex": "-3x = 0 \\Rightarrow x = 0 ; x+4 = 0 \\Rightarrow x = -4 ; x-2 = 0 \\Rightarrow x = 2",
           "symbolic": {
             "kind": "relation",
@@ -947,21 +981,26 @@
         },
         {
           "role": "sign_chart",
-          "latex": "\\text{Selang } x < -4: x = -5 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-5)}{(-5+4)(-5-2)} = \\frac{15}{(-1)(-7)} = \\frac{15}{7} > 0 ; \\text{Selang } -4 < x < 0: x = -1 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-1)}{(-1+4)(-1-2)} = \\frac{3}{(3)(-3)} = \\frac{3}{-9} = -\\frac{1}{3} < 0 ; \\text{Selang } 0 < x < 2: x = 1 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(1)}{(1+4)(1-2)} = \\frac{-3}{(5)(-1)} = \\frac{-3}{-5} = \\frac{3}{5} > 0 ; \\text{Selang } x > 2: x = 3 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(3)}{(3+4)(3-2)} = \\frac{-9}{(7)(1)} = \\frac{-9}{7} < 0 ; \\text{Titik Kritis }: \\quad x = -4, x = 0, x = 2",
+          "title": "Analisis Tanda",
+          "latex": "\\text{Selang } x < -4: x = -5 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-5)}{(-5+4)(-5-2)} ; \\frac{15}{(-1)(-7)} = \\frac{15}{7} > 0 ; \\text{Selang } -4 < x < 0: x = -1 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-1)}{(-1+4)(-1-2)} ; \\frac{3}{(3)(-3)} = -\\frac{1}{3} < 0 ; \\text{Selang } 0 < x < 2: x = 1 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(1)}{(1+4)(1-2)} ; \\frac{-3}{(5)(-1)} = \\frac{3}{5} > 0 ; \\text{Selang } x > 2: x = 3 ; \\frac{-3x}{(x+4)(x-2)} = \\frac{-3(3)}{(3+4)(3-2)} ; \\frac{-9}{(7)(1)} = -\\frac{9}{7} < 0 ; \\quad x = -4,\\; 0,\\; 2",
           "symbolic": {
             "kind": "relation",
-            "repr": "Selang x < -4: x = -5 ; ((-3x)/((x+4)(x-2))) = ((-3(-5))/((-5+4)(-5-2))) = ((15)/((-1)(-7))) = ((15)/(7)) > 0 ; Selang -4 < x < 0: x = -1 ; ((-3x)/((x+4)(x-2))) = ((-3(-1))/((-1+4)(-1-2))) = ((3)/((3)(-3))) = ((3)/(-9)) = -((1)/(3)) < 0 ; Selang 0 < x < 2: x = 1 ; ((-3x)/((x+4)(x-2))) = ((-3(1))/((1+4)(1-2))) = ((-3)/((5)(-1))) = ((-3)/(-5)) = ((3)/(5)) > 0 ; Selang x > 2: x = 3 ; ((-3x)/((x+4)(x-2))) = ((-3(3))/((3+4)(3-2))) = ((-9)/((7)(1))) = ((-9)/(7)) < 0 ; Titik Kritis : x = -4, x = 0, x = 2"
+            "repr": "Selang x < -4: x = -5 ; ((-3x)/((x+4)(x-2))) = ((-3(-5))/((-5+4)(-5-2))) ; ((15)/((-1)(-7))) = ((15)/(7)) > 0 ; Selang -4 < x < 0: x = -1 ; ((-3x)/((x+4)(x-2))) = ((-3(-1))/((-1+4)(-1-2))) ; ((3)/((3)(-3))) = -((1)/(3)) < 0 ; Selang 0 < x < 2: x = 1 ; ((-3x)/((x+4)(x-2))) = ((-3(1))/((1+4)(1-2))) ; ((-3)/((5)(-1))) = ((3)/(5)) > 0 ; Selang x > 2: x = 3 ; ((-3x)/((x+4)(x-2))) = ((-3(3))/((3+4)(3-2))) ; ((-9)/((7)(1))) = -((9)/(7)) < 0 ; x = -4, 0, 2"
           },
           "steps": [
             "\\text{Selang } x < -4: x = -5",
-            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-5)}{(-5+4)(-5-2)} = \\frac{15}{(-1)(-7)} = \\frac{15}{7} > 0",
+            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-5)}{(-5+4)(-5-2)}",
+            "\\frac{15}{(-1)(-7)} = \\frac{15}{7} > 0",
             "\\text{Selang } -4 < x < 0: x = -1",
-            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-1)}{(-1+4)(-1-2)} = \\frac{3}{(3)(-3)} = \\frac{3}{-9} = -\\frac{1}{3} < 0",
+            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(-1)}{(-1+4)(-1-2)}",
+            "\\frac{3}{(3)(-3)} = -\\frac{1}{3} < 0",
             "\\text{Selang } 0 < x < 2: x = 1",
-            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(1)}{(1+4)(1-2)} = \\frac{-3}{(5)(-1)} = \\frac{-3}{-5} = \\frac{3}{5} > 0",
+            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(1)}{(1+4)(1-2)}",
+            "\\frac{-3}{(5)(-1)} = \\frac{3}{5} > 0",
             "\\text{Selang } x > 2: x = 3",
-            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(3)}{(3+4)(3-2)} = \\frac{-9}{(7)(1)} = \\frac{-9}{7} < 0",
-            "\\text{Titik Kritis }: \\quad x = -4, x = 0, x = 2"
+            "\\frac{-3x}{(x+4)(x-2)} = \\frac{-3(3)}{(3+4)(3-2)}",
+            "\\frac{-9}{(7)(1)} = -\\frac{9}{7} < 0",
+            "\\quad x = -4,\\; 0,\\; 2"
           ],
           "steps_symbolic": [
             {
@@ -970,7 +1009,11 @@
             },
             {
               "kind": "relation",
-              "repr": "((-3x)/((x+4)(x-2))) = ((-3(-5))/((-5+4)(-5-2))) = ((15)/((-1)(-7))) = ((15)/(7)) > 0"
+              "repr": "((-3x)/((x+4)(x-2))) = ((-3(-5))/((-5+4)(-5-2)))"
+            },
+            {
+              "kind": "relation",
+              "repr": "((15)/((-1)(-7))) = ((15)/(7)) > 0"
             },
             {
               "kind": "relation",
@@ -978,7 +1021,11 @@
             },
             {
               "kind": "relation",
-              "repr": "((-3x)/((x+4)(x-2))) = ((-3(-1))/((-1+4)(-1-2))) = ((3)/((3)(-3))) = ((3)/(-9)) = -((1)/(3)) < 0"
+              "repr": "((-3x)/((x+4)(x-2))) = ((-3(-1))/((-1+4)(-1-2)))"
+            },
+            {
+              "kind": "relation",
+              "repr": "((3)/((3)(-3))) = -((1)/(3)) < 0"
             },
             {
               "kind": "relation",
@@ -986,7 +1033,11 @@
             },
             {
               "kind": "relation",
-              "repr": "((-3x)/((x+4)(x-2))) = ((-3(1))/((1+4)(1-2))) = ((-3)/((5)(-1))) = ((-3)/(-5)) = ((3)/(5)) > 0"
+              "repr": "((-3x)/((x+4)(x-2))) = ((-3(1))/((1+4)(1-2)))"
+            },
+            {
+              "kind": "relation",
+              "repr": "((-3)/((5)(-1))) = ((3)/(5)) > 0"
             },
             {
               "kind": "relation",
@@ -994,16 +1045,21 @@
             },
             {
               "kind": "relation",
-              "repr": "((-3x)/((x+4)(x-2))) = ((-3(3))/((3+4)(3-2))) = ((-9)/((7)(1))) = ((-9)/(7)) < 0"
+              "repr": "((-3x)/((x+4)(x-2))) = ((-3(3))/((3+4)(3-2)))"
             },
             {
               "kind": "relation",
-              "repr": "Titik Kritis : x = -4, x = 0, x = 2"
+              "repr": "((-9)/((7)(1))) = -((9)/(7)) < 0"
+            },
+            {
+              "kind": "relation",
+              "repr": "x = -4, 0, 2"
             }
           ]
         },
         {
           "role": "hp",
+          "title": "",
           "latex": "(-4, 0) \\cup (2, \\infty)",
           "symbolic": {
             "kind": "relation",
@@ -1019,27 +1075,8 @@
         "repr": "-4 < x < 0 or 2 < x < oo"
       },
       "expects_figure": true,
-      "number_line": {
-        "intervals": [
-          {
-            "left": {
-              "value": "-4",
-              "closed": false
-            },
-            "right": {
-              "value": "0",
-              "closed": false
-            }
-          },
-          {
-            "left": {
-              "value": "2",
-              "closed": false
-            },
-            "right": null
-          }
-        ]
-      },
+      "number_line": null,
+      "graph_points": [],
       "parts": [
         {
           "kind": "algebra",

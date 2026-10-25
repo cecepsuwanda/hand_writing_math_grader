@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -20,6 +20,7 @@ from app.functions.question_names import (
     validation_filename,
 )
 from app.functions.score_aggregate import aggregate_question_grade, fold_role_marks
+from app.functions.sheet_score import SheetScorePolicy, apply_sheet_policy, question_is_readable
 from app.functions.validation_artifact import question_fingerprint
 from app.models.grading import QuestionGrade
 from app.models.question import Question
@@ -44,6 +45,7 @@ class StepGrader:
         role_rubric_parts: Mapping[str, Sequence[str]] | None = None,
         part_criterion_ids: frozenset[str] | set[str] | None = None,
         concept_comparer: ConceptComparer | None = None,
+        sheet_policy_for: Callable[[int, str], SheetScorePolicy | None] | None = None,
     ) -> None:
         self._rubrics = rubric_loader
         self._annotator = feedback_annotator
@@ -53,6 +55,7 @@ class StepGrader:
             frozenset(part_criterion_ids) if part_criterion_ids is not None else None
         )
         self._concept_comparer = concept_comparer
+        self._sheet_policy_for = sheet_policy_for
 
     def grade_question_dir(self, question_dir: Path) -> QuestionGrade:
         question_dir = Path(question_dir)
@@ -85,6 +88,7 @@ class StepGrader:
         standard_step_results: dict[int, tuple[ValidationStatus, str]] | None = None
         part_statuses: dict[str, tuple] = {}
         step_overrides: dict[int, tuple[ValidationStatus, str]] = {}
+        milestone_marks: dict[str, tuple] = {}
         if self._standard_comparer is not None:
             compared = self._standard_comparer.compare(question)
             if compared is not None:
@@ -94,9 +98,10 @@ class StepGrader:
                 step_number, status, reason = first_step
                 step_overrides[step_number] = (status, reason)
             standard_step_results = self._standard_comparer.compare_steps(question)
+            milestone_marks = self._standard_comparer.compare_milestones(question)
             part_statuses.update(
                 fold_role_marks(
-                    self._standard_comparer.compare_milestones(question),
+                    milestone_marks,
                     rubric,
                     self._role_rubric_parts,
                 )
@@ -147,6 +152,15 @@ class StepGrader:
             role_rubric_parts=self._role_rubric_parts,
             part_criterion_ids=self._part_criterion_ids,
         )
+        if self._sheet_policy_for is not None:
+            policy = self._sheet_policy_for(question.question_number, question.part_label)
+            if policy is not None:
+                grade = apply_sheet_policy(
+                    grade,
+                    policy,
+                    milestone_marks=milestone_marks,
+                    readable=question_is_readable(question),
+                )
         if self._annotator is not None:
             grade = self._annotator.annotate(question, grade, validation)
 

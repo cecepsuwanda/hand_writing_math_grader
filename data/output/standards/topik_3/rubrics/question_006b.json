@@ -1,18 +1,14 @@
 {
   "question": 6,
-  "maximum_score": 10.0,
+  "maximum_score": 100.0,
   "criteria": [
     {
-      "id": "final_answer",
-      "points": 3.3333
-    },
-    {
       "id": "algebra",
-      "points": 1.6667
+      "points": 60.0
     },
     {
-      "id": "concept",
-      "points": 5.0
+      "id": "final_answer",
+      "points": 40.0
     }
   ]
 }

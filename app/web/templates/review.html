@@ -1,6 +1,6 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% from "partials/icons.html" import icon, flash_icon %}
-{% block title %}Review transkripsi · {{ run | short_pdf }}{% endblock %}
+{% block title %}Review transkripsi Â· {{ run | short_pdf }}{% endblock %}
 {% block crumbs %}<a href="/">Beranda</a> / <a href="{{ run_url(run) }}">{{ run | short_pdf }}</a> / Review{% endblock %}
 {% block main_class %}container-wide{% endblock %}
 {% block scripts %}<script defer src="{{ static_url('js/review.js') }}"></script>{% endblock %}
@@ -15,13 +15,15 @@
       <button class="btn">{{ icon("list-checks") }}Nilai sekarang</button>
     </form>
   </div>
-  <p class="muted small">Perbaiki teks dan bentuk simbolik setiap langkah, atau geser urutan dengan tombol ↑↓.
+  <p class="muted small">Perbaiki teks dan bentuk simbolik setiap langkah, atau geser urutan dengan tombol â†‘â†“.
     Pratinjau memakai parser SymPy yang sama dengan validator
     (kecuali token <code>GRAPH_POINTS</code> / <code>NUMBER_LINE</code> dan jenis figure).
     Langkah bertanda kuning perlu diperiksa.
-    {% if grades_concept %}
-    Untuk topik ini, sesuaikan <strong>Peran</strong> langkah siswa ke pola kunci di bawah setiap soal
+    {% if show_milestone_pattern %}
+    Sesuaikan <strong>Peran</strong> langkah siswa ke pola kunci di bawah setiap soal
     (urutan langkah siswa bebas; skor = cakupan isi per role).
+    {% endif %}
+    {% if grades_concept or "concept" in active_topic.roles %}
     Langkah peran <code>concept</code> boleh narasi saja (tanpa simbolik).
     {% endif %}
   </p>
@@ -52,7 +54,7 @@
       <span class="badge badge-warn" x-show="dirty" x-cloak>belum disimpan</span>
       <span class="badge badge-ok" x-show="saved && !dirty" x-cloak>tersimpan</span>
       <button type="button" class="btn btn-small" @click="save()" :disabled="saving || !dirty">
-        {{ icon("save") }}<span x-text="saving ? 'Menyimpan…' : 'Simpan'"></span>
+        {{ icon("save") }}<span x-text="saving ? 'Menyimpanâ€¦' : 'Simpan'"></span>
       </button>
     </span>
   </div>
@@ -98,7 +100,7 @@
               <td><textarea rows="2" x-model="step.raw_text" @input="touch()"></textarea></td>
               <td>
                 <select x-model="step.kind" @change="touch(); preview(step)">
-                  <option value="">—</option>
+                  <option value="">â€”</option>
                   {% for kind in symbolic_kinds %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
                 </select>
               </td>
@@ -106,9 +108,9 @@
               <td class="preview" x-effect="tex($el, step.previewTex, step.repr, step.kind)"></td>
               <td><input type="text" class="input-role" list="pack-roles" x-model="step.role" @input="touch()"></td>
               <td class="row">
-                <button type="button" class="btn btn-tiny btn-secondary" @click="moveStep(i, -1)" :disabled="i === 0" title="Naikkan urutan">↑</button>
-                <button type="button" class="btn btn-tiny btn-secondary" @click="moveStep(i, 1)" :disabled="i === steps.length - 1" title="Turunkan urutan">↓</button>
-                <button type="button" class="btn btn-tiny btn-danger" @click="removeStep(i)" title="Hapus langkah">×</button>
+                <button type="button" class="btn btn-tiny btn-secondary" @click="moveStep(i, -1)" :disabled="i === 0" title="Naikkan urutan">â†‘</button>
+                <button type="button" class="btn btn-tiny btn-secondary" @click="moveStep(i, 1)" :disabled="i === steps.length - 1" title="Turunkan urutan">â†“</button>
+                <button type="button" class="btn btn-tiny btn-danger" @click="removeStep(i)" title="Hapus langkah">Ã—</button>
               </td>
             </tr>
           </template>
@@ -128,13 +130,13 @@
               <td><input type="text" x-model="fig.caption" @input="touch()"></td>
               <td>
                 <select x-model="fig.kind" @change="touch(); preview(fig)">
-                  <option value="">—</option>
+                  <option value="">â€”</option>
                   {% for kind in symbolic_kinds %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
                 </select>
               </td>
               <td><input type="text" class="mono" x-model="fig.repr" @input="touch()" @input.debounce.400ms="preview(fig)"></td>
               <td class="preview" x-effect="tex($el, fig.previewTex, fig.repr, fig.kind)"></td>
-              <td><button type="button" class="btn btn-tiny btn-danger" @click="removeFigure(i)" title="Hapus">×</button></td>
+              <td><button type="button" class="btn btn-tiny btn-danger" @click="removeFigure(i)" title="Hapus">Ã—</button></td>
             </tr>
           </template>
         </tbody>
@@ -146,7 +148,7 @@
         <label class="small">Teks <input type="text" x-model="finalText" @input="touch()"></label>
         <label class="small">Jenis
           <select x-model="final.kind" @change="touch(); preview(final)">
-            <option value="">—</option>
+            <option value="">â€”</option>
             {% for kind in symbolic_kinds %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
           </select>
         </label>

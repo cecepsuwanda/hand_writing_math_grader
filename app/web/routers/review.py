@@ -31,6 +31,9 @@ def review_page(
             "grades_concept": bool(
                 getattr(pipeline.grading_pack(), "grades_concept", False)
             ),
+            "show_milestone_pattern": bool(
+                getattr(pipeline.grading_pack(), "show_milestone_pattern", False)
+            ),
         },
     )
 

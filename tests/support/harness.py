@@ -13,7 +13,11 @@ from app.controllers.grade_controller import GradeController
 from app.controllers.process_controller import ProcessController
 from app.functions.question_names import question_dir_name
 from app.functions.run_layout import RunLayout
-from app.functions.standards_layout import topic_standard_dir
+from app.functions.standards_layout import (
+    topic_jawaban_dir,
+    topic_runs_root,
+    topic_standard_dir,
+)
 from app.models.grading import GradeResult, Rubric
 from app.models.latex import LatexResult
 from app.models.page import RenderResult
@@ -117,8 +121,22 @@ class WebHarness:
         self.client = TestClient(self.app, follow_redirects=False)
         self.fake: RecordingProcessController | None = None
 
+    @property
+    def topic_id(self) -> str:
+        return self.config.grading.topic_id
+
+    def topic_jawaban(self) -> Path:
+        folder = topic_jawaban_dir(self.jawaban_dir, self.topic_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def topic_runs(self) -> Path:
+        folder = topic_runs_root(self.output_root, self.topic_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
     def pdf(self, name: str = "answer.pdf") -> Path:
-        path = self.jawaban_dir / name
+        path = self.topic_jawaban() / name
         path.write_bytes(b"%PDF-1.4 test")
         return path
 
@@ -133,7 +151,7 @@ class WebHarness:
 
     def run_dir(self, name: str = "answer", *page_sizes: tuple[int, int]) -> RunLayout:
         """Run folder with rendered blank pages (one 200x300 page by default)."""
-        layout = RunLayout(root=self.output_root / name)
+        layout = RunLayout(root=self.topic_runs() / name)
         write_run_pages(layout.pages_dir, *page_sizes)
         return layout
 

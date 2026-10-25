@@ -1,0 +1,8 @@
+lakukan perintah di bawah ini :
+1. Untuk memahami project ini baca :
+   - baca semua file md di folder C:\Matakuliah\hand_writing_math_grader\docs
+   - baca semua file md di folder C:\Matakuliah\hand_writing_math_grader\.cursor\rules
+   - baca semua file md di C:\Matakuliah\hand_writing_math_grader\.cursor\skills
+2. untuk memahami coding baca semua file di folder C:\Matakuliah\hand_writing_math_grader\app, baca berurutan dari mulai web,cli,controller,model, view, dan coding yang berkaitan dengan keempatnya
+3. untuk memahami lebih lanjut baca semua file yang ada di folder C:\Matakuliah\hand_writing_math_grader\data
+4. setelah memahami, cek adanya bug di C:\Matakuliah\hand_writing_math_grader\app, kemudian perbaiki bug tersebut      

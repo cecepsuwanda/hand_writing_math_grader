@@ -25,6 +25,15 @@ PART_DISPLAY_LABELS: MappingProxyType[str, str] = MappingProxyType(
 _CONCEPT_PART = "concept"
 
 
+def part_labels_for(pack: object) -> dict[str, str]:
+    """Base labels, with a pack overlay (topik 3: Langkah / Jawaban / Penyajian)."""
+    labels = dict(PART_DISPLAY_LABELS)
+    overlay = getattr(pack, "sheet_part_labels", None)
+    if overlay:
+        labels.update(overlay)
+    return labels
+
+
 def display_part_label(part_id: str) -> str:
     key = (part_id or "").strip()
     return PART_DISPLAY_LABELS.get(key, key or "—")

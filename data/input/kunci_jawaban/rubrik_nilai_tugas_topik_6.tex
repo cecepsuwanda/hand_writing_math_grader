@@ -1,0 +1,218 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper,top=1.5cm,bottom=1.5cm,left=1.5cm,right=1.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage[bookmarks=false]{hyperref}
+
+\title{Rubrik Nilai Tugas Minggu 6 : Turunan}
+\author{Matematika untuk Sistem Informasi}
+\date{}
+
+\newenvironment{rubrik}{%
+  \noindent
+  \tabularx{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.2cm}>{\raggedright\arraybackslash}X>{\centering\arraybackslash}p{1.1cm}>{\centering\arraybackslash}p{1.4cm}@{}}
+  \toprule
+  \textbf{Kriteria} & \textbf{Deskriptor} & \textbf{Maks} & \textbf{Skor} \\
+  \midrule
+}{%
+  \bottomrule
+  \endtabularx\par
+}
+\newcommand{\butir}[1]{\par\vspace{0.75em}\noindent\textbf{#1}\par\vspace{0.35em}}
+
+\begin{document}
+\maketitle
+
+\noindent
+Nama: \underline{\hspace{7.2cm}} \quad NIM: \underline{\hspace{4.2cm}}
+
+\section*{Petunjuk penilai}
+\begin{itemize}
+  \item Tiap butir maksimum 100. Nilai tugas adalah rata-rata skor butir.
+  \item Ketentuan skor:\par
+  {\small
+  \setlength{\tabcolsep}{4pt}%
+  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{2.1cm}>{\centering\arraybackslash}p{1.1cm}>{\raggedright\arraybackslash}X@{}}
+  \toprule
+  \textbf{Kriteria} & \textbf{Maks} & \textbf{Ketentuan} \\
+  \midrule
+  Langkah & 60 & Jika langkah terbaca dan tidak seluruhnya salah, skor minimal 25. Skor di bawah 25 hanya bila langkah salah total, tidak dimengerti, atau tidak terbaca. \\
+  Jawaban & 40 & Harus ada dan benar. Skor hanya 0 atau nilai penuh. \\
+  \bottomrule
+  \end{tabularx}}
+\end{itemize}
+
+\butir{Butir 1. Turunan $f(x) = x^2 + 2x + 1$ dengan definisi (100 poin)}
+\begin{rubrik}
+Langkah &
+Definisi limit hasil-bagi ditulis, $f(x+h)-f(x)$ disederhanakan, lalu $h$ dicoret untuk $h \neq 0$. &
+60 & \\
+Jawaban &
+$f'(x) = 2x + 2$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 2. Diferensiabilitas di $x = 3$ (100 poin)}
+\[
+f(x) =
+\begin{cases}
+  x^2 - 1, & x < 3 \\
+  6x - 10, & x \geq 3
+\end{cases}
+\]
+\begin{rubrik}
+Langkah &
+Nilai fungsi, kekontinuan, serta turunan kiri dan kanan di $x = 3$ dihitung. &
+60 & \\
+Jawaban &
+$f$ diferensiabel di $x = 3$ dan $f'(3) = 6$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 3. Diferensiabilitas di $x = 1$ (100 poin)}
+\[
+f(x) =
+\begin{cases}
+  -x^2 + 1, & x \leq 1 \\
+  x - 1, & x > 1
+\end{cases}
+\]
+\begin{rubrik}
+Langkah &
+Nilai fungsi, kekontinuan, serta turunan kiri dan kanan di $x = 1$ dihitung. &
+60 & \\
+Jawaban &
+$f$ kontinu tetapi tidak diferensiabel di $x = 1$, karena $f'_-(1) = -2$ dan $f'_+(1) = 1$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 4(a). $f(x) = (x^2 + 1)(x^3 - 3x + 1)$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Aturan hasil kali $(uv)' = u'v + uv'$. &
+60 & \\
+Jawaban &
+$f'(x) = 5x^4 - 6x^2 + 2x - 3$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 4(b). $f(x) = \dfrac{x - 3}{1 - x^2}$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Aturan hasil bagi $\dfrac{u'v - uv'}{v^2}$. &
+60 & \\
+Jawaban &
+$f'(x) = \dfrac{x^2 - 6x + 1}{(1 - x^2)^2}$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 4(c). $f(x) = x^2 \sin x$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Aturan hasil kali pada $x^2$ dan $\sin x$. &
+60 & \\
+Jawaban &
+$f'(x) = 2x\sin x + x^2\cos x$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 4(d). $f(x) = \dfrac{1 + \sin x}{\cos x}$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Aturan hasil bagi, lalu penyederhanaan dengan $\sin^2 x + \cos^2 x = 1$. &
+60 & \\
+Jawaban &
+$f'(x) = \dfrac{1 + \sin x}{\cos^2 x}$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 4(e). $f(x) = (2x^2 - 4x + 1)^{60}$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Aturan rantai: turunan pangkat dikali turunan fungsi dalam. &
+60 & \\
+Jawaban &
+$f'(x) = 240(x - 1)(2x^2 - 4x + 1)^{59}$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 4(f). $f(x) = \cos^4(4x^2 - x)$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Aturan rantai tiga lapis: pangkat, kosinus, lalu polinom dalam. &
+60 & \\
+Jawaban &
+$f'(x) = -4(8x - 1)\cos^3(4x^2 - x)\sin(4x^2 - x)$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 5(a). Turunan kedua $f(x) = \sin(2x - 1)$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Turunan pertama dengan rantai, lalu turunan kedua. &
+60 & \\
+Jawaban &
+$f''(x) = -4\sin(2x - 1)$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\butir{Butir 5(b). Turunan kedua $f(x) = (2x - 3)^4$ (100 poin)}
+\begin{rubrik}
+Langkah &
+Turunan pertama dengan rantai, lalu turunan kedua. &
+60 & \\
+Jawaban &
+$f''(x) = 48(2x - 3)^2$. &
+40 & \\
+\midrule
+\multicolumn{2}{r}{\textbf{Jumlah}} & 100 & \\
+\end{rubrik}
+
+\section*{Rekap skor}
+\noindent
+\begin{tabular}{@{}lr@{}}
+\toprule
+Butir & Skor \\
+\midrule
+1 & \\
+2 & \\
+3 & \\
+4(a) & \\
+4(b) & \\
+4(c) & \\
+4(d) & \\
+4(e) & \\
+4(f) & \\
+5(a) & \\
+5(b) & \\
+\midrule
+Rata-rata = jumlah skor / 11 (maksimum 100) & \\
+\bottomrule
+\end{tabular}
+
+\end{document}

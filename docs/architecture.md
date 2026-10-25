@@ -90,7 +90,7 @@ app/
 │   ├── math/                # parser, sympy_validator, equivalence, role_checks,
 │   │                        # llm_judge, hybrid_validator
 │   ├── grading/             # step_grader, rubric, standard_comparer,
-│   │                        # concept_comparer (dual-track pack 3),
+│   │                        # concept_comparer (only if grades_concept),
 │   │                        # feedback_annotator, report, latex_report
 │   └── standards/           # kunci_ingester, standard_dir (topik_<bab>)
 ├── topics/                # topic pack: inequality_1_5 (1.5), abs_inequality_2 (2), limit_4 (4),
@@ -114,7 +114,7 @@ app/
 
 ## Topic packs & capabilities
 
-Kosakata grading / ingest / role berbasis **topic pack** (`app/topics/`). Daftar pack dan capability: [`math-topics.md`](math-topics.md). Anggota wajib ada di Protocol `TopicPack`; flag opsional di luar Protocol (`grades_concept`, `rich_section_ingest`) dipakai UI hasil/review dan wiring grading tanpa memperluas kontrak inti.
+Kosakata grading / ingest / role berbasis **topic pack** (`app/topics/`). Daftar pack dan capability: [`math-topics.md`](math-topics.md). Anggota wajib ada di Protocol `TopicPack`; flag opsional di luar Protocol (`grades_concept`, `sheet_butir`, `rich_section_ingest`, `show_milestone_pattern`) dipakai UI hasil/review dan wiring grading tanpa memperluas kontrak inti. Pack 3 memakai `sheet_butir` (100 per butir, total rata-rata), bukan `grades_concept`.
 
 Urutan resolusi pack (`resolve_topic_pack` di `pipeline_factory`):
 
@@ -132,9 +132,9 @@ Inti pipeline (controller MVC) tetap **pack-agnostic**; bab baru menambah pack (
 
 Setiap keputusan skor harus dapat ditelusuri lewat artefak (daftar field: [`conventions.md`](conventions.md#jejak-audit)). Jangan hapus artefak intermediate **di tengah run** jika satu tahap gagal.
 
-Artefak disimpan per PDF di `<output.root_dir>/<nama_pdf>/{pages,crops,recognition,questions}` + `report.json`, `summary.csv`, `report.html`, `report.tex`. `report.tex` dibangun dari view-model murni `app/functions/latex_report.py` (model di `app/models/latex_report.py`, input dari `app/functions/report_details.py`) lalu dirender `LatexReportWriter` (`DetailedReporter`) lewat `app/templates/report.tex.j2`; `ReportController` menerimanya lewat DI, begitu pula `PromptVersions` (dari `pipeline_factory.current_prompt_versions`). Setelah `report.tex` ditulis, `ReportController` memanggil `LatexCompiler` (port, opsional) yang diimplementasikan `PdfLatexCompiler` (`services/latex/pdflatex_compiler.py`, dibangun `pipeline_factory.build_pdf_compiler` dari `config.report.pdf`). Kompilasi dijalankan `passes` kali di folder run dengan jobname `report_build`, lalu `os.replace` ke `report.pdf`, sehingga PDF lama yang sedang dibuka viewer tidak memblokir pdflatex. `report.log` disimpan dan junk dihapus. Bagian pure (command, ringkasan error log, daftar junk) ada di `functions/latex_compile.py`. `ReportPdfError` hanya ditampilkan sebagai peringatan, dan `report_pdf_path` di `ReportResult` / `ProcessResult` bernilai `None` bila gagal. `ReportController` dan `ValidateController` membaca/menulis artefak lewat `functions/grading_artifact.py` / `functions/validation_artifact.py`, dan memastikan artefak sumber tidak berubah dengan `functions/artifact_guard.py`.
+PDF jawaban di `<input.jawaban_dir>/topik_<bab>/`; artefak run di `<output.root_dir>/topik_<bab>/<nama_pdf>/{pages,crops,recognition,questions}` + `report.json`, `summary.csv`, `report.html`, `report.tex` (fungsi `topic_jawaban_dir` / `topic_runs_root`). `report.tex` dibangun dari view-model murni `app/functions/latex_report.py` (model di `app/models/latex_report.py`, input dari `app/functions/report_details.py`) lalu dirender `LatexReportWriter` (`DetailedReporter`) lewat `app/templates/report.tex.j2`; `ReportController` menerimanya lewat DI, begitu pula `PromptVersions` (dari `pipeline_factory.current_prompt_versions`). Setelah `report.tex` ditulis, `ReportController` memanggil `LatexCompiler` (port, opsional) yang diimplementasikan `PdfLatexCompiler` (`services/latex/pdflatex_compiler.py`, dibangun `pipeline_factory.build_pdf_compiler` dari `config.report.pdf`). Kompilasi dijalankan `passes` kali di folder run dengan jobname `report_build`, lalu `os.replace` ke `report.pdf`, sehingga PDF lama yang sedang dibuka viewer tidak memblokir pdflatex. `report.log` disimpan dan junk dihapus. Bagian pure (command, ringkasan error log, daftar junk) ada di `functions/latex_compile.py`. `ReportPdfError` hanya ditampilkan sebagai peringatan, dan `report_pdf_path` di `ReportResult` / `ProcessResult` bernilai `None` bila gagal. `ReportController` dan `ValidateController` membaca/menulis artefak lewat `functions/grading_artifact.py` / `functions/validation_artifact.py`, dan memastikan artefak sumber tidak berubah dengan `functions/artifact_guard.py`.
 
-**Nama folder run** (`app/functions/run_layout.py`, `RunLayout`): stem PDF dengan karakter ilegal Windows diganti `_`. Nama kosong → `run`; nama yang bentrok dengan `standards` atau nama perangkat Windows (`con`, `nul`, `com1`, …) diberi sufiks `_run`. `list_run_dirs` hanya menganggap folder yang punya salah satu subfolder run.
+**Nama folder run** (`app/functions/run_layout.py`, `RunLayout`): stem PDF dengan karakter ilegal Windows diganti `_`. Nama kosong → `run`; nama yang bentrok dengan `standards`, bucket `topik_*`, atau nama perangkat Windows (`con`, `nul`, `com1`, …) diberi sufiks `_run`. `list_run_dirs` dipanggil pada bucket topik aktif dan hanya menganggap folder yang punya salah satu subfolder run.
 
 Aturan pengosongan output: [README root](../README.md#artefak).
 

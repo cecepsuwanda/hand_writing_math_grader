@@ -60,6 +60,8 @@ class DashboardView(BaseModel):
     standard_dir: str
     standard_ready: bool
     kunci_files: list[str]
+    # ``topik_<bab>`` bucket for jawaban PDF + run folders of the active topic.
+    topic_folder: str = ""
     pdfs: list[PdfEntry]
     runs: list[RunSummary]
     vision_model: str

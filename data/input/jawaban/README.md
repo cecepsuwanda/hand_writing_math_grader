@@ -1,16 +1,16 @@
 # Student answer PDFs
 
-Place handwritten answer PDFs here for the CLI to pick up.
+PDFs live under **topic buckets**: `topik_<bab>/` (same naming as standards).
 
-Tracked sample for smoke / live checks:
+- `topik_1/smoke_inequality.pdf` — sample for topik 1.5 smoke / live checks
+- `topik_3/…` — Tugas Minggu 3 (fungsi), dll.
 
-- `smoke_inequality.pdf` — minimal inequality worksheet (topik 1.5)
-
-Other student submissions stay local (gitignored). Do not commit personal homework PDFs.
+The web UI lists and uploads into the **active topic** folder only. Other student submissions stay local (gitignored).
 
 ```bash
-python -m app.cli process
-python -m app.cli process smoke_inequality.pdf
+python -m app.web
+# or smoke (PDF under topik_1 when topic 1.5 is active):
+python scripts/smoke_live.py smoke_inequality.pdf smoke_001
 ```
 
-Or run `run.bat` for the interactive menu. Results go to `data/output/<pdf_name>/`.
+Results go to `data/output/topik_<bab>/<pdf_name>/`.
